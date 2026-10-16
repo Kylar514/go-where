@@ -1,0 +1,4 @@
+/local/
+/ssh-pick
+/dist/
+*.test
