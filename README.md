@@ -30,6 +30,8 @@ With the default SSH config, connections use `ssh -- alias`, preserving normal u
 
 Type to search aliases, configured hostnames/IPs, and descriptions. Plain `j`/`k` remain search characters, not modal Vim navigation.
 
+The preview occupies 10 rows at the top; longer blocks scroll. The host list grows upward from the bottom, with the first result nearest the search prompt and the shortcut legend underneath.
+
 | Key | Action |
 |---|---|
 | Ctrl+J / Ctrl+K or arrows | Move down / up |

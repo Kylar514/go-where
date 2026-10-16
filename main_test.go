@@ -205,6 +205,13 @@ func TestPickerProtocol(t *testing.T) {
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 	t.Setenv("FZF_DEFAULT_OPTS", "--filter=broken")
 	fakeCommand(t, dir, "fzf", `if [ -n "$FZF_DEFAULT_OPTS" ]; then exit 99; fi
+for expected in '--layout=default' '--header-first' '--preview-window=up:10:wrap'; do
+  found=false
+  for arg in "$@"; do
+    if [ "$arg" = "$expected" ]; then found=true; fi
+  done
+  if [ "$found" != true ]; then exit 97; fi
+done
 case "$*" in
   *ctrl-u:half-page-up,ctrl-d:half-page-down*) ;;
   *) exit 98 ;;

@@ -217,13 +217,14 @@ func pick(hosts []Host, exe, query, dest string, o Origin) (key, nextQuery strin
 	}
 	header += "\n^J/K move · ^U/D half-page · Tab mark · Alt+P/W/S/T panes/windows/session/terminals\n^E edit host · Alt+E floating editor · Alt+C settings · ^R reload"
 	args := []string{
-		"--multi", "--layout=reverse", "--border", "--delimiter=\t", "--with-nth=2..",
+		"--multi", "--layout=default", "--header-first", "--border", "--delimiter=\t", "--with-nth=2..",
 		"--prompt=SSH > ", "--header=" + header, "--query=" + query, "--print-query",
 		"--expect=enter,alt-p,alt-w,alt-s,alt-t,alt-c,ctrl-r",
 		// Editing always uses the highlighted row, not the multiselection.
 		"--bind=ctrl-j:down,ctrl-k:up,tab:toggle+down,shift-tab:toggle+up,ctrl-u:half-page-up,ctrl-d:half-page-down,ctrl-e:become(printf '%s\\n' {q} ctrl-e {}),alt-e:become(printf '%s\\n' {q} alt-e {})",
 		"--preview=" + shellCommand([]string{exe, "__preview", f.Name()}) + " {1}",
-		"--preview-window=right:45%:wrap",
+		// ponytail: cap preview at 10 rows to preserve list space; dynamic sizing if needed.
+		"--preview-window=up:10:wrap",
 	}
 	// become returns only the highlighted row for editing, even with marks.
 	// printf receives fzf's shell-quoted placeholders, not executable host data.
