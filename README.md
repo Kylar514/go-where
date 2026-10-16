@@ -28,9 +28,11 @@ With the default SSH config, connections use `ssh -- alias`, preserving normal u
 
 ## Keys
 
-Type to search aliases, configured hostnames/IPs, and descriptions. Plain `j`/`k` remain search characters, not modal Vim navigation.
+Type to search aliases, configured hostnames/IPs, jump hosts, and descriptions. Plain `j`/`k` remain search characters, not modal Vim navigation.
 
 The preview occupies 10 rows at the top; longer blocks scroll. The host list grows upward from the bottom, with the first result nearest the search prompt and the shortcut legend underneath.
+
+Columns are labeled **HOST**, **HOSTNAME / IP**, **JUMPHOST**, and **COMMENT**, with aligned labels pinned just above search. JUMPHOST shows the block's `ProxyJump` value, including multi-hop chains, or `—` when absent/disabled. A block using `ProxyCommand` shows `ProxyCommand` rather than guessing a jump alias from a shell command. Like HOSTNAME / IP, this is block-level metadata, not evaluation of wildcard/Match defaults; OpenSSH determines the actual connection route.
 
 | Key | Action |
 |---|---|

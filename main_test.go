@@ -72,11 +72,55 @@ Host home
 	if hosts[0].Comment != "Personal servers · living room · Main machine" {
 		t.Fatalf("comments: %q", hosts[0].Comment)
 	}
-	if hosts[2].Hostname != "work.example.org" || hosts[2].Line != 2 || !strings.Contains(hosts[2].Block, "ProxyJump bastion") {
+	if hosts[2].Hostname != "work.example.org" || hosts[2].JumpHost != "bastion" || hosts[2].Line != 2 || !strings.Contains(hosts[2].Block, "ProxyJump bastion") {
 		t.Fatalf("included block: %+v", hosts[2])
 	}
 	if hosts[3].Hostname != "other.example.org" || strings.Contains(hosts[3].Block, "Match") {
 		t.Fatalf("Match boundary: %+v", hosts[3])
+	}
+}
+
+func TestJumpHostsAndColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	writeTestFile(t, path, `Host direct
+    # ProxyJump disabled-test
+Host jumped alias
+    pRoXyJuMp user@bastion:2222,inner
+    ProxyJump ignored
+Host disabled
+    ProxyJump none
+    ProxyCommand ssh ignored
+Host command
+    ProxyCommand ssh -W %h:%p bastion
+    ProxyJump ignored
+Host command-disabled
+    ProxyCommand none
+`)
+	hosts, err := readHosts(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"", "user@bastion:2222,inner", "user@bastion:2222,inner", "none", "ProxyCommand", "none"}
+	for i, h := range hosts {
+		if h.JumpHost != want[i] {
+			t.Errorf("%s jump: %q, want %q", h.Alias, h.JumpHost, want[i])
+		}
+	}
+	rows := strings.Split(strings.TrimSuffix(hostRows(hosts), "\n"), "\n")
+	if len(rows) != len(hosts)+1 || !strings.HasPrefix(rows[0], "-1\tHOST") {
+		t.Fatalf("missing non-selectable column labels: %v", rows)
+	}
+	_, heading, _ := strings.Cut(rows[0], "\t")
+	jumpColumn := strings.Index(heading, "JUMPHOST")
+	for i, row := range rows[1:] {
+		_, display, _ := strings.Cut(row, "\t")
+		label := want[i]
+		if label == "" || label == "none" {
+			label = "—"
+		}
+		if !strings.HasPrefix(display[jumpColumn:], label) {
+			t.Errorf("misaligned jump column: %q", row)
+		}
 	}
 }
 
@@ -205,7 +249,7 @@ func TestPickerProtocol(t *testing.T) {
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 	t.Setenv("FZF_DEFAULT_OPTS", "--filter=broken")
 	fakeCommand(t, dir, "fzf", `if [ -n "$FZF_DEFAULT_OPTS" ]; then exit 99; fi
-for expected in '--layout=default' '--header-first' '--preview-window=up:10:wrap'; do
+for expected in '--layout=default' '--header-first' '--header-lines=1' '--preview-window=up:10:wrap'; do
   found=false
   for arg in "$@"; do
     if [ "$arg" = "$expected" ]; then found=true; fi
@@ -216,6 +260,8 @@ case "$*" in
   *ctrl-u:half-page-up,ctrl-d:half-page-down*) ;;
   *) exit 98 ;;
 esac
+IFS= read -r header
+case "$header" in *HOST*HOSTNAME*JUMPHOST*COMMENT*) ;; *) exit 96 ;; esac
 IFS= read -r row
 printf 'query\nalt-w\n%s\n' "$row"`)
 	hosts := []Host{{Alias: "web", Hostname: "192.0.2.1", Comment: "Production"}}
@@ -246,7 +292,7 @@ func TestAppCustomConfigAndEditor(t *testing.T) {
 	t.Setenv("CALLS", log)
 	root := filepath.Join(dir, ".ssh", "config")
 	writeTestFile(t, root, "Host web\n HostName 192.0.2.1\n")
-	fakeCommand(t, dir, "fzf", "IFS= read -r row; printf '\\nenter\\n%s\\n' \"$row\"")
+	fakeCommand(t, dir, "fzf", "IFS= read -r header; IFS= read -r row; printf '\\nenter\\n%s\\n' \"$row\"")
 	fakeCommand(t, dir, "ssh", "printf '%s\\n' \"$@\" > \"$CALLS\"")
 	if err := app([]string{"--destination", "current"}); err != nil {
 		t.Fatal(err)

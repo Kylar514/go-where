@@ -207,17 +207,14 @@ func pick(hosts []Host, exe, query, dest string, o Origin) (key, nextQuery strin
 	if err != nil {
 		return "", query, nil, err
 	}
-	var input strings.Builder
-	for i, h := range hosts {
-		fmt.Fprintf(&input, "%d\t%-28s  %-30s  %s\n", i, clean(h.Alias), clean(h.Hostname), clean(h.Comment))
-	}
+	input := hostRows(hosts)
 	header := "Enter: " + dest
 	if o.Pane != "" {
 		header += " | origin " + o.Session + ":" + o.Window + "." + o.Pane
 	}
 	header += "\n^J/K move · ^U/D half-page · Tab mark · Alt+P/W/S/T panes/windows/session/terminals\n^E edit host · Alt+E floating editor · Alt+C settings · ^R reload"
 	args := []string{
-		"--multi", "--layout=default", "--header-first", "--border", "--delimiter=\t", "--with-nth=2..",
+		"--multi", "--layout=default", "--header-first", "--header-lines=1", "--border", "--delimiter=\t", "--with-nth=2..",
 		"--prompt=SSH > ", "--header=" + header, "--query=" + query, "--print-query",
 		"--expect=enter,alt-p,alt-w,alt-s,alt-t,alt-c,ctrl-r",
 		// Editing always uses the highlighted row, not the multiselection.
@@ -230,7 +227,7 @@ func pick(hosts []Host, exe, query, dest string, o Origin) (key, nextQuery strin
 	// printf receives fzf's shell-quoted placeholders, not executable host data.
 	c := exec.Command("fzf", args...)
 	c.Env = withoutFZFOptions(os.Environ())
-	c.Stdin, c.Stderr = strings.NewReader(input.String()), os.Stderr
+	c.Stdin, c.Stderr = strings.NewReader(input), os.Stderr
 	out, runErr := c.Output()
 	if runErr != nil {
 		var exit *exec.ExitError
@@ -259,6 +256,29 @@ func pick(hosts []Host, exe, query, dest string, o Origin) (key, nextQuery strin
 		selected = append(selected, hosts[i])
 	}
 	return key, nextQuery, selected, nil
+}
+
+func hostRows(hosts []Host) string {
+	rows := [][4]string{{"HOST", "HOSTNAME / IP", "JUMPHOST", "COMMENT"}}
+	var widths [3]int
+	for _, h := range hosts {
+		jump := h.JumpHost
+		if jump == "" || strings.EqualFold(jump, "none") {
+			jump = "—"
+		}
+		rows = append(rows, [4]string{clean(h.Alias), clean(h.Hostname), clean(jump), clean(h.Comment)})
+	}
+	for _, row := range rows {
+		for col := range widths {
+			widths[col] = max(widths[col], len([]rune(row[col])))
+		}
+	}
+	var input strings.Builder
+	for i, row := range rows {
+		// The first row is a non-selectable fzf header; IDs still index hosts.
+		fmt.Fprintf(&input, "%d\t%-*s  %-*s  %-*s  %s\n", i-1, widths[0], row[0], widths[1], row[1], widths[2], row[2], row[3])
+	}
+	return input.String()
 }
 
 func withoutFZFOptions(env []string) []string {

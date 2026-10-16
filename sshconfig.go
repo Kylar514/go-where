@@ -12,6 +12,7 @@ import (
 type Host struct {
 	Alias    string
 	Hostname string
+	JumpHost string
 	Comment  string
 	File     string
 	Line     int
@@ -22,6 +23,7 @@ type hostBlock struct {
 	hosts    []Host
 	comment  []string
 	hostname string
+	jumpHost string
 }
 
 type configReader struct {
@@ -52,6 +54,7 @@ func readHosts(path string) ([]Host, error) {
 		for _, h := range b.hosts {
 			if !seen[h.Alias] {
 				h.Hostname = b.hostname
+				h.JumpHost = b.jumpHost
 				if h.Hostname == "" {
 					h.Hostname = h.Alias
 				}
@@ -144,6 +147,17 @@ func (r *configReader) read(path string) error {
 			}
 			if key == "hostname" && len(fields) > 1 && r.current.hostname == "" {
 				r.current.hostname = fields[1]
+			}
+			if len(fields) > 1 && r.current.jumpHost == "" {
+				switch key {
+				case "proxyjump":
+					r.current.jumpHost = fields[1]
+				case "proxycommand":
+					r.current.jumpHost = "ProxyCommand"
+					if strings.EqualFold(fields[1], "none") {
+						r.current.jumpHost = "none"
+					}
+				}
 			}
 		}
 		if key == "include" {
