@@ -42,7 +42,8 @@ Type to search aliases, configured hostnames/IPs, and descriptions. Plain `j`/`k
 | Ctrl+E | Edit the highlighted host's SSH config at its source line |
 | Alt+E | Edit the highlighted host in a floating terminal |
 | Alt+C | Open picker settings |
-| Ctrl+U / Ctrl+D | Page the preview up / down |
+| Ctrl+U / Ctrl+D | Move half a page up / down in the host list |
+| Shift+↑ / Shift+↓ | Scroll the preview up / down |
 | Ctrl+R | Reload SSH config and settings; preserve the search query |
 | Esc / Ctrl+C | Cancel |
 

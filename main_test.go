@@ -205,6 +205,10 @@ func TestPickerProtocol(t *testing.T) {
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 	t.Setenv("FZF_DEFAULT_OPTS", "--filter=broken")
 	fakeCommand(t, dir, "fzf", `if [ -n "$FZF_DEFAULT_OPTS" ]; then exit 99; fi
+case "$*" in
+  *ctrl-u:half-page-up,ctrl-d:half-page-down*) ;;
+  *) exit 98 ;;
+esac
 IFS= read -r row
 printf 'query\nalt-w\n%s\n' "$row"`)
 	hosts := []Host{{Alias: "web", Hostname: "192.0.2.1", Comment: "Production"}}
