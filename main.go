@@ -24,6 +24,9 @@ func app(args []string) error {
 	if len(args) > 0 && args[0] == "__preview" {
 		return preview(args[1:])
 	}
+	if len(args) > 0 && strings.HasPrefix(args[0], "__") {
+		return transferInternal(args)
+	}
 	settings, err := configPath()
 	if err != nil {
 		return err
@@ -39,13 +42,18 @@ func app(args []string) error {
 	noPopup := fs.Bool("no-popup", false, "run inline instead of opening a tmux popup")
 	client := fs.String("client", "", "invoking tmux client (for bindings or shared panes)")
 	context := fs.String("origin", "", "internal: captured tmux origin")
+	legacy := fs.Bool("legacy", false, "use the legacy SCP protocol (scp mode only)")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: ssh-pick [options]\n       ssh-pick config [options]\n\nSearch SSH hosts with fzf. Enter connects using your configured destination.")
+		fmt.Fprintln(fs.Output(), "Usage: ssh-pick [ssh|scp|rsync] [options]\n       ssh-pick scp --legacy [options]\n       ssh-pick config [options]\n\nCtrl+O changes mode. Transfer modes always review before execution.")
 		fs.PrintDefaults()
 	}
 	editSettings := len(args) > 0 && args[0] == "config"
 	if editSettings {
 		args = args[1:]
+	}
+	mode := "ssh"
+	if !editSettings && len(args) > 0 && validMode(args[0]) {
+		mode, args = args[0], args[1:]
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -55,6 +63,12 @@ func app(args []string) error {
 	}
 	if fs.NArg() != 0 {
 		return fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
+	if *legacy {
+		if mode != "scp" || editSettings {
+			return fmt.Errorf("--legacy requires scp mode")
+		}
+		mode = "legacy-scp"
 	}
 	customSSHConfig := false
 	fs.Visit(func(f *flag.Flag) {
@@ -104,7 +118,7 @@ func app(args []string) error {
 		return err
 	}
 	if o.Pane != "" && !*noPopup {
-		argv := []string{exe, "--no-popup", "--origin", encodeOrigin(o), "--config", *config}
+		argv := []string{exe, mode, "--no-popup", "--origin", encodeOrigin(o), "--config", *config}
 		if customSSHConfig {
 			argv = append(argv, "--ssh-config", *sshConfig)
 		}
@@ -112,9 +126,15 @@ func app(args []string) error {
 			argv = append(argv, "--destination", *dest)
 		}
 		// 45 fzf rows plus the popup's two border rows.
-		return run([]string{"tmux", "display-popup", "-EE", "-c", o.Client, "-w", "90%", "-h", "47", shellCommand(argv)})
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		return run([]string{"tmux", "display-popup", "-EE", "-c", o.Client, "-d", cwd, "-w", "90%", "-h", "47", shellCommand(argv)})
 	}
 	query := ""
+	state := PickerState{Mode: mode}
+	draft := Transfer{Direction: "upload"}
 	for {
 		c, err = loadConfig(*config)
 		if err != nil {
@@ -132,7 +152,7 @@ func app(args []string) error {
 		}
 		var key string
 		var selected []Host
-		key, query, selected, err = pick(hosts, exe, query, destination(c.Destination, o, c), o)
+		key, query, selected, err = pick(hosts, exe, query, destination(c.Destination, o, c), o, &state)
 		if err != nil || key == "cancel" {
 			return err
 		}
@@ -175,6 +195,14 @@ func app(args []string) error {
 		if customSSHConfig {
 			connectionConfig = *sshConfig
 		}
+		if state.Mode != "ssh" {
+			draft.Mode = state.Mode
+			launched, err := transferWizard(&draft, selected, target, o, c, connectionConfig, exe)
+			if err != nil || launched {
+				return err
+			}
+			continue
+		}
 		return connect(selected, target, o, c, connectionConfig)
 	}
 }
@@ -188,14 +216,27 @@ func clean(s string) string {
 	}, s)
 }
 
-func pick(hosts []Host, exe, query, dest string, o Origin) (key, nextQuery string, selected []Host, err error) {
+func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (key, nextQuery string, selected []Host, err error) {
+	if state == nil {
+		state = &PickerState{Mode: "ssh"}
+	}
+	modeFile, err := os.CreateTemp("", "ssh-pick-mode-*")
+	if err != nil {
+		return "", query, nil, err
+	}
+	defer os.Remove(modeFile.Name())
+	_, err = modeFile.WriteString(state.Mode)
+	closeErr := modeFile.Close()
+	if err = errors.Join(err, closeErr); err != nil {
+		return "", query, nil, err
+	}
 	f, err := os.CreateTemp("", "ssh-pick-*.json")
 	if err != nil {
 		return "", query, nil, err
 	}
 	defer os.Remove(f.Name())
 	err = json.NewEncoder(f).Encode(hosts)
-	closeErr := f.Close()
+	closeErr = f.Close()
 	if err == nil {
 		err = closeErr
 	}
@@ -203,7 +244,7 @@ func pick(hosts []Host, exe, query, dest string, o Origin) (key, nextQuery strin
 		return "", query, nil, err
 	}
 	input := hostRows(hosts)
-	header := "Enter: " + dest
+	header := "Ctrl+O mode · Enter: " + dest
 	if o.Pane != "" {
 		header += " | origin " + o.Session + ":" + o.Window + "." + o.Pane
 	}
@@ -211,14 +252,24 @@ func pick(hosts []Host, exe, query, dest string, o Origin) (key, nextQuery strin
 	args := []string{
 		// 25 results + 10 preview rows + 10 rows of borders, labels and controls.
 		"--height=45",
-		"--multi", "--layout=default", "--header-first", "--header-lines=1", "--border", "--delimiter=\t", "--with-nth=2..",
-		"--prompt=SSH > ", "--header=" + header, "--query=" + query, "--print-query",
+		"--multi", "--sync", "--layout=default", "--header-first", "--header-lines=1", "--border", "--delimiter=\t", "--with-nth=2..",
+		"--prompt=" + strings.ToUpper(state.Mode) + " > ", "--header=" + header, "--query=" + query, "--print-query",
 		"--expect=enter,ctrl-alt-p,ctrl-alt-w,ctrl-alt-n,ctrl-alt-t,ctrl-s,ctrl-alt-s,ctrl-r",
 		// Editing always uses the highlighted row, not the multiselection.
-		"--bind=ctrl-j:down,ctrl-k:up,tab:toggle+down,shift-tab:toggle+up,ctrl-u:half-page-up,ctrl-d:half-page-down,ctrl-e:become(printf '%s\\n' {q} ctrl-e {}),ctrl-alt-e:become(printf '%s\\n' {q} ctrl-alt-e {})",
-		"--preview=" + shellCommand([]string{exe, "__preview", f.Name()}) + " {1}",
+		"--bind=ctrl-j:down,ctrl-k:up,tab:toggle-up,shift-tab:toggle-down,ctrl-u:half-page-up,ctrl-d:half-page-down,ctrl-e:become(printf '%s\\n' {q} ctrl-e {}),ctrl-alt-e:become(printf '%s\\n' {q} ctrl-alt-e {})",
+		"--bind=ctrl-o:execute(" + shellCommand([]string{exe, "__mode", modeFile.Name()}) + ")+transform-prompt(" + shellCommand([]string{exe, "__mode-prompt", modeFile.Name()}) + ")+refresh-preview",
+		"--preview=" + shellCommand([]string{exe, "__preview", f.Name(), modeFile.Name()}) + " {1}",
 		// ponytail: cap preview at 10 rows to preserve list space; dynamic sizing if needed.
 		"--preview-window=up:10:wrap",
+	}
+	if state.Focus != "" || len(state.Marked) > 0 {
+		restore, err := restorePicker(hosts, query, state)
+		if err != nil {
+			return "", query, nil, err
+		}
+		if restore != "" {
+			args = append(args, "--bind=result:"+restore+"+unbind(result)")
+		}
 	}
 	// become returns only the highlighted row for editing, even with marks.
 	// printf receives fzf's shell-quoted placeholders, not executable host data.
@@ -226,6 +277,10 @@ func pick(hosts []Host, exe, query, dest string, o Origin) (key, nextQuery strin
 	c.Env = withoutFZFOptions(os.Environ())
 	c.Stdin, c.Stderr = strings.NewReader(input), os.Stderr
 	out, runErr := c.Output()
+	state.Mode, err = readMode(modeFile.Name())
+	if err != nil {
+		return "", query, nil, err
+	}
 	if runErr != nil {
 		var exit *exec.ExitError
 		if errors.As(runErr, &exit) {
@@ -244,13 +299,19 @@ func pick(hosts []Host, exe, query, dest string, o Origin) (key, nextQuery strin
 		return "", query, nil, fmt.Errorf("unexpected fzf output")
 	}
 	nextQuery, key = lines[0], lines[1]
-	for _, row := range lines[2:] {
+	rows := lines[2:]
+	state.Marked = nil
+	for _, row := range rows {
 		id, _, _ := strings.Cut(row, "\t")
 		i, parseErr := strconv.Atoi(id)
 		if parseErr != nil || i < 0 || i >= len(hosts) {
 			return "", query, nil, fmt.Errorf("invalid picker selection")
 		}
 		selected = append(selected, hosts[i])
+		state.Marked = append(state.Marked, hosts[i].Alias)
+	}
+	if len(state.Marked) > 0 {
+		state.Focus = state.Marked[0]
 	}
 	return key, nextQuery, selected, nil
 }
@@ -289,7 +350,7 @@ func withoutFZFOptions(env []string) []string {
 }
 
 func preview(args []string) error {
-	if len(args) != 2 {
+	if len(args) != 3 {
 		return fmt.Errorf("invalid preview arguments")
 	}
 	b, err := os.ReadFile(args[0])
@@ -300,11 +361,18 @@ func preview(args []string) error {
 	if err := json.Unmarshal(b, &hosts); err != nil {
 		return err
 	}
-	i, err := strconv.Atoi(args[1])
+	i, err := strconv.Atoi(args[2])
 	if err != nil || i < 0 || i >= len(hosts) {
 		return fmt.Errorf("invalid preview selection")
 	}
 	h := hosts[i]
+	mode, err := readMode(args[1])
+	if err != nil {
+		return err
+	}
+	if warning := modeWarning(mode); warning != "" {
+		fmt.Printf("%s\n\n", warning)
+	}
 	fmt.Printf("%s\n%s:%d\n\n%s\n\n", clean(h.Alias), clean(h.File), h.Line, clean(h.Comment))
 	for n, line := range strings.Split(h.Block, "\n") {
 		fmt.Printf("%5d  %s\n", h.Line+n, clean(line))

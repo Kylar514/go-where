@@ -4,7 +4,7 @@ A Linux-first SSH host picker: one Go executable, fzf for the UI, OpenSSH for co
 
 ## Build and run
 
-Requires Go 1.23+ to build. Runtime requirements: fzf 0.38+ and OpenSSH; tmux 3.3+ for popups, `xdg-terminal-exec` for system-default terminal selection (or an explicit terminal command), and Neovim for editing. Go is not needed to run the compiled executable.
+Requires Go 1.23+ to build. Runtime requirements: fzf and OpenSSH; tmux 3.3+ for popups, `xdg-terminal-exec` for system-default terminal selection (or an explicit terminal command), and Neovim for editing. Transfer modes need OpenSSH SCP with `-s`/`-O` support or rsync 3.1+ as applicable. Go is not needed to run the compiled executable. The mode UI is verified with fzf 0.74.5; older builds must support `transform-prompt`, `reload`, `become`, and result-event bindings.
 
 ```sh
 go test ./...
@@ -22,6 +22,9 @@ ssh-pick --no-popup                     # inline picker, still targets the origi
 ssh-pick --ssh-config ./local/config    # also passes this file to ssh -F
 ssh-pick config                        # create/open settings without overwriting them
 ssh-pick --help
+ssh-pick scp                           # Start in modern SCP mode
+ssh-pick scp --legacy                  # Explicit legacy SCP; never an automatic retry
+ssh-pick rsync
 ```
 
 With the default SSH config, connections use `ssh -- alias`, preserving normal user and system SSH configuration. With `--ssh-config`, connections use `ssh -F path -- alias`; OpenSSH's usual `-F` semantics apply (including skipping the system config).
@@ -37,8 +40,9 @@ Columns are labeled **HOST**, **HOSTNAME / IP**, **JUMPHOST**, and **COMMENT**, 
 | Key | Action |
 |---|---|
 | Ctrl+J / Ctrl+K or arrows | Move down / up |
-| Tab / Shift+Tab | Toggle selection and move down / up |
+| Tab / Shift+Tab | Toggle selection and move to the next / previous result |
 | Enter | Connect using your configured default |
+| Ctrl+O | Choose SSH, SCP, Legacy SCP, or rsync without losing the current search, highlight, or marks |
 | Ctrl+Alt+P | New pane per host in the originating window |
 | Ctrl+Alt+W | New window per host in the originating session |
 | Ctrl+Alt+N | New session, one window per host; switch the originating client |
@@ -52,13 +56,58 @@ Columns are labeled **HOST**, **HOSTNAME / IP**, **JUMPHOST**, and **COMMENT**, 
 | Ctrl+R | Reload SSH config and settings; preserve the search query |
 | Esc / Ctrl+C | Cancel |
 
-Connection actions use marked hosts, or the highlighted host if nothing is marked. Editing always uses the highlighted host. Editing closes the picker so it doesn't obscure the editor; reopen when finished. Reopening or reloading clears marks. Pane-edit shortcuts require tmux rather than falling back to a different destination.
+Connection actions use marked hosts, or the highlighted host if nothing is marked. Editing always uses the highlighted host. Editing closes the picker so it doesn't obscure the editor; reopen when finished. Mode switching keeps the existing picker alive, preserving its exact navigation state. After reopening/reloading, only matching selections can be restored. Pane-edit shortcuts require tmux rather than falling back to a different destination.
 
 Ctrl+Shift letter bindings were tested and rejected by fzf itself (`unsupported key: ctrl-shift-p`), so modified actions use Ctrl+Alt instead. N means new session, leaving S for settings. No Alt-only or function-key bindings are required. fzf's raw terminal mode receives Ctrl+S without enabling shell flow control; the physical terminal/compositor must still pass these keys through.
 
 The picker ignores `FZF_DEFAULT_OPTS`, `FZF_DEFAULT_OPTS_FILE`, and `FZF_DEFAULT_COMMAND` so personal fzf bindings/output options cannot corrupt its selection protocol.
 
 Explicit tmux actions require tmux; only the default Enter action uses the configured fallback. Panes are split horizontally from the original pane. Large selections can run out of pane space: failures report how many hosts opened and never silently reroute the rest. A failed new-session operation may leave a partially populated session; no existing session is deleted or replaced.
+
+## Transfers
+
+Press **Ctrl+O** in the host picker to select SCP, Legacy SCP, or rsync. SSH remains the default on a normal launch. The prompt identifies the current mode and the host preview shows protocol requirements.
+
+```text
+Select host(s) → Upload / Download → Local path → Remote path → Review → Run
+```
+
+Uploads support multiple selected hosts with one local source and one shared remote destination. Downloads require exactly one host to prevent destination collisions. Transfer placement shortcuts (Ctrl+Alt+P/W/N/T) choose the execution destination before setup; they never bypass review. Multiple transfers need panes, windows, or terminals, not the single `current` destination.
+
+### Paths and navigation
+
+- Local path fields show filesystem candidates while typing. Tab fills the highlighted candidate; completing a directory opens its contents. Ctrl+J/K or arrows move through candidates, and Enter accepts the typed path. Hidden files are included.
+- Local fields accept spaces, quotes, `~/`, relative paths, and new destination names. Source paths must exist. Trailing `/`, `/.`, and symlink-sensitive path components are preserved rather than cleaned away.
+- Remote paths are typed without remote browsing. Their spelling is preserved, including Windows drive letters/backslashes; no local Linux normalization is applied.
+- Esc goes Back and retains typed path values. Esc from the direction menu returns to host selection; Esc from the host picker exits.
+- Use a shared remote destination that is valid for every selected host. Mixed Windows/POSIX targets may need separate batches.
+- One source path per transfer. Control characters in paths are rejected; glob patterns and filename interpretation otherwise follow the selected native tool.
+
+### Protocol behavior
+
+| Mode | Client behavior and limits |
+|---|---|
+| SCP | Explicit `scp -s -r`: SFTP-based, recursive copy. Requires an SFTP-capable SSH server. Windows SFTP paths depend on that server's conventions. |
+| Legacy SCP | Explicit `scp -O -r`. Requires remote SCP and a POSIX-compatible shell. Remote paths get separate shell quoting; `~/` is supported. Windows shells are unsupported in v1. |
+| rsync | `-rt --protect-args --info=progress2`, using SSH. Recursive copy with timestamps, not archive/ownership/permissions preservation. rsync 3.1+ must exist at both ends; native Windows OpenSSH alone is insufficient. |
+
+Review shows FROM/TO and the exact command for every host, execution placement, overwrite warnings, and protocol limitations. Existing files can be overwritten. No automatic legacy fallback and no rsync deletion flag are provided. SCP and rsync have different directory-copy semantics; rsync's `dir/` means contents whereas `dir` means the directory itself.
+
+For rsync, **Preview changes** runs `--dry-run --itemize-changes` against every selected host and returns to review. It never authorizes the subsequent writes; **Run transfers** is a separate confirmation. Previewing is an explicit network operation and may prompt for SSH authentication. Host-key verification is left enabled.
+
+Each confirmed transfer runs independently and keeps success/failure output open until Enter dismisses it. A failed job or failed launcher does not cancel other hosts. Custom `--ssh-config` selection and native jump-host behavior carry through to each client. As with SSH itself, that configuration may authorize local commands. Some OpenSSH builds mishandle spaces/quotes in a custom config filename when constructing their implicit ProxyJump command; use a config filename without those characters if native SSH fails the same way.
+
+Windows legacy-shell support, remote autocomplete, multiple source paths, per-host destination overrides, multi-host downloads, and RDP remain deferred. Modern SCP against Windows has not been verified in this container.
+
+### Transfer checks
+
+`go test ./...` covers command construction, quoting, completion, Back navigation, independent batch launches, dry runs, and output retention using synthetic fixtures. To run the optional native transfer test, supply `SSH_PICK_TEST_CONFIG` pointing to a **disposable loopback server sharing the local filesystem** with alias `test-target`:
+
+```sh
+SSH_PICK_TEST_CONFIG=/path/to/disposable/config go test -run TestTransferEndpointIntegration -v .
+```
+
+The test creates its own temporary source/destination directories and checks SCP, legacy SCP, rsync dry-run safety, directory contents, and uploads/downloads. It can exercise ProxyJump when configured in the fixture. `SSH_PICK_TEST_SSH` optionally selects an extracted test SSH client for SCP. Do not point this test at production hosts.
 
 ## Settings
 

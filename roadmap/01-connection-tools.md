@@ -1,6 +1,8 @@
 # Connection tools
 
-Status: proposed. SCP, rsync, and RDP are not implemented yet.
+Status: initial SCP, legacy SCP, and rsync implementation complete. RDP remains proposed.
+
+Implemented: Ctrl+O in-picker mode selection; Back-capable local/remote path setup with local Tab completion; multi-host uploads and single-host downloads; explicit review; rsync dry runs; source-aware native commands; independent jobs with output held until dismissal. Native SCP/SFTP, legacy SCP, and rsync uploads/downloads were checked against a disposable loopback SSH endpoint, including ProxyJump. Windows endpoint behavior is not verified. See the [transfer guide](../README.md#transfers) for current behavior and limits.
 
 ## Goal
 
