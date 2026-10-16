@@ -14,14 +14,15 @@ type Config struct {
 	Editor           []string `json:"editor"`
 	EditDestination  string   `json:"edit_destination"`
 	Terminal         []string `json:"terminal"`
+	FallbackTerminal []string `json:"fallback_terminal"`
 	FloatingTerminal []string `json:"floating_terminal"`
 }
 
 func defaultConfig() Config {
 	return Config{
 		Destination: "tmux-pane", Fallback: "terminal", EditDestination: "tmux-pane",
-		Editor: []string{"nvim"}, Terminal: []string{"kitty"},
-		FloatingTerminal: []string{"kitty", "--class", "org.go-ssh.editor"},
+		Editor: []string{"nvim"}, Terminal: []string{"auto"},
+		FallbackTerminal: []string{"kitty"}, FloatingTerminal: []string{"auto"},
 	}
 }
 
@@ -69,6 +70,14 @@ func (c Config) validate() error {
 		if len(argv) == 0 || argv[0] == "" {
 			return fmt.Errorf("editor and terminal commands must be nonempty argument arrays")
 		}
+	}
+	for _, argv := range [][]string{c.Terminal, c.FloatingTerminal} {
+		if argv[0] == "auto" && len(argv) != 1 {
+			return fmt.Errorf("auto must be the sole terminal argument")
+		}
+	}
+	if len(c.FallbackTerminal) > 0 && (c.FallbackTerminal[0] == "" || c.FallbackTerminal[0] == "auto") {
+		return fmt.Errorf("fallback_terminal must be an explicit command or an empty array to disable it")
 	}
 	return nil
 }

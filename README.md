@@ -4,7 +4,7 @@ A Linux-first SSH host picker: one Go executable, fzf for the UI, OpenSSH for co
 
 ## Build and run
 
-Requires Go 1.23+ to build. Runtime requirements: fzf 0.38+ and OpenSSH; tmux 3.3+ for popups, Kitty for the default external terminal, and Neovim for editing. Go is not needed to run the compiled executable.
+Requires Go 1.23+ to build. Runtime requirements: fzf 0.38+ and OpenSSH; tmux 3.3+ for popups, `xdg-terminal-exec` for system-default terminal selection (or an explicit terminal command), and Neovim for editing. Go is not needed to run the compiled executable.
 
 ```sh
 go test ./...
@@ -13,7 +13,7 @@ go build -o "$HOME/.local/bin/ssh-pick" .
 ssh-pick
 ```
 
-Inside an attached tmux pane, this opens a popup and captures the originating session/window/pane/client. Outside tmux, it runs in your terminal. Enter opens new panes in the original window, or new Kitty windows outside tmux. It never picks an arbitrary tmux session.
+Inside an attached tmux pane, this opens a popup and captures the originating session/window/pane/client. Outside tmux, it runs in your terminal. Enter opens new panes in the original window, or new windows in your preferred terminal outside tmux. It never picks an arbitrary tmux session.
 
 ```sh
 ssh-pick --destination tmux-window
@@ -39,19 +39,22 @@ Columns are labeled **HOST**, **HOSTNAME / IP**, **JUMPHOST**, and **COMMENT**, 
 | Ctrl+J / Ctrl+K or arrows | Move down / up |
 | Tab / Shift+Tab | Toggle selection and move down / up |
 | Enter | Connect using your configured default |
-| Alt+P | New pane per host in the originating window |
-| Alt+W | New window per host in the originating session |
-| Alt+S | New session, one window per host; switch the originating client |
-| Alt+T | New terminal window per host |
-| Ctrl+E | Edit the highlighted host's SSH config at its source line |
-| Alt+E | Edit the highlighted host in a floating terminal |
-| Alt+C | Open picker settings |
+| Ctrl+Alt+P | New pane per host in the originating window |
+| Ctrl+Alt+W | New window per host in the originating session |
+| Ctrl+Alt+N | New session, one window per host; switch the originating client |
+| Ctrl+Alt+T | New terminal window per host |
+| Ctrl+S | Settings in a floating editor terminal |
+| Ctrl+E | Highlighted host's SSH config at its source line in a floating editor terminal |
+| Ctrl+Alt+S | Settings in a new tmux pane |
+| Ctrl+Alt+E | Highlighted host's SSH config in a new tmux pane |
 | Ctrl+U / Ctrl+D | Move half a page up / down in the host list |
 | Shift+↑ / Shift+↓ | Scroll the preview up / down |
 | Ctrl+R | Reload SSH config and settings; preserve the search query |
 | Esc / Ctrl+C | Cancel |
 
-Connection actions use marked hosts, or the highlighted host if nothing is marked. Editing always uses the highlighted host. Editing in another pane/window/terminal closes the picker so it doesn't obscure the editor; reopen when finished. With `edit_destination: "current"`, the picker resumes after the editor exits. Reopening or reloading clears marks.
+Connection actions use marked hosts, or the highlighted host if nothing is marked. Editing always uses the highlighted host. Editing closes the picker so it doesn't obscure the editor; reopen when finished. Reopening or reloading clears marks. Pane-edit shortcuts require tmux rather than falling back to a different destination.
+
+Ctrl+Shift letter bindings were tested and rejected by fzf itself (`unsupported key: ctrl-shift-p`), so modified actions use Ctrl+Alt instead. N means new session, leaving S for settings. No Alt-only or function-key bindings are required. fzf's raw terminal mode receives Ctrl+S without enabling shell flow control; the physical terminal/compositor must still pass these keys through.
 
 The picker ignores `FZF_DEFAULT_OPTS`, `FZF_DEFAULT_OPTS_FILE`, and `FZF_DEFAULT_COMMAND` so personal fzf bindings/output options cannot corrupt its selection protocol.
 
@@ -67,12 +70,19 @@ Explicit tmux actions require tmux; only the default Enter action uses the confi
   "fallback": "terminal",
   "editor": ["nvim"],
   "edit_destination": "tmux-pane",
-  "terminal": ["kitty"],
-  "floating_terminal": ["kitty", "--class", "org.go-ssh.editor"]
+  "terminal": ["auto"],
+  "fallback_terminal": ["kitty"],
+  "floating_terminal": ["auto"]
 }
 ```
 
-Destinations: `tmux-pane`, `tmux-window`, `tmux-session`, `terminal`, `current`. Editing supports all except `tmux-session`. The outside-tmux fallback is `terminal` or `current`. Commands are argument arrays, not shell fragments; for terminals needing a command separator, include it in the array. Editing uses the Vim-compatible `+LINE -- FILE` convention.
+Destinations: `tmux-pane`, `tmux-window`, `tmux-session`, `terminal`, `current`. The outside-tmux fallback is `terminal` or `current`. `edit_destination` controls the `ssh-pick config` CLI command; picker shortcuts explicitly choose floating or pane editing. Editing uses the Vim-compatible `+LINE -- FILE` convention.
+
+`terminal: ["auto"]` asks `xdg-terminal-exec` to resolve your preferred terminal using its XDG terminal lists and desktop entries. The resolver returns NUL-separated arguments, not shell code. If the resolver is unavailable or cannot find a terminal, `fallback_terminal` is used; set it to `[]` to disable fallback. `$TERM` is never used to guess your preferred application. A terminal that resolves successfully but fails to launch is reported, not retried in another terminal.
+
+To override terminal selection, use an argument array such as `["kitty"]`, `["alacritty", "-e"]`, or `["foot", "--"]`. Include the command separator your terminal needs. `floating_terminal: ["auto"]` follows that selection and requests app ID `org.go-ssh.editor`; with explicit Kitty/Alacritty/foot commands, the matching app-ID flag is inserted. Other explicit terminals need a `floating_terminal` override with their own flags, e.g. `["custom-terminal", "--app-id=org.go-ssh.editor", "--"]`. Existing explicit `terminal`/`floating_terminal` arrays are preserved; change them to `["auto"]` to opt into system defaults.
+
+Terminal processes detach from the popup, but their output is retained in `$XDG_CACHE_HOME/ssh-pick/terminal.log` (normally `~/.cache/ssh-pick/terminal.log`, mode 0600). Failures during the first 300ms keep the error popup open and point to this log. Later failures remain in the log; the picker does not supervise terminal lifetimes. If a new terminal still fails to appear, inspect the log on the host for the actual display/session error.
 
 Invalid or unknown settings fail clearly. `ssh-pick config` can still open malformed settings using default editor/placement so you can repair them.
 
@@ -100,7 +110,7 @@ Passing the client explicitly matters when multiple clients share the same pane.
 
 ## Floating editor on Hyprland / Omarchy
 
-Kitty's class identifies the editor; the window manager makes it float. The companion rule is installed in this workspace's `thedotfiles/.config/hypr/rules.lua`. For a different Hyprland Lua setup, add:
+The terminal's app ID/class identifies the editor; the window manager makes it float. System-default selection requests this through `xdg-terminal-exec --app-id`; the selected desktop entry must support that option. The companion rule is installed in this workspace's `thedotfiles/.config/hypr/rules.lua`. For a different Hyprland Lua setup, add:
 
 ```lua
 hl.window_rule({
@@ -108,12 +118,12 @@ hl.window_rule({
     match = { class = "^org.go-ssh.editor$" },
     float = true,
     center = true,
-    size = { "(monitor_w*3/5)", "(monitor_h*4/5)" },
+    size = { "(monitor_w*3/10)", "(monitor_h*3/4)" },
     no_max_size = true,
 })
 ```
 
-Without an equivalent compositor rule, Alt+E still opens Neovim in a separate terminal, but it may tile instead of float. Kitty/desktop behavior must be verified on the host, not just in a container.
+Without an equivalent compositor rule, or if the selected terminal ignores the requested app ID, Ctrl+S/E still open Neovim in a separate terminal, but it may tile instead of float. Physical shortcuts and desktop behavior must be verified on the host, not just in a container.
 
 ## Private examples
 

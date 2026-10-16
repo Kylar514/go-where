@@ -176,7 +176,7 @@ func TestConfigAndQuoting(t *testing.T) {
 	if c, err := loadConfig(path); err != nil || c.Destination != "tmux-window" || len(c.Editor) != 2 {
 		t.Fatalf("partial config / non-overwrite: %+v, %v", c, err)
 	}
-	for _, text := range []string{`{"destinaton":"terminal"}`, `{"editor":[]}`, `{"fallback":"tmux-pane"}`, `{"edit_destination":"tmux-session"}`, `{} {}`} {
+	for _, text := range []string{`{"destinaton":"terminal"}`, `{"editor":[]}`, `{"fallback":"tmux-pane"}`, `{"edit_destination":"tmux-session"}`, `{"terminal":["auto","extra"]}`, `{"fallback_terminal":["auto"]}`, `{} {}`} {
 		writeTestFile(t, path, text)
 		if _, err := loadConfig(path); err == nil {
 			t.Errorf("accepted invalid settings %s", text)
@@ -263,10 +263,10 @@ esac
 IFS= read -r header
 case "$header" in *HOST*HOSTNAME*JUMPHOST*COMMENT*) ;; *) exit 96 ;; esac
 IFS= read -r row
-printf 'query\nalt-w\n%s\n' "$row"`)
+printf 'query\nctrl-alt-w\n%s\n' "$row"`)
 	hosts := []Host{{Alias: "web", Hostname: "192.0.2.1", Comment: "Production"}}
 	key, query, selected, err := pick(hosts, "/fake/ssh-pick", "", "tmux-pane", Origin{})
-	if err != nil || key != "alt-w" || query != "query" || len(selected) != 1 || selected[0].Alias != "web" {
+	if err != nil || key != "ctrl-alt-w" || query != "query" || len(selected) != 1 || selected[0].Alias != "web" {
 		t.Fatalf("picker: %q %q %+v %v", key, query, selected, err)
 	}
 	fakeCommand(t, dir, "fzf", "printf 'notfound\\nctrl-r\\n'; exit 1")

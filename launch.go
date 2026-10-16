@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -95,13 +94,13 @@ func paneTarget(o Origin) string {
 
 func launchCommand(dest string, argv []string, o Origin, c Config, floating bool) error {
 	if floating {
-		return spawnTerminal(c.FloatingTerminal, argv)
+		return spawnTerminal(c, argv, true)
 	}
 	switch dest {
 	case "current":
 		return run(argv)
 	case "terminal":
-		return spawnTerminal(c.Terminal, argv)
+		return spawnTerminal(c, argv, false)
 	case "tmux-pane":
 		return run([]string{"tmux", "split-window", "-h", "-t", paneTarget(o), shellCommand(argv)})
 	case "tmux-window":
@@ -111,25 +110,12 @@ func launchCommand(dest string, argv []string, o Origin, c Config, floating bool
 	}
 }
 
-func spawnTerminal(terminal, argv []string) error {
-	args := append(append([]string{}, terminal...), argv...)
-	c := exec.Command(args[0], args[1:]...)
-	// Disconnect popup stdio: the terminal must survive the picker closing.
-	// Kitty provides its own command boundary; custom terminal arrays must too.
-	c.Stderr = os.Stderr
-	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := c.Start(); err != nil {
-		return err
-	}
-	return c.Process.Release()
-}
-
 func connect(hosts []Host, dest string, o Origin, c Config, sshConfig string) error {
 	if len(hosts) == 0 {
 		return nil
 	}
 	if strings.HasPrefix(dest, "tmux-") && o.Pane == "" {
-		return fmt.Errorf("%s requires tmux; use Enter for your configured fallback or Alt+T", dest)
+		return fmt.Errorf("%s requires tmux; use Enter for your configured fallback or Ctrl+Alt+T", dest)
 	}
 	ssh := func(h Host) []string {
 		if sshConfig != "" {

@@ -139,42 +139,36 @@ func app(args []string) error {
 		switch key {
 		case "ctrl-r":
 			continue
-		case "alt-c":
+		case "ctrl-s", "ctrl-alt-s":
+			if key == "ctrl-alt-s" && o.Pane == "" {
+				return fmt.Errorf("editing in a pane requires tmux; use Ctrl+S for a floating editor")
+			}
 			if err := ensureConfig(*config); err != nil {
 				return err
 			}
-			if err := editFile(*config, 0, c.EditDestination, false, o, c); err != nil {
-				return err
-			}
-			if destination(c.EditDestination, o, c) != "current" {
-				return nil
-			}
-			continue
-		case "ctrl-e", "alt-e":
+			return editFile(*config, 0, "tmux-pane", key == "ctrl-s", o, c)
+		case "ctrl-e", "ctrl-alt-e":
 			if len(selected) == 0 {
 				continue
 			}
+			if key == "ctrl-alt-e" && o.Pane == "" {
+				return fmt.Errorf("editing in a pane requires tmux; use Ctrl+E for a floating editor")
+			}
 			h := selected[0]
-			if err := editFile(h.File, h.Line, c.EditDestination, key == "alt-e", o, c); err != nil {
-				return err
-			}
-			if key == "alt-e" || destination(c.EditDestination, o, c) != "current" {
-				return nil
-			}
-			continue
+			return editFile(h.File, h.Line, "tmux-pane", key == "ctrl-e", o, c)
 		}
 		if len(selected) == 0 {
 			continue
 		}
 		target := destination(c.Destination, o, c)
 		switch key {
-		case "alt-p":
+		case "ctrl-alt-p":
 			target = "tmux-pane"
-		case "alt-w":
+		case "ctrl-alt-w":
 			target = "tmux-window"
-		case "alt-s":
+		case "ctrl-alt-n":
 			target = "tmux-session"
-		case "alt-t":
+		case "ctrl-alt-t":
 			target = "terminal"
 		}
 		connectionConfig := ""
@@ -213,15 +207,15 @@ func pick(hosts []Host, exe, query, dest string, o Origin) (key, nextQuery strin
 	if o.Pane != "" {
 		header += " | origin " + o.Session + ":" + o.Window + "." + o.Pane
 	}
-	header += "\n^J/K move · ^U/D half-page · Tab mark · Alt+P/W/S/T panes/windows/session/terminals\n^E edit host · Alt+E floating editor · Alt+C settings · ^R reload"
+	header += "\n^J/K move · ^U/D half-page · Tab mark · Ctrl+Alt+P/W/N/T panes/windows/session/terminals\nCtrl+S/E floating settings/host · Ctrl+Alt+S/E pane settings/host · ^R reload"
 	args := []string{
 		// 25 results + 10 preview rows + 10 rows of borders, labels and controls.
 		"--height=45",
 		"--multi", "--layout=default", "--header-first", "--header-lines=1", "--border", "--delimiter=\t", "--with-nth=2..",
 		"--prompt=SSH > ", "--header=" + header, "--query=" + query, "--print-query",
-		"--expect=enter,alt-p,alt-w,alt-s,alt-t,alt-c,ctrl-r",
+		"--expect=enter,ctrl-alt-p,ctrl-alt-w,ctrl-alt-n,ctrl-alt-t,ctrl-s,ctrl-alt-s,ctrl-r",
 		// Editing always uses the highlighted row, not the multiselection.
-		"--bind=ctrl-j:down,ctrl-k:up,tab:toggle+down,shift-tab:toggle+up,ctrl-u:half-page-up,ctrl-d:half-page-down,ctrl-e:become(printf '%s\\n' {q} ctrl-e {}),alt-e:become(printf '%s\\n' {q} alt-e {})",
+		"--bind=ctrl-j:down,ctrl-k:up,tab:toggle+down,shift-tab:toggle+up,ctrl-u:half-page-up,ctrl-d:half-page-down,ctrl-e:become(printf '%s\\n' {q} ctrl-e {}),ctrl-alt-e:become(printf '%s\\n' {q} ctrl-alt-e {})",
 		"--preview=" + shellCommand([]string{exe, "__preview", f.Name()}) + " {1}",
 		// ponytail: cap preview at 10 rows to preserve list space; dynamic sizing if needed.
 		"--preview-window=up:10:wrap",
