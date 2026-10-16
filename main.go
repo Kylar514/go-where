@@ -111,7 +111,8 @@ func app(args []string) error {
 		if *dest != "" {
 			argv = append(argv, "--destination", *dest)
 		}
-		return run([]string{"tmux", "display-popup", "-EE", "-c", o.Client, "-w", "90%", "-h", "85%", shellCommand(argv)})
+		// 45 fzf rows plus the popup's two border rows.
+		return run([]string{"tmux", "display-popup", "-EE", "-c", o.Client, "-w", "90%", "-h", "47", shellCommand(argv)})
 	}
 	query := ""
 	for {
@@ -214,6 +215,8 @@ func pick(hosts []Host, exe, query, dest string, o Origin) (key, nextQuery strin
 	}
 	header += "\n^J/K move · ^U/D half-page · Tab mark · Alt+P/W/S/T panes/windows/session/terminals\n^E edit host · Alt+E floating editor · Alt+C settings · ^R reload"
 	args := []string{
+		// 25 results + 10 preview rows + 10 rows of borders, labels and controls.
+		"--height=45",
 		"--multi", "--layout=default", "--header-first", "--header-lines=1", "--border", "--delimiter=\t", "--with-nth=2..",
 		"--prompt=SSH > ", "--header=" + header, "--query=" + query, "--print-query",
 		"--expect=enter,alt-p,alt-w,alt-s,alt-t,alt-c,ctrl-r",
