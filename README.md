@@ -115,6 +115,8 @@ Selecting a host opens a loopback SOCKS5 tunnel (`ssh -N -D`) through the host's
 
 **Enter launches in the background** (no terminal window; output goes to `$XDG_CACHE_HOME/go-where/rdp.log`). **Ctrl+Alt+T launches in a visible terminal** for debugging, using the same terminal key as the other modes. Placement (`rdp.destination`) is set in settings, not chosen from the picker.
 
+Certificate handling defaults to FreeRDP's `/cert:tofu` (trust on first use): the first certificate is accepted and remembered automatically; changed certificates are rejected. First-use trust assumes a trusted network/server. An explicit certificate option in `rdp.client` or `rdp.client_args` overrides this default. With local port-forward fallback, the temporary loopback endpoint may prevent stable trust tracking; prefer SOCKS-capable FreeRDP for a stable target identity.
+
 The username comes from `rdp.user`, and the domain from `rdp.domain_rules` matched against the ProxyJump hops in order, falling back to `rdp.default_domain`. FreeRDP prompts for the password unless `rdp.password_command` supplies it: the command's stdout is piped to the client (appended as `/p:...` via `/args-from`), never placed on a command line or written to a file.
 
 FreeRDP is detected from `rdp.client` or, if empty, from `xfreerdp3`, `xfreerdp`, `wlfreerdp3`, `sdl-freerdp`, and their `3` variants. SOCKS5 proxying requires FreeRDP 3.x; older clients fall back to a loopback port forward. `go-where rdm-report EXPORT.json` reads a Devolutions RDM JSON export and proposes `# Windows` tags by matching RDM `Url` values to SSH `HostName`s; it is read-only and never edits your config.

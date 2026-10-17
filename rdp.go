@@ -283,6 +283,19 @@ func (j rdpJob) clientArgs(mode string, port int) []string {
 	if mode == "socks" {
 		args = append(args, "/proxy:socks5://127.0.0.1:"+strconv.Itoa(port))
 	}
+	// Explicit client settings take precedence over the first-use trust default.
+	explicitCert := false
+	for _, configured := range [][]string{j.Client, j.ClientArgs} {
+		for _, arg := range configured {
+			lower := strings.ToLower(arg)
+			if strings.HasPrefix(lower, "/cert:") || strings.HasPrefix(lower, "/cert-") {
+				explicitCert = true
+			}
+		}
+	}
+	if !explicitCert {
+		args = append(args, "/cert:tofu")
+	}
 	return append(args, j.ClientArgs...)
 }
 

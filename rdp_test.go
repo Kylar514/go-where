@@ -14,6 +14,28 @@ import (
 	"time"
 )
 
+func TestRDPCertificateDefault(t *testing.T) {
+	for _, mode := range []string{"direct", "socks", "forward"} {
+		job := rdpJob{Host: "rdp.example", Port: 3389}
+		if !hasArg(job.clientArgs(mode, 41000), "/cert:tofu") {
+			t.Fatalf("%s must default to TOFU", mode)
+		}
+		for _, option := range []string{"/cert:deny", "/cert:ignore", "/CERT:TOFU", "/cert-ignore"} {
+			job.ClientArgs = []string{option}
+			args := job.clientArgs(mode, 41000)
+			if hasArg(args, "/cert:tofu") || !hasArg(args, option) {
+				t.Fatalf("explicit option must override default: %v", args)
+			}
+			job.ClientArgs = nil
+			job.Client = []string{"xfreerdp3", option}
+			if hasArg(job.clientArgs(mode, 41000), "/cert:tofu") {
+				t.Fatal("rdp.client certificate option must override default")
+			}
+			job.Client = nil
+		}
+	}
+}
+
 func TestRDPTagsAndRows(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -160,7 +182,7 @@ func TestRDPCommands(t *testing.T) {
 	if argv, _ = v6.tunnelArgv("forward", 41000); !hasArg(argv, "127.0.0.1:41000:[2001:db8::10]:3389") {
 		t.Fatalf("IPv6 target must be bracketed: %q", argv)
 	}
-	if got := job.clientArgs("socks", 41000); !reflect.DeepEqual(got, []string{"/v:192.0.2.10:3389", "/u:someone", "/d:qa.example", "/proxy:socks5://127.0.0.1:41000", "/dynamic-resolution"}) {
+	if got := job.clientArgs("socks", 41000); !reflect.DeepEqual(got, []string{"/v:192.0.2.10:3389", "/u:someone", "/d:qa.example", "/proxy:socks5://127.0.0.1:41000", "/cert:tofu", "/dynamic-resolution"}) {
 		t.Fatalf("socks client args: %q", got)
 	}
 	if got := job.clientArgs("forward", 41000); got[0] != "/v:127.0.0.1:41000" || hasArg(got, "/proxy:socks5://127.0.0.1:41000") {
