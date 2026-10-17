@@ -103,7 +103,6 @@ func (r *configReader) read(path string) error {
 	if err := s.Err(); err != nil {
 		return err
 	}
-	var pending []string
 	for i, line := range lines {
 		fields, comment, err := sshFields(line)
 		if err != nil {
@@ -111,14 +110,15 @@ func (r *configReader) read(path string) error {
 		}
 		if len(fields) == 0 {
 			if text := description(comment); text != "" {
-				pending = append(pending, text)
+				if r.current != nil && len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
+					r.current.comment = append(r.current.comment, text)
+				}
 			}
 			continue
 		}
 		key := strings.ToLower(fields[0])
 		if key == "host" {
-			b := &hostBlock{comment: pending}
-			pending = nil
+			b := &hostBlock{}
 			end := i + 1
 			for end < len(lines) {
 				f, _, _ := sshFields(lines[end])
@@ -134,11 +134,6 @@ func (r *configReader) read(path string) error {
 			}
 			r.blocks = append(r.blocks, b)
 			r.current, r.inMatch = b, false
-		} else {
-			if r.current != nil && key != "include" && key != "match" {
-				r.current.comment = append(r.current.comment, pending...)
-			}
-			pending = nil
 		}
 		if key == "match" {
 			r.current, r.inMatch = nil, true
@@ -184,9 +179,6 @@ func (r *configReader) read(path string) error {
 				}
 			}
 		}
-	}
-	if r.current != nil {
-		r.current.comment = append(r.current.comment, pending...)
 	}
 	return nil
 }

@@ -381,7 +381,7 @@ func hostRowsFor(hosts []Host, include func(Host) bool) string {
 		fmt.Fprintf(&input, "%d\t%-*s  %-*s  %-*s  %s\n", ids[i], widths[0], row[0], widths[1], row[1], widths[2], row[2], row[3])
 	}
 	if include != nil && len(rows) == 1 {
-		fmt.Fprintf(&input, "%d\t(no hosts are tagged; add a '# Windows' or '# RDP' comment inside or directly above a Host block)\n", emptyRowID)
+		fmt.Fprintf(&input, "%d\t(no hosts are tagged; add an indented '# Windows' or '# RDP' comment inside a Host block)\n", emptyRowID)
 	}
 	return input.String()
 }

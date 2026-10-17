@@ -101,11 +101,11 @@ Windows legacy-shell support, remote autocomplete, multiple source paths, per-ho
 
 ## RDP
 
-Press **Ctrl+O** and choose **RDP** (or run `go-where rdp`) to list Windows hosts from your SSH config. A host is an RDP target when a comment inside or directly above its `Host` block is exactly one of the configured tags (`windows` or `rdp` by default), so ordinary SSH hosts stay hidden.
+Press **Ctrl+O** and choose **RDP** (or run `go-where rdp`) to list Windows hosts from your SSH config. A host is an RDP target when an indented comment inside its `Host` block (or an inline comment on a directive) is exactly one of the configured tags (`windows` or `rdp` by default). Unindented standalone comments and section headings are ignored.
 
 ```text
-# Windows
 Host some-pc
+    # Windows
     HostName 192.0.2.10
     ProxyJump bastion
 ```

@@ -69,7 +69,7 @@ Host home
 	if hosts[0].Hostname != "192.0.2.10" || hosts[0].Line != 2 || hosts[0].File != root {
 		t.Fatalf("source tracking: %+v", hosts[0])
 	}
-	if hosts[0].Comment != "Personal servers · living room · Main machine" {
+	if hosts[0].Comment != "living room · Main machine" {
 		t.Fatalf("comments: %q", hosts[0].Comment)
 	}
 	if hosts[2].Hostname != "work.example.org" || hosts[2].JumpHost != "bastion" || hosts[2].Line != 2 || !strings.Contains(hosts[2].Block, "ProxyJump bastion") {
@@ -77,6 +77,41 @@ Host home
 	}
 	if hosts[3].Hostname != "other.example.org" || strings.Contains(hosts[3].Block, "Match") {
 		t.Fatalf("Match boundary: %+v", hosts[3])
+	}
+}
+
+func TestTrailingHostComments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	writeTestFile(t, path, `# Personal
+Host router
+    HostName 192.0.2.1
+    # Category Personal
+    # Router
+
+Host desktop
+    HostName 192.0.2.2
+	# Windows
+
+# Gateways
+Host gateway
+    HostName 192.0.2.3
+    # Gateway connection
+`)
+	hosts, err := readHosts(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Category Personal · Router", "Windows", "Gateway connection"}
+	if len(hosts) != len(want) {
+		t.Fatalf("hosts: %v", hosts)
+	}
+	for i, h := range hosts {
+		if h.Comment != want[i] {
+			t.Errorf("%s comment: %q, want %q", h.Alias, h.Comment, want[i])
+		}
+		if h.isRDP([]string{"windows", "rdp"}) != (h.Alias == "desktop") {
+			t.Errorf("RDP tag assigned to wrong host: %s", h.Alias)
+		}
 	}
 }
 

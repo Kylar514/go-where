@@ -48,11 +48,11 @@ Host linux
 			tagged = append(tagged, h.Alias)
 		}
 	}
-	if !reflect.DeepEqual(tagged, []string{"above", "inside", "inline"}) {
+	if !reflect.DeepEqual(tagged, []string{"inside", "inline"}) {
 		t.Fatalf("tagged hosts: %v", tagged)
 	}
 	rows := strings.Split(strings.TrimSuffix(rowsForMode(hosts, "rdp", []string{"windows", "rdp"}), "\n"), "\n")
-	if len(rows) != 4 || !strings.HasPrefix(rows[0], "-1\tHOST") || !strings.HasPrefix(rows[1], "0\tabove") || !strings.HasPrefix(rows[2], "1\tinside") || !strings.HasPrefix(rows[3], "2\tinline") {
+	if len(rows) != 3 || !strings.HasPrefix(rows[0], "-1\tHOST") || !strings.HasPrefix(rows[1], "1\tinside") || !strings.HasPrefix(rows[2], "2\tinline") {
 		t.Fatalf("filtered rows must keep full-list IDs: %q", rows)
 	}
 	if rowsForMode(hosts, "ssh", nil) != hostRows(hosts) {
