@@ -154,9 +154,13 @@ func app(args []string) error {
 			return fmt.Errorf("no explicit host aliases found in %s", *sshConfig)
 		}
 		state.RDPTags = c.RDP.Tags
+		pickDest := destination(c.Destination, o, c)
+		if state.Mode == "rdp" {
+			pickDest = rdpDestination(c, false) // RDP ignores the picker destination.
+		}
 		var key string
 		var selected []Host
-		key, query, selected, err = pick(hosts, exe, query, destination(c.Destination, o, c), o, &state)
+		key, query, selected, err = pick(hosts, exe, query, pickDest, o, &state)
 		if err != nil || key == "cancel" {
 			return err
 		}
@@ -266,16 +270,11 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 		header += " | origin " + o.Session + ":" + o.Window + "." + o.Pane
 	}
 	if state.Mode == "rdp" {
-		header += "\n^J/K move · ^U/D half-page · Tab mark · Enter launch detached · Ctrl+T launch in terminal (debug)\nCtrl+Alt+P/W/N/T panes/windows/session/terminals · Ctrl+S/E floating settings/host · Ctrl+Alt+S/E pane settings/host · ^R reload"
+		header += "\n^J/K move · ^U/D half-page · Tab mark · Enter launch in background · Ctrl+Alt+T launch in terminal (debug)\nCtrl+Alt+P/W/N panes/windows/session · Ctrl+S/E floating settings/host · Ctrl+Alt+S/E pane settings/host · ^R reload"
 	} else {
 		header += "\n^J/K move · ^U/D half-page · Tab mark · Ctrl+Alt+P/W/N/T panes/windows/session/terminals\nCtrl+S/E floating settings/host · Ctrl+Alt+S/E pane settings/host · ^R reload"
 	}
-	// Ctrl+T (launch in terminal) only applies in RDP mode; elsewhere it stays unbound.
-	expect := []string{"enter"}
-	if state.Mode == "rdp" {
-		expect = append(expect, "ctrl-t")
-	}
-	expect = append(expect, "ctrl-alt-p", "ctrl-alt-w", "ctrl-alt-n", "ctrl-alt-t", "ctrl-s", "ctrl-alt-s", "ctrl-r")
+	expect := []string{"enter", "ctrl-alt-p", "ctrl-alt-w", "ctrl-alt-n", "ctrl-alt-t", "ctrl-s", "ctrl-alt-s", "ctrl-r"}
 	args := []string{
 		// 25 results + 10 preview rows + 10 rows of borders, labels and controls.
 		"--height=45",
@@ -328,7 +327,9 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 		return "", query, nil, fmt.Errorf("unexpected fzf output")
 	}
 	nextQuery, key = lines[0], lines[1]
-	state.Debug = key == "ctrl-t" && state.Mode == "rdp"
+	// In RDP mode Ctrl+Alt+T reuses the terminal key from the other modes as the
+	// debug trigger: a visible terminal instead of the usual detached launch.
+	state.Debug = key == "ctrl-alt-t" && state.Mode == "rdp"
 	rows := lines[2:]
 	state.Marked = nil
 	for _, row := range rows {

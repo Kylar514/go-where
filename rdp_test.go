@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestRDPTagsAndRows(t *testing.T) {
@@ -362,9 +363,6 @@ func TestLaunchRDPPlacementAndValidation(t *testing.T) {
 	if err := launchRDP(hosts, o, c, "", "/fake/ssh-pick", false); err == nil {
 		t.Fatal("several RDP sessions cannot share the current terminal")
 	}
-	if err := launchRDP(hosts, Origin{}, c, "", "/fake/ssh-pick", false); err != nil {
-		t.Fatalf("current is not a tmux target, so no tmux is required: %v", err)
-	}
 	c.RDP.Destination = "tmux-pane"
 	if err := launchRDP(hosts, Origin{}, c, "", "/fake/ssh-pick", false); err == nil {
 		t.Fatal("tmux placement must fail outside tmux")
@@ -373,10 +371,31 @@ func TestLaunchRDPPlacementAndValidation(t *testing.T) {
 		t.Fatalf("config destination: %q", got)
 	}
 	if got := rdpDestination(c, true); got != "terminal" {
-		t.Fatalf("Ctrl+T must force a terminal: %q", got)
+		t.Fatalf("Ctrl+Alt+T must force a terminal: %q", got)
 	}
 	if got := rdpDestination(Config{}, false); got != "background" {
 		t.Fatalf("default must be detached: %q", got)
+	}
+	// Background launches a detached process per host, with no terminal and no tmux.
+	t.Setenv("BG", filepath.Join(dir, "background.log"))
+	fakeCommand(t, dir, "fake-ssh-pick", `printf 'started\n' >> "$BG"`)
+	c.RDP.Destination = "background"
+	if err := launchRDP(hosts, Origin{}, c, "", "spawn-rdp", false); err == nil {
+		t.Fatal("a missing background executable must be reported")
+	}
+	fakeCommand(t, dir, "spawn-rdp", `printf 'bg\n' >> "$BG"`)
+	if err := launchRDP(hosts, o, c, "", "spawn-rdp", false); err != nil {
+		t.Fatalf("background launch: %v", err)
+	}
+	for i := 0; i < 100; i++ {
+		if b, _ := os.ReadFile(os.Getenv("BG")); strings.Count(string(b), "bg") == 2 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	bg, _ := os.ReadFile(os.Getenv("BG"))
+	if strings.Count(string(bg), "bg") != 2 {
+		t.Fatalf("each host must spawn its own detached job:\n%s", bg)
 	}
 	job, _ := newRDPJob(c.RDP, hosts[0], "")
 	decoded, err := decodeRDPJob(encodeRDPJob(job))

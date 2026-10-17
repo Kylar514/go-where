@@ -1,6 +1,6 @@
 # Connection tools
 
-Status: initial SCP, legacy SCP, and rsync implementation complete. RDP remains proposed.
+Status: initial SCP, legacy SCP, rsync, and RDP implementation complete.
 
 Implemented: Ctrl+O in-picker mode selection; Back-capable local/remote path setup with local Tab completion; multi-host uploads and single-host downloads; explicit review; rsync dry runs; source-aware native commands; independent jobs with output held until dismissal. Native SCP/SFTP, legacy SCP, and rsync uploads/downloads were checked against a disposable loopback SSH endpoint, including ProxyJump. Windows endpoint behavior is not verified. See the [transfer guide](../README.md#transfers) for current behavior and limits.
 
@@ -55,15 +55,13 @@ Reuse host selection, direction, path entry, confirmation, and execution placeme
 
 ### 3. RDP
 
-Proposed command:
+Implemented. Pick RDP from Ctrl+O, or run:
 
 ```sh
 ssh-pick rdp
 ```
 
-Use explicit RDP target metadata rather than treating every SSH alias as an RDP-capable machine. A target can reference an existing SSH alias as its bastion, or declare an RD Gateway supported natively by the chosen RDP client.
-
-For SSH tunneling, bind a local forward to loopback only, wait for tunnel readiness, then launch the RDP client. Own the tunnel lifecycle and clean it up when the client exits or launch fails. Investigate safe local-port allocation rather than assuming a fixed port is available.
+Only SSH hosts carrying an explicit RDP tag comment are listed. A host's last `ProxyJump` becomes the bastion; the launcher opens a loopback SOCKS5 tunnel (`ssh -N -D`) through it and points FreeRDP at the real target host, so the RDP certificate name still matches. Earlier hops are passed as `-J`. The tunnel is bound to loopback, readiness-checked, and cleaned up when the client exits or launch fails; the port is allocated, not fixed. The CLI filename does not determine this mode; the CLI remains `ssh-pick`.
 
 Preserve server certificate and identity verification across the tunnel. Do not bypass certificate checks to work around a localhost connection name. Passwords belong in client prompts or supported credential stores, not target metadata or command-line arguments.
 

@@ -42,7 +42,7 @@ Columns are labeled **HOST**, **HOSTNAME / IP**, **JUMPHOST**, and **COMMENT**, 
 | Ctrl+J / Ctrl+K or arrows | Move down / up |
 | Tab / Shift+Tab | Toggle selection and move to the next / previous result |
 | Enter | Connect using your configured default |
-| Ctrl+O | Choose SSH, SCP, Legacy SCP, or rsync without losing the current search, highlight, or marks |
+| Ctrl+O | Choose SSH, SCP, Legacy SCP, rsync, or RDP without losing the current search, highlight, or marks |
 | Ctrl+Alt+P | New pane per host in the originating window |
 | Ctrl+Alt+W | New window per host in the originating session |
 | Ctrl+Alt+N | New session, one window per host; switch the originating client |
@@ -97,7 +97,26 @@ For rsync, **Preview changes** runs `--dry-run --itemize-changes` against every 
 
 Each confirmed transfer runs independently and keeps success/failure output open until Enter dismisses it. A failed job or failed launcher does not cancel other hosts. Custom `--ssh-config` selection and native jump-host behavior carry through to each client. As with SSH itself, that configuration may authorize local commands. Some OpenSSH builds mishandle spaces/quotes in a custom config filename when constructing their implicit ProxyJump command; use a config filename without those characters if native SSH fails the same way.
 
-Windows legacy-shell support, remote autocomplete, multiple source paths, per-host destination overrides, multi-host downloads, and RDP remain deferred. Modern SCP against Windows has not been verified in this container.
+Windows legacy-shell support, remote autocomplete, multiple source paths, per-host destination overrides, and multi-host downloads remain deferred. Modern SCP against Windows has not been verified in this container.
+
+## RDP
+
+Press **Ctrl+O** and choose **RDP** (or run `ssh-pick rdp`) to list Windows hosts from your SSH config. A host is an RDP target when a comment inside or directly above its `Host` block is exactly one of the configured tags (`windows` or `rdp` by default), so ordinary SSH hosts stay hidden.
+
+```text
+# Windows
+Host some-pc
+    HostName 192.0.2.10
+    ProxyJump bastion
+```
+
+Selecting a host opens a loopback SOCKS5 tunnel (`ssh -N -D`) through the host's **last** `ProxyJump` hop, with any earlier hops passed as `-J`, and runs a FreeRDP client through it. A host with no `ProxyJump` connects directly. This keeps the RDP certificate name matching the target instead of the tunnel. If the client lacks SOCKS5 support, the launcher falls back to a loopback port forward and prints a certificate-name warning. Only `ProxyJump` routes are supported; `ProxyCommand` is rejected.
+
+**Enter launches in the background** (no terminal window; output goes to `$XDG_CACHE_HOME/ssh-pick/rdp.log`). **Ctrl+Alt+T launches in a visible terminal** for debugging, using the same terminal key as the other modes. Placement (`rdp.destination`) is set in settings, not chosen from the picker.
+
+The username comes from `rdp.user`, and the domain from `rdp.domain_rules` matched against the ProxyJump hops in order, falling back to `rdp.default_domain`. FreeRDP prompts for the password unless `rdp.password_command` supplies it: the command's stdout is piped to the client (appended as `/p:...` via `/args-from`), never placed on a command line or written to a file.
+
+FreeRDP is detected from `rdp.client` or, if empty, from `xfreerdp3`, `xfreerdp`, `wlfreerdp3`, `sdl-freerdp`, and their `3` variants. SOCKS5 proxying requires FreeRDP 3.x; older clients fall back to a loopback port forward. `ssh-pick rdm-report EXPORT.json` reads a Devolutions RDM JSON export and proposes `# Windows` tags by matching RDM `Url` values to SSH `HostName`s; it is read-only and never edits your config.
 
 ### Transfer checks
 
@@ -121,11 +140,25 @@ The test creates its own temporary source/destination directories and checks SCP
   "edit_destination": "tmux-pane",
   "terminal": ["auto"],
   "fallback_terminal": ["kitty"],
-  "floating_terminal": ["auto"]
+  "floating_terminal": ["auto"],
+  "rdp": {
+    "user": "",
+    "default_domain": "",
+    "domain_rules": [],
+    "tags": ["windows", "rdp"],
+    "port": 3389,
+    "tunnel": "auto",
+    "client": [],
+    "client_args": ["/dynamic-resolution"],
+    "password_command": [],
+    "destination": "background"
+  }
 }
 ```
 
 Destinations: `tmux-pane`, `tmux-window`, `tmux-session`, `terminal`, `current`. The outside-tmux fallback is `terminal` or `current`. `edit_destination` controls the `ssh-pick config` CLI command; picker shortcuts explicitly choose floating or pane editing. Editing uses the Vim-compatible `+LINE -- FILE` convention.
+
+RDP uses its own `rdp.destination`, which adds `background` (detached, no terminal window; the default) to the destinations above. `rdp.tunnel` is `auto`, `socks`, or `forward`. `rdp.tags` names the SSH-config comment tags that mark Windows/RDP hosts. `rdp.password_command` is an argument array, e.g. `["rbw", "get", "RDP/work"]`.
 
 `terminal: ["auto"]` asks `xdg-terminal-exec` to resolve your preferred terminal using its XDG terminal lists and desktop entries. The resolver returns NUL-separated arguments, not shell code. If the resolver is unavailable or cannot find a terminal, `fallback_terminal` is used; set it to `[]` to disable fallback. `$TERM` is never used to guess your preferred application. A terminal that resolves successfully but fails to launch is reported, not retried in another terminal.
 
