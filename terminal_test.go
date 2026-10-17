@@ -18,8 +18,8 @@ func TestTerminalResolution(t *testing.T) {
 	fakeCommand(t, dir, "xdg-terminal-exec", `printf '%s\n' "$@" > "$CALLS"
 shift
 printf 'native-terminal\000'
-if [ "$1" = --app-id=org.go-ssh.editor ]; then
-  printf '%s\000' --class org.go-ssh.editor
+if [ "$1" = --app-id=org.gowhere.editor ]; then
+  printf '%s\000' --class org.gowhere.editor
   shift
 fi
 shift
@@ -83,7 +83,7 @@ func TestTerminalStartupDiagnostics(t *testing.T) {
 			t.Fatalf("startup failure hidden: %v", err)
 		}
 	}
-	path := filepath.Join(dir, "ssh-pick", "terminal.log")
+	path := filepath.Join(dir, "go-where", "terminal.log")
 	b, err := os.ReadFile(path)
 	if err != nil || !strings.Contains(string(b), "display unavailable") {
 		t.Fatalf("missing retained diagnostics: %q, %v", b, err)

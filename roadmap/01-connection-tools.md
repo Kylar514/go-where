@@ -25,8 +25,8 @@ This is the first roadmap item. Directory inventory and a shared server are not 
 Proposed commands:
 
 ```sh
-ssh-pick scp
-ssh-pick scp --legacy
+go-where scp
+go-where scp --legacy
 ```
 
 Start with one host per transfer. Pick the host, choose upload/download, supply local and remote paths, then confirm the generated operation before running it. Allow required values to be supplied as arguments later without forcing interactive prompts.
@@ -42,7 +42,7 @@ Show progress and preserve failures in the execution pane or terminal. Do not re
 Proposed command:
 
 ```sh
-ssh-pick rsync
+go-where rsync
 ```
 
 Reuse host selection, direction, path entry, confirmation, and execution placement. Use rsync over SSH, preserving SSH config selection and jump-host behavior.
@@ -58,10 +58,10 @@ Reuse host selection, direction, path entry, confirmation, and execution placeme
 Implemented. Pick RDP from Ctrl+O, or run:
 
 ```sh
-ssh-pick rdp
+go-where rdp
 ```
 
-Only SSH hosts carrying an explicit RDP tag comment are listed. A host's last `ProxyJump` becomes the bastion; the launcher opens a loopback SOCKS5 tunnel (`ssh -N -D`) through it and points FreeRDP at the real target host, so the RDP certificate name still matches. Earlier hops are passed as `-J`. The tunnel is bound to loopback, readiness-checked, and cleaned up when the client exits or launch fails; the port is allocated, not fixed. The CLI filename does not determine this mode; the CLI remains `ssh-pick`.
+Only SSH hosts carrying an explicit RDP tag comment are listed. A host's last `ProxyJump` becomes the bastion; the launcher opens a loopback SOCKS5 tunnel (`ssh -N -D`) through it and points FreeRDP at the real target host, so the RDP certificate name still matches. Earlier hops are passed as `-J`. The tunnel is bound to loopback, readiness-checked, and cleaned up when the client exits or launch fails; the port is allocated, not fixed. The CLI filename does not determine this mode; the CLI remains `go-where`.
 
 Preserve server certificate and identity verification across the tunnel. Do not bypass certificate checks to work around a localhost connection name. Passwords belong in client prompts or supported credential stores, not target metadata or command-line arguments.
 

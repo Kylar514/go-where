@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const editorAppID = "org.go-ssh.editor"
+const editorAppID = "org.gowhere.editor"
 
 func terminalCommand(c Config, argv []string, floating bool) ([]string, error) {
 	prefix := append([]string{}, c.Terminal...)
@@ -68,7 +68,7 @@ func cacheLog(name string) (*os.File, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	dir := filepath.Join(cache, "ssh-pick")
+	dir := filepath.Join(cache, "go-where")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, "", err
 	}

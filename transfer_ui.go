@@ -136,7 +136,7 @@ func choose(title string, options []choice, text string) (string, bool, error) {
 	args := []string{"--height=90%", "--layout=default", "--border", "--header-first", "--delimiter=\t", "--with-nth=2..",
 		"--prompt=" + title + " > ", "--header=Ctrl+J/K or arrows · Enter select · Esc back", "--bind=ctrl-j:down,ctrl-k:up"}
 	if text != "" {
-		f, err := os.CreateTemp("", "ssh-pick-review-*.txt")
+		f, err := os.CreateTemp("", "go-where-review-*.txt")
 		if err != nil {
 			return "", false, err
 		}
@@ -196,7 +196,7 @@ func writeMode(path, mode string) error {
 	if !validMode(mode) {
 		return fmt.Errorf("invalid picker mode")
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), "ssh-pick-mode-next-*")
+	f, err := os.CreateTemp(filepath.Dir(path), "go-where-mode-next-*")
 	if err != nil {
 		return err
 	}

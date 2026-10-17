@@ -265,17 +265,17 @@ case "$header" in *HOST*HOSTNAME*JUMPHOST*COMMENT*) ;; *) exit 96 ;; esac
 IFS= read -r row
 printf 'query\nctrl-alt-w\n%s\n' "$row"`)
 	hosts := []Host{{Alias: "web", Hostname: "192.0.2.1", Comment: "Production"}}
-	key, query, selected, err := pick(hosts, "/fake/ssh-pick", "", "tmux-pane", Origin{}, nil)
+	key, query, selected, err := pick(hosts, "/fake/go-where", "", "tmux-pane", Origin{}, nil)
 	if err != nil || key != "ctrl-alt-w" || query != "query" || len(selected) != 1 || selected[0].Alias != "web" {
 		t.Fatalf("picker: %q %q %+v %v", key, query, selected, err)
 	}
 	fakeCommand(t, dir, "fzf", "printf 'notfound\\nctrl-r\\n'; exit 1")
-	key, _, _, err = pick(hosts, "/fake/ssh-pick", "", "terminal", Origin{}, nil)
+	key, _, _, err = pick(hosts, "/fake/go-where", "", "terminal", Origin{}, nil)
 	if err != nil || key != "ctrl-r" {
 		t.Fatalf("reload with no matches: %q, %v", key, err)
 	}
 	fakeCommand(t, dir, "fzf", "exit 130")
-	key, _, _, err = pick(hosts, "/fake/ssh-pick", "", "terminal", Origin{}, nil)
+	key, _, _, err = pick(hosts, "/fake/go-where", "", "terminal", Origin{}, nil)
 	if err != nil || key != "cancel" {
 		t.Fatalf("cancel: %q, %v", key, err)
 	}

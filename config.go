@@ -30,7 +30,7 @@ func defaultConfig() Config {
 
 func configPath() (string, error) {
 	dir, err := os.UserConfigDir()
-	return filepath.Join(dir, "ssh-pick", "config.json"), err
+	return filepath.Join(dir, "go-where", "config.json"), err
 }
 
 func loadConfig(path string) (Config, error) {

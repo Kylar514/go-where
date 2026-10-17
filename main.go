@@ -15,7 +15,7 @@ import (
 
 func main() {
 	if err := app(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "ssh-pick:", err)
+		fmt.Fprintln(os.Stderr, "go-where:", err)
 		os.Exit(1)
 	}
 }
@@ -38,7 +38,7 @@ func app(args []string) error {
 	if err != nil {
 		return err
 	}
-	fs := flag.NewFlagSet("ssh-pick", flag.ContinueOnError)
+	fs := flag.NewFlagSet("go-where", flag.ContinueOnError)
 	sshConfig := fs.String("ssh-config", filepath.Join(home, ".ssh", "config"), "SSH config to browse and connect with")
 	config := fs.String("config", settings, "picker settings (JSON)")
 	dest := fs.String("destination", "", "override default: tmux-pane, tmux-window, tmux-session, terminal, current")
@@ -47,7 +47,7 @@ func app(args []string) error {
 	context := fs.String("origin", "", "internal: captured tmux origin")
 	legacy := fs.Bool("legacy", false, "use the legacy SCP protocol (scp mode only)")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: ssh-pick [ssh|scp|rsync|rdp] [options]\n       ssh-pick scp --legacy [options]\n       ssh-pick config [options]\n       ssh-pick rdm-report EXPORT.json [--ssh-config path]\n\nCtrl+O changes mode. Transfer modes always review before execution.")
+		fmt.Fprintln(fs.Output(), "Usage: go-where [ssh|scp|rsync|rdp] [options]\n       go-where scp --legacy [options]\n       go-where config [options]\n       go-where rdm-report EXPORT.json [--ssh-config path]\n\nCtrl+O changes mode. Transfer modes always review before execution.")
 		fs.PrintDefaults()
 	}
 	editSettings := len(args) > 0 && args[0] == "config"
@@ -231,7 +231,7 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 	if state == nil {
 		state = &PickerState{Mode: "ssh"}
 	}
-	modeFile, err := os.CreateTemp("", "ssh-pick-mode-*")
+	modeFile, err := os.CreateTemp("", "go-where-mode-*")
 	if err != nil {
 		return "", query, nil, err
 	}
@@ -241,7 +241,7 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 	if err = errors.Join(err, closeErr); err != nil {
 		return "", query, nil, err
 	}
-	listedFile, err := os.CreateTemp("", "ssh-pick-listed-*")
+	listedFile, err := os.CreateTemp("", "go-where-listed-*")
 	if err != nil {
 		return "", query, nil, err
 	}
@@ -251,7 +251,7 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 	if err = errors.Join(err, closeErr); err != nil {
 		return "", query, nil, err
 	}
-	f, err := os.CreateTemp("", "ssh-pick-*.json")
+	f, err := os.CreateTemp("", "go-where-*.json")
 	if err != nil {
 		return "", query, nil, err
 	}

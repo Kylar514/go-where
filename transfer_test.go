@@ -126,7 +126,7 @@ if [ ! -f "$CALLS.first" ]; then touch "$CALLS.first"; exit 1; fi`)
 	writeTestFile(t, source, "payload")
 	tx := Transfer{Mode: "scp", Direction: "upload", Local: source, Remote: "/tmp"}
 	o := Origin{"%1", "@1", "$1", "test"}
-	err := launchTransfers(tx, []Host{{Alias: "first"}, {Alias: "second"}}, "tmux-pane", o, defaultConfig(), "", "/fake/ssh-pick")
+	err := launchTransfers(tx, []Host{{Alias: "first"}, {Alias: "second"}}, "tmux-pane", o, defaultConfig(), "", "/fake/go-where")
 	b, _ := os.ReadFile(os.Getenv("CALLS"))
 	if err == nil || !strings.Contains(err.Error(), "first") || strings.Count(string(b), "split-window") != 2 {
 		t.Fatalf("independent jobs not attempted: %v\n%s", err, b)
@@ -174,12 +174,12 @@ func TestPathPromptCompletesAndPreservesBackInput(t *testing.T) {
 else
   printf 'enter\n%s\n' "$STEPS/a file"
 fi`)
-	path, back, err := pathPrompt("Local source", "", true, "/fake/ssh-pick")
+	path, back, err := pathPrompt("Local source", "", true, "/fake/go-where")
 	if err != nil || back || path != filepath.Join(dir, "a file") {
 		t.Fatalf("Tab/Enter: %q, %v, %v", path, back, err)
 	}
 	fakeCommand(t, dir, "fzf", `printf '%s\n' back 'C:\Users\Kyle\Downloads\new file'`)
-	path, back, err = pathPrompt("Remote", "", false, "/fake/ssh-pick")
+	path, back, err = pathPrompt("Remote", "", false, "/fake/go-where")
 	if err != nil || !back || path != `C:\Users\Kyle\Downloads\new file` {
 		t.Fatalf("Back/Windows syntax: %q, %v, %v", path, back, err)
 	}
@@ -265,7 +265,7 @@ cat "$STEPS/$n"`)
 		writeTestFile(t, filepath.Join(dir, strconv.Itoa(i+1)), out)
 	}
 	draft := Transfer{Mode: "scp", Direction: "upload"}
-	launched, err := transferWizard(&draft, []Host{{Alias: "a"}, {Alias: "b"}}, "tmux-pane", Origin{"%1", "@1", "$1", "client"}, defaultConfig(), "", "/fake/ssh-pick")
+	launched, err := transferWizard(&draft, []Host{{Alias: "a"}, {Alias: "b"}}, "tmux-pane", Origin{"%1", "@1", "$1", "client"}, defaultConfig(), "", "/fake/go-where")
 	if err != nil || !launched || draft.Remote != "/final destination" || draft.Local != source {
 		t.Fatalf("wizard state: %+v, %v, %v", draft, launched, err)
 	}
@@ -281,9 +281,9 @@ cat "$STEPS/$n"`)
 
 // Opt in only with a disposable loopback SSH server sharing this filesystem.
 func TestTransferEndpointIntegration(t *testing.T) {
-	config := os.Getenv("SSH_PICK_TEST_CONFIG")
+	config := os.Getenv("GO_WHERE_TEST_CONFIG")
 	if config == "" {
-		t.Skip("set SSH_PICK_TEST_CONFIG to a disposable loopback SSH config with alias test-target")
+		t.Skip("set GO_WHERE_TEST_CONFIG to a disposable loopback SSH config with alias test-target")
 	}
 	dir := t.TempDir()
 	source := filepath.Join(dir, "source file's $(literal).txt")
@@ -295,7 +295,7 @@ func TestTransferEndpointIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if ssh := os.Getenv("SSH_PICK_TEST_SSH"); argv[0] == "scp" && ssh != "" {
+		if ssh := os.Getenv("GO_WHERE_TEST_SSH"); argv[0] == "scp" && ssh != "" {
 			// Extracted test clients may have a compiled-in /usr/bin/ssh path.
 			argv = append([]string{"scp", "-S", ssh}, argv[1:]...)
 		}

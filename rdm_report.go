@@ -113,7 +113,7 @@ func rdmReportCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	fs := flag.NewFlagSet("ssh-pick rdm-report", flag.ContinueOnError)
+	fs := flag.NewFlagSet("go-where rdm-report", flag.ContinueOnError)
 	sshConfig := fs.String("ssh-config", filepath.Join(home, ".ssh", "config"), "SSH config to compare against")
 	config := fs.String("config", settings, "picker settings (JSON)")
 	if err := fs.Parse(args); err != nil {
@@ -123,7 +123,7 @@ func rdmReportCommand(args []string) error {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: ssh-pick rdm-report [--ssh-config path] EXPORT.json")
+		return fmt.Errorf("usage: go-where rdm-report [--ssh-config path] EXPORT.json")
 	}
 	c, err := loadConfig(expandHome(*config, home))
 	if err != nil {

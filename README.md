@@ -1,4 +1,4 @@
-# ssh-pick
+# go-where
 
 A Linux-first SSH host picker: one Go executable, fzf for the UI, OpenSSH for connections. No plugin framework or host database. Native Windows integration is deferred.
 
@@ -9,22 +9,22 @@ Requires Go 1.23+ to build. Runtime requirements: fzf and OpenSSH; tmux 3.3+ for
 ```sh
 go test ./...
 mkdir -p "$HOME/.local/bin"
-go build -o "$HOME/.local/bin/ssh-pick" .
-ssh-pick
+go build -o "$HOME/.local/bin/go-where" .
+go-where
 ```
 
 Inside an attached tmux pane, this opens a popup and captures the originating session/window/pane/client. Outside tmux, it runs in your terminal. Enter opens new panes in the original window, or new windows in your preferred terminal outside tmux. It never picks an arbitrary tmux session.
 
 ```sh
-ssh-pick --destination tmux-window
-ssh-pick --destination current          # SSH in the picker terminal; one host only
-ssh-pick --no-popup                     # inline picker, still targets the original tmux pane
-ssh-pick --ssh-config ./local/config    # also passes this file to ssh -F
-ssh-pick config                        # create/open settings without overwriting them
-ssh-pick --help
-ssh-pick scp                           # Start in modern SCP mode
-ssh-pick scp --legacy                  # Explicit legacy SCP; never an automatic retry
-ssh-pick rsync
+go-where --destination tmux-window
+go-where --destination current          # SSH in the picker terminal; one host only
+go-where --no-popup                     # inline picker, still targets the original tmux pane
+go-where --ssh-config ./local/config    # also passes this file to ssh -F
+go-where config                        # create/open settings without overwriting them
+go-where --help
+go-where scp                           # Start in modern SCP mode
+go-where scp --legacy                  # Explicit legacy SCP; never an automatic retry
+go-where rsync
 ```
 
 With the default SSH config, connections use `ssh -- alias`, preserving normal user and system SSH configuration. With `--ssh-config`, connections use `ssh -F path -- alias`; OpenSSH's usual `-F` semantics apply (including skipping the system config).
@@ -101,7 +101,7 @@ Windows legacy-shell support, remote autocomplete, multiple source paths, per-ho
 
 ## RDP
 
-Press **Ctrl+O** and choose **RDP** (or run `ssh-pick rdp`) to list Windows hosts from your SSH config. A host is an RDP target when a comment inside or directly above its `Host` block is exactly one of the configured tags (`windows` or `rdp` by default), so ordinary SSH hosts stay hidden.
+Press **Ctrl+O** and choose **RDP** (or run `go-where rdp`) to list Windows hosts from your SSH config. A host is an RDP target when a comment inside or directly above its `Host` block is exactly one of the configured tags (`windows` or `rdp` by default), so ordinary SSH hosts stay hidden.
 
 ```text
 # Windows
@@ -112,25 +112,25 @@ Host some-pc
 
 Selecting a host opens a loopback SOCKS5 tunnel (`ssh -N -D`) through the host's **last** `ProxyJump` hop, with any earlier hops passed as `-J`, and runs a FreeRDP client through it. A host with no `ProxyJump` connects directly. This keeps the RDP certificate name matching the target instead of the tunnel. If the client lacks SOCKS5 support, the launcher falls back to a loopback port forward and prints a certificate-name warning. Only `ProxyJump` routes are supported; `ProxyCommand` is rejected.
 
-**Enter launches in the background** (no terminal window; output goes to `$XDG_CACHE_HOME/ssh-pick/rdp.log`). **Ctrl+Alt+T launches in a visible terminal** for debugging, using the same terminal key as the other modes. Placement (`rdp.destination`) is set in settings, not chosen from the picker.
+**Enter launches in the background** (no terminal window; output goes to `$XDG_CACHE_HOME/go-where/rdp.log`). **Ctrl+Alt+T launches in a visible terminal** for debugging, using the same terminal key as the other modes. Placement (`rdp.destination`) is set in settings, not chosen from the picker.
 
 The username comes from `rdp.user`, and the domain from `rdp.domain_rules` matched against the ProxyJump hops in order, falling back to `rdp.default_domain`. FreeRDP prompts for the password unless `rdp.password_command` supplies it: the command's stdout is piped to the client (appended as `/p:...` via `/args-from`), never placed on a command line or written to a file.
 
-FreeRDP is detected from `rdp.client` or, if empty, from `xfreerdp3`, `xfreerdp`, `wlfreerdp3`, `sdl-freerdp`, and their `3` variants. SOCKS5 proxying requires FreeRDP 3.x; older clients fall back to a loopback port forward. `ssh-pick rdm-report EXPORT.json` reads a Devolutions RDM JSON export and proposes `# Windows` tags by matching RDM `Url` values to SSH `HostName`s; it is read-only and never edits your config.
+FreeRDP is detected from `rdp.client` or, if empty, from `xfreerdp3`, `xfreerdp`, `wlfreerdp3`, `sdl-freerdp`, and their `3` variants. SOCKS5 proxying requires FreeRDP 3.x; older clients fall back to a loopback port forward. `go-where rdm-report EXPORT.json` reads a Devolutions RDM JSON export and proposes `# Windows` tags by matching RDM `Url` values to SSH `HostName`s; it is read-only and never edits your config.
 
 ### Transfer checks
 
-`go test ./...` covers command construction, quoting, completion, Back navigation, independent batch launches, dry runs, and output retention using synthetic fixtures. To run the optional native transfer test, supply `SSH_PICK_TEST_CONFIG` pointing to a **disposable loopback server sharing the local filesystem** with alias `test-target`:
+`go test ./...` covers command construction, quoting, completion, Back navigation, independent batch launches, dry runs, and output retention using synthetic fixtures. To run the optional native transfer test, supply `GO_WHERE_TEST_CONFIG` pointing to a **disposable loopback server sharing the local filesystem** with alias `test-target`:
 
 ```sh
-SSH_PICK_TEST_CONFIG=/path/to/disposable/config go test -run TestTransferEndpointIntegration -v .
+GO_WHERE_TEST_CONFIG=/path/to/disposable/config go test -run TestTransferEndpointIntegration -v .
 ```
 
-The test creates its own temporary source/destination directories and checks SCP, legacy SCP, rsync dry-run safety, directory contents, and uploads/downloads. It can exercise ProxyJump when configured in the fixture. `SSH_PICK_TEST_SSH` optionally selects an extracted test SSH client for SCP. Do not point this test at production hosts.
+The test creates its own temporary source/destination directories and checks SCP, legacy SCP, rsync dry-run safety, directory contents, and uploads/downloads. It can exercise ProxyJump when configured in the fixture. `GO_WHERE_TEST_SSH` optionally selects an extracted test SSH client for SCP. Do not point this test at production hosts.
 
 ## Settings
 
-`ssh-pick config` creates and opens `$XDG_CONFIG_HOME/ssh-pick/config.json` (normally `~/.config/ssh-pick/config.json`). JSON keeps the executable dependency-free. Missing fields use these defaults:
+`go-where config` creates and opens `$XDG_CONFIG_HOME/go-where/config.json` (normally `~/.config/go-where/config.json`). JSON keeps the executable dependency-free. Missing fields use these defaults:
 
 ```json
 {
@@ -156,17 +156,17 @@ The test creates its own temporary source/destination directories and checks SCP
 }
 ```
 
-Destinations: `tmux-pane`, `tmux-window`, `tmux-session`, `terminal`, `current`. The outside-tmux fallback is `terminal` or `current`. `edit_destination` controls the `ssh-pick config` CLI command; picker shortcuts explicitly choose floating or pane editing. Editing uses the Vim-compatible `+LINE -- FILE` convention.
+Destinations: `tmux-pane`, `tmux-window`, `tmux-session`, `terminal`, `current`. The outside-tmux fallback is `terminal` or `current`. `edit_destination` controls the `go-where config` CLI command; picker shortcuts explicitly choose floating or pane editing. Editing uses the Vim-compatible `+LINE -- FILE` convention.
 
 RDP uses its own `rdp.destination`, which adds `background` (detached, no terminal window; the default) to the destinations above. `rdp.tunnel` is `auto`, `socks`, or `forward`. `rdp.tags` names the SSH-config comment tags that mark Windows/RDP hosts. `rdp.password_command` is an argument array, e.g. `["rbw", "get", "RDP/work"]`.
 
 `terminal: ["auto"]` asks `xdg-terminal-exec` to resolve your preferred terminal using its XDG terminal lists and desktop entries. The resolver returns NUL-separated arguments, not shell code. If the resolver is unavailable or cannot find a terminal, `fallback_terminal` is used; set it to `[]` to disable fallback. `$TERM` is never used to guess your preferred application. A terminal that resolves successfully but fails to launch is reported, not retried in another terminal.
 
-To override terminal selection, use an argument array such as `["kitty"]`, `["alacritty", "-e"]`, or `["foot", "--"]`. Include the command separator your terminal needs. `floating_terminal: ["auto"]` follows that selection and requests app ID `org.go-ssh.editor`; with explicit Kitty/Alacritty/foot commands, the matching app-ID flag is inserted. Other explicit terminals need a `floating_terminal` override with their own flags, e.g. `["custom-terminal", "--app-id=org.go-ssh.editor", "--"]`. Existing explicit `terminal`/`floating_terminal` arrays are preserved; change them to `["auto"]` to opt into system defaults.
+To override terminal selection, use an argument array such as `["kitty"]`, `["alacritty", "-e"]`, or `["foot", "--"]`. Include the command separator your terminal needs. `floating_terminal: ["auto"]` follows that selection and requests app ID `org.gowhere.editor`; with explicit Kitty/Alacritty/foot commands, the matching app-ID flag is inserted. Other explicit terminals need a `floating_terminal` override with their own flags, e.g. `["custom-terminal", "--app-id=org.gowhere.editor", "--"]`. Existing explicit `terminal`/`floating_terminal` arrays are preserved; change them to `["auto"]` to opt into system defaults.
 
-Terminal processes detach from the popup, but their output is retained in `$XDG_CACHE_HOME/ssh-pick/terminal.log` (normally `~/.cache/ssh-pick/terminal.log`, mode 0600). Failures during the first 300ms keep the error popup open and point to this log. Later failures remain in the log; the picker does not supervise terminal lifetimes. If a new terminal still fails to appear, inspect the log on the host for the actual display/session error.
+Terminal processes detach from the popup, but their output is retained in `$XDG_CACHE_HOME/go-where/terminal.log` (normally `~/.cache/go-where/terminal.log`, mode 0600). Failures during the first 300ms keep the error popup open and point to this log. Later failures remain in the log; the picker does not supervise terminal lifetimes. If a new terminal still fails to appear, inspect the log on the host for the actual display/session error.
 
-Invalid or unknown settings fail clearly. `ssh-pick config` can still open malformed settings using default editor/placement so you can repair them.
+Invalid or unknown settings fail clearly. `go-where config` can still open malformed settings using default editor/placement so you can repair them.
 
 ## SSH config discovery
 
@@ -184,8 +184,8 @@ Preview data is kept in a mode-0600 temporary file and removed on normal exit. A
 No launch key is imposed. Once you choose one, a binding can launch the same executable, for example:
 
 ```tmux
-# Example only: prefix, then Ctrl+F. ssh-pick opens its own popup.
-bind-key C-f run-shell 'ssh-pick --client "#{client_name}"'
+# Example only: prefix, then Ctrl+F. go-where opens its own popup.
+bind-key C-f run-shell 'go-where --client "#{client_name}"'
 ```
 
 Passing the client explicitly matters when multiple clients share the same pane. Without it, the command requires exactly one attached client viewing the invoking pane and refuses ambiguity. Session-qualified targets also avoid sending new panes into the wrong session when windows are linked.
@@ -196,8 +196,8 @@ The terminal's app ID/class identifies the editor; the window manager makes it f
 
 ```lua
 hl.window_rule({
-    name = "ssh-pick-editor",
-    match = { class = "^org.go-ssh.editor$" },
+    name = "go-where-editor",
+    match = { class = "^org.gowhere.editor$" },
     float = true,
     center = true,
     size = { "(monitor_w*3/10)", "(monitor_h*3/4)" },

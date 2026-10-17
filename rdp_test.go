@@ -189,7 +189,7 @@ func TestRDPCommands(t *testing.T) {
 }
 
 func TestFakeSSHHelper(t *testing.T) {
-	if os.Getenv("SSH_PICK_FAKE_SSH") != "1" {
+	if os.Getenv("GO_WHERE_FAKE_SSH") != "1" {
 		return
 	}
 	args := os.Args
@@ -233,7 +233,7 @@ func fakeRDPEnv(t *testing.T, clientHelp string, clientExit int) (sshLog, client
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 	sshLog, clientLog, fdLog = filepath.Join(dir, "ssh.log"), filepath.Join(dir, "client.log"), filepath.Join(dir, "fd3.log")
 	t.Setenv("FAKE_SSH_LOG", sshLog)
-	fakeCommand(t, dir, "ssh", "SSH_PICK_FAKE_SSH=1 exec '"+os.Args[0]+"' -test.run='^TestFakeSSHHelper$' -- \"$@\"")
+	fakeCommand(t, dir, "ssh", "GO_WHERE_FAKE_SSH=1 exec '"+os.Args[0]+"' -test.run='^TestFakeSSHHelper$' -- \"$@\"")
 	fakeCommand(t, dir, "xfreerdp3", `if [ "$1" = /help ]; then echo '`+clientHelp+`'; exit 0; fi
 printf '%s\n' "$@" > '`+clientLog+`'
 case "$1" in /args-from:fd:3) cat <&3 > '`+fdLog+`' ;; esac
@@ -348,23 +348,23 @@ func TestLaunchRDPPlacementAndValidation(t *testing.T) {
 		{Alias: "a", Hostname: "192.0.2.31", JumpHost: "bastion", Notes: []string{"Windows"}},
 		{Alias: "b", Hostname: "192.0.2.32", Notes: []string{"RDP"}},
 	}
-	if err := launchRDP(hosts, o, c, "", "/fake/ssh-pick", false); err != nil {
+	if err := launchRDP(hosts, o, c, "", "/fake/go-where", false); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(os.Getenv("CALLS"))
 	if strings.Count(string(b), "split-window") != 2 || strings.Count(string(b), "__run-rdp") != 2 {
 		t.Fatalf("one job per host expected:\n%s", b)
 	}
-	if err := launchRDP(append(hosts, Host{Alias: "linux", Hostname: "192.0.2.33"}), o, c, "", "/fake/ssh-pick", false); err == nil || !strings.Contains(err.Error(), "not tagged") {
+	if err := launchRDP(append(hosts, Host{Alias: "linux", Hostname: "192.0.2.33"}), o, c, "", "/fake/go-where", false); err == nil || !strings.Contains(err.Error(), "not tagged") {
 		t.Fatalf("untagged host launched: %v", err)
 	}
 	// The picker destination is ignored; only rdp settings decide where a session lands.
 	c.RDP.Destination = "current"
-	if err := launchRDP(hosts, o, c, "", "/fake/ssh-pick", false); err == nil {
+	if err := launchRDP(hosts, o, c, "", "/fake/go-where", false); err == nil {
 		t.Fatal("several RDP sessions cannot share the current terminal")
 	}
 	c.RDP.Destination = "tmux-pane"
-	if err := launchRDP(hosts, Origin{}, c, "", "/fake/ssh-pick", false); err == nil {
+	if err := launchRDP(hosts, Origin{}, c, "", "/fake/go-where", false); err == nil {
 		t.Fatal("tmux placement must fail outside tmux")
 	}
 	if got := rdpDestination(c, false); got != "tmux-pane" {
@@ -378,7 +378,7 @@ func TestLaunchRDPPlacementAndValidation(t *testing.T) {
 	}
 	// Background launches a detached process per host, with no terminal and no tmux.
 	t.Setenv("BG", filepath.Join(dir, "background.log"))
-	fakeCommand(t, dir, "fake-ssh-pick", `printf 'started\n' >> "$BG"`)
+	fakeCommand(t, dir, "fake-go-where", `printf 'started\n' >> "$BG"`)
 	c.RDP.Destination = "background"
 	if err := launchRDP(hosts, Origin{}, c, "", "spawn-rdp", false); err == nil {
 		t.Fatal("a missing background executable must be reported")
