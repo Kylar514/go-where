@@ -200,7 +200,7 @@ func app(args []string) error {
 			connectionConfig = *sshConfig
 		}
 		if state.Mode == "rdp" {
-			return launchRDP(selected, target, o, c, connectionConfig, exe)
+			return launchRDP(selected, o, c, connectionConfig, exe, state.Debug)
 		}
 		if state.Mode != "ssh" {
 			draft.Mode = state.Mode
@@ -265,13 +265,23 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 	if o.Pane != "" {
 		header += " | origin " + o.Session + ":" + o.Window + "." + o.Pane
 	}
-	header += "\n^J/K move · ^U/D half-page · Tab mark · Ctrl+Alt+P/W/N/T panes/windows/session/terminals\nCtrl+S/E floating settings/host · Ctrl+Alt+S/E pane settings/host · ^R reload"
+	if state.Mode == "rdp" {
+		header += "\n^J/K move · ^U/D half-page · Tab mark · Enter launch detached · Ctrl+T launch in terminal (debug)\nCtrl+Alt+P/W/N/T panes/windows/session/terminals · Ctrl+S/E floating settings/host · Ctrl+Alt+S/E pane settings/host · ^R reload"
+	} else {
+		header += "\n^J/K move · ^U/D half-page · Tab mark · Ctrl+Alt+P/W/N/T panes/windows/session/terminals\nCtrl+S/E floating settings/host · Ctrl+Alt+S/E pane settings/host · ^R reload"
+	}
+	// Ctrl+T (launch in terminal) only applies in RDP mode; elsewhere it stays unbound.
+	expect := []string{"enter"}
+	if state.Mode == "rdp" {
+		expect = append(expect, "ctrl-t")
+	}
+	expect = append(expect, "ctrl-alt-p", "ctrl-alt-w", "ctrl-alt-n", "ctrl-alt-t", "ctrl-s", "ctrl-alt-s", "ctrl-r")
 	args := []string{
 		// 25 results + 10 preview rows + 10 rows of borders, labels and controls.
 		"--height=45",
 		"--multi", "--sync", "--layout=default", "--header-first", "--header-lines=1", "--border", "--delimiter=\t", "--with-nth=2..",
 		"--prompt=" + strings.ToUpper(state.Mode) + " > ", "--header=" + header, "--query=" + query, "--print-query",
-		"--expect=enter,ctrl-alt-p,ctrl-alt-w,ctrl-alt-n,ctrl-alt-t,ctrl-s,ctrl-alt-s,ctrl-r",
+		"--expect=" + strings.Join(expect, ","),
 		// Editing always uses the highlighted row, not the multiselection.
 		"--bind=ctrl-j:down,ctrl-k:up,tab:toggle-up,shift-tab:toggle-down,ctrl-u:half-page-up,ctrl-d:half-page-down,ctrl-e:become(printf '%s\\n' {q} ctrl-e {}),ctrl-alt-e:become(printf '%s\\n' {q} ctrl-alt-e {})",
 		// Ctrl+O picks a mode; the list reloads only when it crosses RDP mode's filtered view.
@@ -318,6 +328,7 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 		return "", query, nil, fmt.Errorf("unexpected fzf output")
 	}
 	nextQuery, key = lines[0], lines[1]
+	state.Debug = key == "ctrl-t" && state.Mode == "rdp"
 	rows := lines[2:]
 	state.Marked = nil
 	for _, row := range rows {

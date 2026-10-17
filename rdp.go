@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -33,12 +32,19 @@ type RDPConfig struct {
 	Client          []string     `json:"client"`
 	ClientArgs      []string     `json:"client_args"`
 	PasswordCommand []string     `json:"password_command"`
+	Destination     string       `json:"destination"`
 }
 
 func defaultRDPConfig() RDPConfig {
 	return RDPConfig{
-		DomainRules: []DomainRule{}, Tags: []string{"windows", "rdp"}, Port: 3389, Tunnel: "auto",
-		Client: []string{}, ClientArgs: []string{"/dynamic-resolution"}, PasswordCommand: []string{},
+		DomainRules:     []DomainRule{},
+		Tags:            []string{"windows", "rdp"},
+		Port:            3389,
+		Tunnel:          "auto",
+		Client:          []string{},
+		ClientArgs:      []string{"/dynamic-resolution"},
+		PasswordCommand: []string{},
+		Destination:     "background",
 	}
 }
 
@@ -71,6 +77,14 @@ func (r RDPConfig) validate() error {
 	case "auto", "socks", "forward":
 	default:
 		return fmt.Errorf("rdp tunnel must be auto, socks, or forward")
+	}
+	if r.Destination == "" {
+		r.Destination = "background"
+	}
+	switch r.Destination {
+	case "background", "tmux-pane", "tmux-window", "tmux-session", "terminal", "floating-terminal", "current":
+	default:
+		return fmt.Errorf("rdp destination must be one of: background, tmux-pane, tmux-window, tmux-session, terminal, floating-terminal, current")
 	}
 	if len(r.Client) > 0 && r.Client[0] == "" {
 		return fmt.Errorf("rdp client must be an argument array, or empty to auto-detect")
@@ -463,8 +477,7 @@ func runRDPJob(j rdpJob) error {
 	defer signal.Stop(interrupts)
 	err := runRDPSession(j)
 	if err != nil {
-		fmt.Printf("\nFAILED: %s\nPress Enter to close… ", clean(err.Error()))
-		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
+		fmt.Printf("\nFAILED: %s\n", clean(err.Error()))
 	}
 	return err
 }
@@ -483,10 +496,23 @@ func decodeRDPJob(s string) (rdpJob, error) {
 	return j, err
 }
 
-func launchRDP(hosts []Host, dest string, o Origin, c Config, sshConfig, exe string) error {
+// RDP ignores the picker destination: it runs detached in the background by
+// default, or in a visible terminal when the user pressed Ctrl+T to debug.
+func rdpDestination(c Config, debug bool) string {
+	if debug {
+		return "terminal"
+	}
+	if c.RDP.Destination != "" {
+		return c.RDP.Destination
+	}
+	return "background"
+}
+
+func launchRDP(hosts []Host, o Origin, c Config, sshConfig, exe string, debug bool) error {
 	if len(hosts) == 0 {
 		return nil
 	}
+	dest := rdpDestination(c, debug)
 	if err := checkPlacement(len(hosts), dest, o); err != nil {
 		return err
 	}
@@ -502,6 +528,15 @@ func launchRDP(hosts []Host, dest string, o Origin, c Config, sshConfig, exe str
 		}
 		labels = append(labels, job.Label)
 		argvs = append(argvs, []string{exe, "__run-rdp", encodeRDPJob(job)})
+	}
+	if dest == "background" {
+		var failures []error
+		for i, argv := range argvs {
+			if err := spawnBackground(argv); err != nil {
+				failures = append(failures, fmt.Errorf("%s: %w", labels[i], err))
+			}
+		}
+		return errors.Join(failures...)
 	}
 	return placeJobs(labels, argvs, dest, o, c)
 }

@@ -341,26 +341,42 @@ func TestLaunchRDPPlacementAndValidation(t *testing.T) {
 	fakeCommand(t, dir, "tmux", `printf 'CALL\n' >> "$CALLS"; printf '%s\n' "$@" >> "$CALLS"`)
 	c := defaultConfig()
 	c.RDP.User = "someone"
+	c.RDP.Destination = "tmux-pane"
 	o := Origin{"%1", "@1", "$1", "client"}
 	hosts := []Host{
 		{Alias: "a", Hostname: "192.0.2.31", JumpHost: "bastion", Notes: []string{"Windows"}},
 		{Alias: "b", Hostname: "192.0.2.32", Notes: []string{"RDP"}},
 	}
-	if err := launchRDP(hosts, "tmux-pane", o, c, "", "/fake/ssh-pick"); err != nil {
+	if err := launchRDP(hosts, o, c, "", "/fake/ssh-pick", false); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(os.Getenv("CALLS"))
 	if strings.Count(string(b), "split-window") != 2 || strings.Count(string(b), "__run-rdp") != 2 {
 		t.Fatalf("one job per host expected:\n%s", b)
 	}
-	if err := launchRDP(append(hosts, Host{Alias: "linux", Hostname: "192.0.2.33"}), "tmux-pane", o, c, "", "/fake/ssh-pick"); err == nil || !strings.Contains(err.Error(), "not tagged") {
+	if err := launchRDP(append(hosts, Host{Alias: "linux", Hostname: "192.0.2.33"}), o, c, "", "/fake/ssh-pick", false); err == nil || !strings.Contains(err.Error(), "not tagged") {
 		t.Fatalf("untagged host launched: %v", err)
 	}
-	if err := launchRDP(hosts, "current", o, c, "", "/fake/ssh-pick"); err == nil {
+	// The picker destination is ignored; only rdp settings decide where a session lands.
+	c.RDP.Destination = "current"
+	if err := launchRDP(hosts, o, c, "", "/fake/ssh-pick", false); err == nil {
 		t.Fatal("several RDP sessions cannot share the current terminal")
 	}
-	if err := launchRDP(hosts, "tmux-pane", Origin{}, c, "", "/fake/ssh-pick"); err == nil {
+	if err := launchRDP(hosts, Origin{}, c, "", "/fake/ssh-pick", false); err != nil {
+		t.Fatalf("current is not a tmux target, so no tmux is required: %v", err)
+	}
+	c.RDP.Destination = "tmux-pane"
+	if err := launchRDP(hosts, Origin{}, c, "", "/fake/ssh-pick", false); err == nil {
 		t.Fatal("tmux placement must fail outside tmux")
+	}
+	if got := rdpDestination(c, false); got != "tmux-pane" {
+		t.Fatalf("config destination: %q", got)
+	}
+	if got := rdpDestination(c, true); got != "terminal" {
+		t.Fatalf("Ctrl+T must force a terminal: %q", got)
+	}
+	if got := rdpDestination(Config{}, false); got != "background" {
+		t.Fatalf("default must be detached: %q", got)
 	}
 	job, _ := newRDPJob(c.RDP, hosts[0], "")
 	decoded, err := decodeRDPJob(encodeRDPJob(job))

@@ -62,21 +62,53 @@ func terminalCommand(c Config, argv []string, floating bool) ([]string, error) {
 	return append(prefix, argv...), nil
 }
 
+// cacheLog opens an append-only log under the user's cache dir for a detached job.
+func cacheLog(name string) (*os.File, string, error) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return nil, "", err
+	}
+	dir := filepath.Join(cache, "ssh-pick")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, "", err
+	}
+	path := filepath.Join(dir, name)
+	log, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+	if err != nil {
+		return nil, "", err
+	}
+	return log, path, nil
+}
+
+// spawnBackground runs a job fully detached: no tty, output to a log file, so the
+// picker returns immediately and the RDP window appears on its own.
+func spawnBackground(argv []string) error {
+	log, _, err := cacheLog("rdp.log")
+	if err != nil {
+		return err
+	}
+	defer log.Close()
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		return err
+	}
+	defer devnull.Close()
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = devnull, log, log
+	// ponytail: detached job; its output lives in rdp.log, no supervisor process.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("launch background RDP session: %w", err)
+	}
+	return cmd.Process.Release()
+}
+
 func spawnTerminal(c Config, argv []string, floating bool) error {
 	args, err := terminalCommand(c, argv, floating)
 	if err != nil {
 		return err
 	}
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return err
-	}
-	dir := filepath.Join(cache, "ssh-pick")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-	path := filepath.Join(dir, "terminal.log")
-	log, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+	log, path, err := cacheLog("terminal.log")
 	if err != nil {
 		return err
 	}

@@ -17,6 +17,7 @@ type PickerState struct {
 	Focus   string
 	Marked  []string
 	RDPTags []string
+	Debug   bool
 }
 
 func validMode(s string) bool {
