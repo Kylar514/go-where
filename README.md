@@ -210,3 +210,7 @@ Without an equivalent compositor rule, or if the selected terminal ignores the r
 ## Private examples
 
 Put personal/work SSH config samples under `local/`. The entire directory is ignored by Git. Never add private keys. Nothing from `local/` is required to build or test; tests use synthetic documentation-range addresses.
+
+## License
+
+[MIT](LICENSE)
