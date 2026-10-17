@@ -366,6 +366,16 @@ func transferInternal(args []string) error {
 		return fmt.Errorf("invalid internal transfer arguments")
 	}
 	switch args[0] {
+	case "__picker-header":
+		if len(args) != 4 {
+			return fmt.Errorf("invalid internal arguments")
+		}
+		mode, err := readMode(args[1])
+		if err != nil {
+			return err
+		}
+		fmt.Print(pickerHeader(mode, args[2], args[3]))
+		return nil
 	case "__rows":
 		if len(args) != 4 {
 			return fmt.Errorf("invalid internal arguments")
@@ -399,6 +409,13 @@ func transferInternal(args []string) error {
 		return fmt.Errorf("invalid internal transfer arguments")
 	}
 	switch args[0] {
+	case "__help":
+		mode, err := readMode(args[1])
+		if err != nil {
+			return err
+		}
+		_, _, err = choose("Help — Enter or Esc to return", []choice{{"back", "Return to hosts"}}, pickerHelp(mode))
+		return err
 	case "__mode", "__mode-prompt":
 		mode, err := readMode(args[1])
 		if err != nil {

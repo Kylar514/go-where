@@ -80,6 +80,29 @@ Host home
 	}
 }
 
+func TestPickerHeaderAndHelp(t *testing.T) {
+	for _, mode := range []string{"ssh", "scp", "legacy-scp", "rsync", "rdp"} {
+		header := pickerHeader(mode, "tmux-pane", "background")
+		want := "Enter → tmux pane"
+		if mode == "rdp" {
+			want = "Enter → background"
+		}
+		if !strings.Contains(header, want) || !strings.Contains(header, "│    ? → help") || strings.Contains(header, "Tab") {
+			t.Fatalf("%s header: %q", mode, header)
+		}
+		help := pickerHelp(mode)
+		if !strings.Contains(help, "Shift+Tab") || !strings.Contains(help, "Ctrl+Alt+E") {
+			t.Fatalf("%s help missing shortcuts: %q", mode, help)
+		}
+		if strings.Contains(help, "New tmux pane") == (mode == "rdp") {
+			t.Fatalf("%s help advertises incorrect placement", mode)
+		}
+	}
+	if !strings.Contains(pickerHeader("rdp", "current", ""), "Enter → background") {
+		t.Fatal("RDP header must default to background")
+	}
+}
+
 func TestTrailingHostComments(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config")
 	writeTestFile(t, path, `# Personal

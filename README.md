@@ -39,6 +39,7 @@ Columns are labeled **HOST**, **HOSTNAME / IP**, **JUMPHOST**, and **COMMENT**, 
 
 | Key | Action |
 |---|---|
+| ? | Open mode-specific shortcut help; Enter or Esc returns without losing picker state. Reserved for help, not search input. |
 | Ctrl+J / Ctrl+K or arrows | Move down / up |
 | Tab / Shift+Tab | Toggle selection and move to the next / previous result |
 | Enter | Connect using your configured default |

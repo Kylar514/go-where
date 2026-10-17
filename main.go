@@ -154,10 +154,8 @@ func app(args []string) error {
 			return fmt.Errorf("no explicit host aliases found in %s", *sshConfig)
 		}
 		state.RDPTags = c.RDP.Tags
+		state.RDPDestination = rdpDestination(c, false)
 		pickDest := destination(c.Destination, o, c)
-		if state.Mode == "rdp" {
-			pickDest = rdpDestination(c, false) // RDP ignores the picker destination.
-		}
 		var key string
 		var selected []Host
 		key, query, selected, err = pick(hosts, exe, query, pickDest, o, &state)
@@ -265,15 +263,7 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 		return "", query, nil, err
 	}
 	input := rowsForMode(hosts, state.Mode, state.RDPTags)
-	header := "Ctrl+O mode · Enter: " + dest
-	if o.Pane != "" {
-		header += " | origin " + o.Session + ":" + o.Window + "." + o.Pane
-	}
-	if state.Mode == "rdp" {
-		header += "\n^J/K move · ^U/D half-page · Tab mark · Enter launch in background · Ctrl+Alt+T launch in terminal (debug)\nCtrl+Alt+P/W/N panes/windows/session · Ctrl+S/E floating settings/host · Ctrl+Alt+S/E pane settings/host · ^R reload"
-	} else {
-		header += "\n^J/K move · ^U/D half-page · Tab mark · Ctrl+Alt+P/W/N/T panes/windows/session/terminals\nCtrl+S/E floating settings/host · Ctrl+Alt+S/E pane settings/host · ^R reload"
-	}
+	header := pickerHeader(state.Mode, dest, state.RDPDestination)
 	expect := []string{"enter", "ctrl-alt-p", "ctrl-alt-w", "ctrl-alt-n", "ctrl-alt-t", "ctrl-s", "ctrl-alt-s", "ctrl-r"}
 	args := []string{
 		// 25 results + 10 preview rows + 10 rows of borders, labels and controls.
@@ -285,7 +275,8 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 		"--bind=ctrl-j:down,ctrl-k:up,tab:toggle-up,shift-tab:toggle-down,ctrl-u:half-page-up,ctrl-d:half-page-down,ctrl-e:become(printf '%s\\n' {q} ctrl-e {}),ctrl-alt-e:become(printf '%s\\n' {q} ctrl-alt-e {})",
 		// Ctrl+O picks a mode; the list reloads only when it crosses RDP mode's filtered view.
 		"--id-nth=1",
-		"--bind=ctrl-o:execute(" + shellCommand([]string{exe, "__mode", modeFile.Name()}) + ")+transform-prompt(" + shellCommand([]string{exe, "__mode-prompt", modeFile.Name()}) + ")+transform(" + shellCommand([]string{exe, "__mode-reload", modeFile.Name(), listedFile.Name(), f.Name(), strings.Join(state.RDPTags, ",")}) + ")+refresh-preview",
+		"--bind=ctrl-o:execute(" + shellCommand([]string{exe, "__mode", modeFile.Name()}) + ")+transform-prompt(" + shellCommand([]string{exe, "__mode-prompt", modeFile.Name()}) + ")+transform-header(" + shellCommand([]string{exe, "__picker-header", modeFile.Name(), dest, state.RDPDestination}) + ")+transform(" + shellCommand([]string{exe, "__mode-reload", modeFile.Name(), listedFile.Name(), f.Name(), strings.Join(state.RDPTags, ",")}) + ")+refresh-preview",
+		"--bind=?:execute(" + shellCommand([]string{exe, "__help", modeFile.Name()}) + ")",
 		"--preview=" + shellCommand([]string{exe, "__preview", f.Name(), modeFile.Name()}) + " {1}",
 		// ponytail: cap preview at 10 rows to preserve list space; dynamic sizing if needed.
 		"--preview-window=up:10:wrap",

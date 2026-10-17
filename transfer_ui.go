@@ -13,11 +13,50 @@ import (
 )
 
 type PickerState struct {
-	Mode    string
-	Focus   string
-	Marked  []string
-	RDPTags []string
-	Debug   bool
+	Mode           string
+	Focus          string
+	Marked         []string
+	RDPTags        []string
+	Debug          bool
+	RDPDestination string
+}
+
+func pickerHeader(mode, dest, rdpDest string) string {
+	if mode == "rdp" {
+		dest = rdpDest
+		if dest == "" {
+			dest = "background"
+		}
+	}
+	return "Enter → " + strings.ReplaceAll(dest, "-", " ") + "    │    Ctrl+O → mode    │    ? → help\n" + strings.Repeat("─", 64)
+}
+
+func pickerHelp(mode string) string {
+	launch := "Enter          Launch using the default destination\nCtrl+Alt+P     New tmux pane\nCtrl+Alt+W     New tmux window\nCtrl+Alt+N     New tmux session\nCtrl+Alt+T     New terminal window"
+	if mode == "rdp" {
+		launch = "Enter          Launch using rdp.destination (background by default)\nCtrl+Alt+T     Launch in a visible terminal for debugging"
+	}
+	return "LAUNCH\n" + launch + `
+
+NAVIGATE & SELECT
+↑/↓, Ctrl+J/K  Move through hosts
+Ctrl+U/D       Move half a page
+Tab            Mark and move up
+Shift+Tab      Mark and move down
+Shift+↑/↓      Scroll preview
+
+EDIT
+Ctrl+S         Settings in a floating terminal
+Ctrl+E         Highlighted host config in a floating terminal
+Ctrl+Alt+S     Settings in a tmux pane
+Ctrl+Alt+E     Highlighted host config in a tmux pane
+
+OTHER
+Ctrl+O         Choose mode
+Ctrl+R         Reload hosts and settings
+Esc / Ctrl+C   Cancel picker
+?              Open help (reserved; not a search character)
+`
 }
 
 func validMode(s string) bool {
