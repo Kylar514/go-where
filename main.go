@@ -154,6 +154,7 @@ func app(args []string) error {
 			return fmt.Errorf("no explicit host aliases found in %s", *sshConfig)
 		}
 		state.RDPTags = c.RDP.Tags
+		state.ConfigPath = *config
 		state.RDPDestination = rdpDestination(c, false)
 		pickDest := destination(c.Destination, o, c)
 		var key string
@@ -202,6 +203,7 @@ func app(args []string) error {
 			connectionConfig = *sshConfig
 		}
 		if state.Mode == "rdp" {
+			c.RDP = c.RDP.withAccount(state.Account)
 			return launchRDP(selected, o, c, connectionConfig, exe, state.Debug)
 		}
 		if state.Mode != "ssh" {
@@ -228,6 +230,15 @@ func clean(s string) string {
 func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (key, nextQuery string, selected []Host, err error) {
 	if state == nil {
 		state = &PickerState{Mode: "ssh"}
+	}
+	state.Account = RDPAccount{}
+	accountFile, err := os.CreateTemp("", "go-where-account-*.json")
+	if err != nil {
+		return "", query, nil, err
+	}
+	defer os.Remove(accountFile.Name())
+	if err := accountFile.Close(); err != nil {
+		return "", query, nil, err
 	}
 	modeFile, err := os.CreateTemp("", "go-where-mode-*")
 	if err != nil {
@@ -277,6 +288,7 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 		"--id-nth=1",
 		"--bind=ctrl-o:execute(" + shellCommand([]string{exe, "__mode", modeFile.Name()}) + ")+transform-prompt(" + shellCommand([]string{exe, "__mode-prompt", modeFile.Name()}) + ")+transform-header(" + shellCommand([]string{exe, "__picker-header", modeFile.Name(), dest, state.RDPDestination}) + ")+transform(" + shellCommand([]string{exe, "__mode-reload", modeFile.Name(), listedFile.Name(), f.Name(), strings.Join(state.RDPTags, ",")}) + ")+refresh-preview",
 		"--bind=?:execute(" + shellCommand([]string{exe, "__help", modeFile.Name()}) + ")",
+		"--bind=alt-a:execute(" + shellCommand([]string{exe, "__rdp-account", modeFile.Name(), state.ConfigPath, accountFile.Name()}) + ")+transform(" + shellCommand([]string{exe, "__rdp-account-ready", accountFile.Name()}) + ")",
 		"--preview=" + shellCommand([]string{exe, "__preview", f.Name(), modeFile.Name()}) + " {1}",
 		// ponytail: cap preview at 10 rows to preserve list space; dynamic sizing if needed.
 		"--preview-window=up:10:wrap",
@@ -318,6 +330,15 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 		return "", query, nil, fmt.Errorf("unexpected fzf output")
 	}
 	nextQuery, key = lines[0], lines[1]
+	accountData, err := os.ReadFile(accountFile.Name())
+	if err != nil {
+		return "", query, nil, err
+	}
+	if len(accountData) > 0 {
+		if err := json.Unmarshal(accountData, &state.Account); err != nil {
+			return "", query, nil, err
+		}
+	}
 	// In RDP mode Ctrl+Alt+T reuses the terminal key from the other modes as the
 	// debug trigger: a visible terminal instead of the usual detached launch.
 	state.Debug = key == "ctrl-alt-t" && state.Mode == "rdp"

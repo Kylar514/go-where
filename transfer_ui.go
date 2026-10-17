@@ -13,6 +13,8 @@ import (
 )
 
 type PickerState struct {
+	ConfigPath     string
+	Account        RDPAccount
 	Mode           string
 	Focus          string
 	Marked         []string
@@ -34,7 +36,7 @@ func pickerHeader(mode, dest, rdpDest string) string {
 func pickerHelp(mode string) string {
 	launch := "Enter          Launch using the default destination\nCtrl+Alt+P     New tmux pane\nCtrl+Alt+W     New tmux window\nCtrl+Alt+N     New tmux session\nCtrl+Alt+T     New terminal window"
 	if mode == "rdp" {
-		launch = "Enter          Launch using rdp.destination (background by default)\nCtrl+Alt+T     Launch in a visible terminal for debugging"
+		launch = "Enter          Launch using rdp.destination (background by default)\nAlt+A          Choose an account and launch selected hosts\nCtrl+Alt+T     Launch in a visible terminal for debugging"
 	}
 	return "LAUNCH\n" + launch + `
 
@@ -217,6 +219,41 @@ func chooseMode(current string) (string, bool, error) {
 		{"legacy-scp", "Legacy SCP — scp -O, POSIX remote shell only"}, {"rsync", "rsync — efficient transfers with dry-run preview"},
 		{"rdp", "RDP — Windows hosts tagged in your SSH config, via FreeRDP"},
 	}, "")
+}
+
+func chooseRDPAccount(modeFile, configFile, selectionFile string) error {
+	if err := os.WriteFile(selectionFile, nil, 0600); err != nil {
+		return err
+	}
+	mode, err := readMode(modeFile)
+	if err != nil || mode != "rdp" {
+		return err
+	}
+	c, err := loadConfig(configFile)
+	if err != nil {
+		return err
+	}
+	options := []choice{{"0", "Default — configured user and domain rules"}}
+	for i, account := range c.RDP.Accounts {
+		options = append(options, choice{strconv.Itoa(i + 1), account.Name + " — " + account.User})
+	}
+	id, back, err := choose("RDP account", options, "")
+	if err != nil || back {
+		return err
+	}
+	i, err := strconv.Atoi(id)
+	if err != nil || i < 0 || i > len(c.RDP.Accounts) {
+		return fmt.Errorf("invalid RDP account selection")
+	}
+	account := RDPAccount{}
+	if i > 0 {
+		account = c.RDP.Accounts[i-1]
+	}
+	b, err := json.Marshal(account)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(selectionFile, b, 0600)
 }
 
 func readMode(path string) (string, error) {

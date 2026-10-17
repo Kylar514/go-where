@@ -22,6 +22,13 @@ type DomainRule struct {
 	Domain string `json:"domain"`
 }
 
+type RDPAccount struct {
+	Name            string   `json:"name"`
+	User            string   `json:"user"`
+	Domain          *string  `json:"domain,omitempty"`
+	PasswordCommand []string `json:"password_command,omitempty"`
+}
+
 type RDPConfig struct {
 	User            string       `json:"user"`
 	DefaultDomain   string       `json:"default_domain"`
@@ -33,6 +40,7 @@ type RDPConfig struct {
 	ClientArgs      []string     `json:"client_args"`
 	PasswordCommand []string     `json:"password_command"`
 	Destination     string       `json:"destination"`
+	Accounts        []RDPAccount `json:"accounts"`
 }
 
 func defaultRDPConfig() RDPConfig {
@@ -45,12 +53,28 @@ func defaultRDPConfig() RDPConfig {
 		ClientArgs:      []string{"/dynamic-resolution"},
 		PasswordCommand: []string{},
 		Destination:     "background",
+		Accounts:        []RDPAccount{},
 	}
 }
 
 func safeValue(s string) bool { return clean(s) == s && !strings.ContainsAny(s, "\r\n") }
 
 func (r RDPConfig) validate() error {
+	names := map[string]bool{}
+	for _, account := range r.Accounts {
+		if strings.TrimSpace(account.Name) == "" || !safeValue(account.Name) || names[account.Name] {
+			return fmt.Errorf("rdp accounts must have unique, nonempty names without control characters")
+		}
+		names[account.Name] = true
+		if strings.TrimSpace(account.User) == "" || !safeValue(account.User) || account.Domain != nil && !safeValue(*account.Domain) {
+			return fmt.Errorf("rdp account %q needs a user and text-only user/domain values", account.Name)
+		}
+		for i, arg := range account.PasswordCommand {
+			if !safeValue(arg) || i == 0 && strings.TrimSpace(arg) == "" {
+				return fmt.Errorf("rdp account %q has an invalid password_command", account.Name)
+			}
+		}
+	}
 	if !safeValue(r.User) || !safeValue(r.DefaultDomain) {
 		return fmt.Errorf("rdp user and default_domain must not contain control characters")
 	}
@@ -104,6 +128,18 @@ func (r RDPConfig) validate() error {
 		}
 	}
 	return nil
+}
+
+func (r RDPConfig) withAccount(account RDPAccount) RDPConfig {
+	// The empty selection represents Default; never retain another account's password.
+	if account.User == "" {
+		return r
+	}
+	r.User, r.PasswordCommand = account.User, account.PasswordCommand
+	if account.Domain != nil {
+		r.DefaultDomain, r.DomainRules = *account.Domain, nil
+	}
+	return r
 }
 
 // A host is an RDP target when a comment on its block is exactly a tag.

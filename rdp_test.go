@@ -36,6 +36,75 @@ func TestRDPCertificateDefault(t *testing.T) {
 	}
 }
 
+func TestRDPAccounts(t *testing.T) {
+	r := defaultRDPConfig()
+	r.User, r.DefaultDomain = "regular", "fallback.example"
+	r.DomainRules = []DomainRule{{Jump: "jump", Domain: "routed.example"}}
+	r.PasswordCommand = []string{"rbw", "get", "default-item"}
+	domain := "admin.example"
+	account := RDPAccount{Name: "Admin", User: "operator", Domain: &domain, PasswordCommand: []string{"rbw", "get", "admin-item"}}
+	r.Accounts = []RDPAccount{account}
+	if err := r.validate(); err != nil {
+		t.Fatal(err)
+	}
+	host := Host{Alias: "target", Hostname: "192.0.2.10", JumpHost: "jump"}
+	job, err := newRDPJob(r.withAccount(account), host, "")
+	if err != nil || job.User != "operator" || job.Domain != domain || !reflect.DeepEqual(job.PasswordCommand, account.PasswordCommand) {
+		t.Fatalf("account override: %+v, %v", job, err)
+	}
+	account.Domain, account.PasswordCommand = nil, nil
+	job, err = newRDPJob(r.withAccount(account), host, "")
+	if err != nil || job.Domain != "routed.example" || len(job.PasswordCommand) != 0 {
+		t.Fatalf("inherit routing but never another account's password: %+v, %v", job, err)
+	}
+	if !reflect.DeepEqual(r.withAccount(RDPAccount{}), r) {
+		t.Fatal("Default selection changed the config")
+	}
+	for _, invalid := range []RDPAccount{
+		{Name: "", User: "operator"}, {Name: "Bad", User: ""},
+		{Name: "Bad\nname", User: "operator"}, {Name: "Bad", User: "operator\n"},
+		{Name: "Bad", User: "operator", PasswordCommand: []string{""}},
+		{Name: "Bad", User: "operator", PasswordCommand: []string{"rbw", "item\n"}},
+	} {
+		r.Accounts = []RDPAccount{invalid}
+		if r.validate() == nil {
+			t.Fatalf("invalid account accepted: %+v", invalid)
+		}
+	}
+	r.Accounts = []RDPAccount{account, account}
+	if r.validate() == nil {
+		t.Fatal("duplicate account names accepted")
+	}
+}
+
+func TestRDPAccountChooser(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	modeFile, configFile, selectionFile := filepath.Join(dir, "mode"), filepath.Join(dir, "config.json"), filepath.Join(dir, "selection")
+	writeTestFile(t, modeFile, "rdp")
+	writeTestFile(t, configFile, `{"rdp":{"accounts":[{"name":"Admin","user":"operator"}]}}`)
+	fakeCommand(t, dir, "fzf", `printf '1\tAdmin\n'`)
+	if err := chooseRDPAccount(modeFile, configFile, selectionFile); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(selectionFile)
+	if !strings.Contains(string(b), `"user":"operator"`) {
+		t.Fatalf("selection: %s", b)
+	}
+	fakeCommand(t, dir, "fzf", "exit 130")
+	if err := chooseRDPAccount(modeFile, configFile, selectionFile); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(selectionFile); len(b) != 0 {
+		t.Fatal("cancel retained a prior account selection")
+	}
+	writeTestFile(t, modeFile, "ssh")
+	fakeCommand(t, dir, "fzf", "exit 2")
+	if err := chooseRDPAccount(modeFile, configFile, selectionFile); err != nil {
+		t.Fatalf("account chooser must be inactive outside RDP: %v", err)
+	}
+}
+
 func TestRDPTagsAndRows(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

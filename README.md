@@ -40,6 +40,7 @@ Columns are labeled **HOST**, **HOSTNAME / IP**, **JUMPHOST**, and **COMMENT**, 
 | Key | Action |
 |---|---|
 | ? | Open mode-specific shortcut help; Enter or Esc returns without losing picker state. Reserved for help, not search input. |
+| Alt+A | In RDP mode, choose an account and launch selected hosts (Esc returns without launching). |
 | Ctrl+J / Ctrl+K or arrows | Move down / up |
 | Tab / Shift+Tab | Toggle selection and move to the next / previous result |
 | Enter | Connect using your configured default |
@@ -119,6 +120,31 @@ Certificate handling defaults to FreeRDP's `/cert:tofu` (trust on first use): th
 
 The username comes from `rdp.user`, and the domain from `rdp.domain_rules` matched against the ProxyJump hops in order, falling back to `rdp.default_domain`. FreeRDP prompts for the password unless `rdp.password_command` supplies it: the command's stdout is piped to the client (appended as `/p:...` via `/args-from`), never placed on a command line or written to a file.
 
+### Alternate RDP accounts
+
+Add shared profiles to `rdp.accounts` in your private `~/.config/go-where/config.json` (merge this into your existing `rdp` settings):
+
+```json
+"accounts": [
+  {
+    "name": "AD administrator",
+    "user": "admin-user",
+    "domain": "ad.example",
+    "password_command": ["rbw", "get", "RDP/admin"]
+  },
+  {
+    "name": "Other AD account",
+    "user": "other-user",
+    "domain": "other.example",
+    "password_command": ["rbw", "get", "RDP/other"]
+  }
+]
+```
+
+In RDP mode, **Alt+A** opens the account chooser; choosing a profile launches marked hosts (or the highlighted host) with that account. **Esc** returns to the unchanged picker. **Default** uses your existing settings, as does ordinary **Enter**. Profiles are not remembered between launches, and credentials are never automatically retried.
+
+Omit `domain` to keep your existing domain rules; an explicit domain overrides those rules. Omit `password_command` to let the client prompt—it never borrows the default account's password command. Unlock `rbw` before a background launch. Keep profiles private and passwords in the vault, not in this JSON.
+
 FreeRDP is detected from `rdp.client` or, if empty, from `xfreerdp3`, `xfreerdp`, `wlfreerdp3`, `sdl-freerdp`, and their `3` variants. SOCKS5 proxying requires FreeRDP 3.x; older clients fall back to a loopback port forward. `go-where rdm-report EXPORT.json` reads a Devolutions RDM JSON export and proposes `# Windows` tags by matching RDM `Url` values to SSH `HostName`s; it is read-only and never edits your config.
 
 ### Transfer checks
@@ -154,6 +180,7 @@ The test creates its own temporary source/destination directories and checks SCP
     "client": [],
     "client_args": ["/dynamic-resolution"],
     "password_command": [],
+    "accounts": [],
     "destination": "background"
   }
 }

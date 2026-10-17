@@ -366,6 +366,11 @@ func transferInternal(args []string) error {
 		return fmt.Errorf("invalid internal transfer arguments")
 	}
 	switch args[0] {
+	case "__rdp-account":
+		if len(args) != 4 {
+			return fmt.Errorf("invalid internal arguments")
+		}
+		return chooseRDPAccount(args[1], args[2], args[3])
 	case "__picker-header":
 		if len(args) != 4 {
 			return fmt.Errorf("invalid internal arguments")
@@ -409,6 +414,15 @@ func transferInternal(args []string) error {
 		return fmt.Errorf("invalid internal transfer arguments")
 	}
 	switch args[0] {
+	case "__rdp-account-ready":
+		b, err := os.ReadFile(args[1])
+		if err != nil {
+			return err
+		}
+		if len(b) > 0 {
+			fmt.Print("accept")
+		}
+		return nil
 	case "__help":
 		mode, err := readMode(args[1])
 		if err != nil {
