@@ -27,6 +27,9 @@ func app(args []string) error {
 	if len(args) > 0 && strings.HasPrefix(args[0], "__") {
 		return transferInternal(args)
 	}
+	if len(args) > 0 && args[0] == "rdm-report" {
+		return rdmReportCommand(args[1:])
+	}
 	settings, err := configPath()
 	if err != nil {
 		return err
@@ -44,7 +47,7 @@ func app(args []string) error {
 	context := fs.String("origin", "", "internal: captured tmux origin")
 	legacy := fs.Bool("legacy", false, "use the legacy SCP protocol (scp mode only)")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: ssh-pick [ssh|scp|rsync] [options]\n       ssh-pick scp --legacy [options]\n       ssh-pick config [options]\n\nCtrl+O changes mode. Transfer modes always review before execution.")
+		fmt.Fprintln(fs.Output(), "Usage: ssh-pick [ssh|scp|rsync|rdp] [options]\n       ssh-pick scp --legacy [options]\n       ssh-pick config [options]\n       ssh-pick rdm-report EXPORT.json [--ssh-config path]\n\nCtrl+O changes mode. Transfer modes always review before execution.")
 		fs.PrintDefaults()
 	}
 	editSettings := len(args) > 0 && args[0] == "config"
@@ -150,6 +153,7 @@ func app(args []string) error {
 		if len(hosts) == 0 {
 			return fmt.Errorf("no explicit host aliases found in %s", *sshConfig)
 		}
+		state.RDPTags = c.RDP.Tags
 		var key string
 		var selected []Host
 		key, query, selected, err = pick(hosts, exe, query, destination(c.Destination, o, c), o, &state)
@@ -195,6 +199,9 @@ func app(args []string) error {
 		if customSSHConfig {
 			connectionConfig = *sshConfig
 		}
+		if state.Mode == "rdp" {
+			return launchRDP(selected, target, o, c, connectionConfig, exe)
+		}
 		if state.Mode != "ssh" {
 			draft.Mode = state.Mode
 			launched, err := transferWizard(&draft, selected, target, o, c, connectionConfig, exe)
@@ -230,6 +237,16 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 	if err = errors.Join(err, closeErr); err != nil {
 		return "", query, nil, err
 	}
+	listedFile, err := os.CreateTemp("", "ssh-pick-listed-*")
+	if err != nil {
+		return "", query, nil, err
+	}
+	defer os.Remove(listedFile.Name())
+	_, err = listedFile.WriteString(listKind(state.Mode))
+	closeErr = listedFile.Close()
+	if err = errors.Join(err, closeErr); err != nil {
+		return "", query, nil, err
+	}
 	f, err := os.CreateTemp("", "ssh-pick-*.json")
 	if err != nil {
 		return "", query, nil, err
@@ -243,7 +260,7 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 	if err != nil {
 		return "", query, nil, err
 	}
-	input := hostRows(hosts)
+	input := rowsForMode(hosts, state.Mode, state.RDPTags)
 	header := "Ctrl+O mode · Enter: " + dest
 	if o.Pane != "" {
 		header += " | origin " + o.Session + ":" + o.Window + "." + o.Pane
@@ -257,13 +274,15 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 		"--expect=enter,ctrl-alt-p,ctrl-alt-w,ctrl-alt-n,ctrl-alt-t,ctrl-s,ctrl-alt-s,ctrl-r",
 		// Editing always uses the highlighted row, not the multiselection.
 		"--bind=ctrl-j:down,ctrl-k:up,tab:toggle-up,shift-tab:toggle-down,ctrl-u:half-page-up,ctrl-d:half-page-down,ctrl-e:become(printf '%s\\n' {q} ctrl-e {}),ctrl-alt-e:become(printf '%s\\n' {q} ctrl-alt-e {})",
-		"--bind=ctrl-o:execute(" + shellCommand([]string{exe, "__mode", modeFile.Name()}) + ")+transform-prompt(" + shellCommand([]string{exe, "__mode-prompt", modeFile.Name()}) + ")+refresh-preview",
+		// Ctrl+O picks a mode; the list reloads only when it crosses RDP mode's filtered view.
+		"--id-nth=1",
+		"--bind=ctrl-o:execute(" + shellCommand([]string{exe, "__mode", modeFile.Name()}) + ")+transform-prompt(" + shellCommand([]string{exe, "__mode-prompt", modeFile.Name()}) + ")+transform(" + shellCommand([]string{exe, "__mode-reload", modeFile.Name(), listedFile.Name(), f.Name(), strings.Join(state.RDPTags, ",")}) + ")+refresh-preview",
 		"--preview=" + shellCommand([]string{exe, "__preview", f.Name(), modeFile.Name()}) + " {1}",
 		// ponytail: cap preview at 10 rows to preserve list space; dynamic sizing if needed.
 		"--preview-window=up:10:wrap",
 	}
 	if state.Focus != "" || len(state.Marked) > 0 {
-		restore, err := restorePicker(hosts, query, state)
+		restore, err := restorePicker(input, hosts, query, state)
 		if err != nil {
 			return "", query, nil, err
 		}
@@ -304,6 +323,9 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 	for _, row := range rows {
 		id, _, _ := strings.Cut(row, "\t")
 		i, parseErr := strconv.Atoi(id)
+		if i == emptyRowID {
+			continue
+		}
 		if parseErr != nil || i < 0 || i >= len(hosts) {
 			return "", query, nil, fmt.Errorf("invalid picker selection")
 		}
@@ -316,15 +338,25 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 	return key, nextQuery, selected, nil
 }
 
-func hostRows(hosts []Host) string {
+func hostRows(hosts []Host) string { return hostRowsFor(hosts, nil) }
+
+// emptyRowID marks a non-selectable placeholder, shown when a filter hides every host.
+const emptyRowID = -2
+
+func hostRowsFor(hosts []Host, include func(Host) bool) string {
 	rows := [][4]string{{"HOST", "HOSTNAME / IP", "JUMPHOST", "COMMENT"}}
+	ids := []int{-1}
 	var widths [3]int
-	for _, h := range hosts {
+	for i, h := range hosts {
+		if include != nil && !include(h) {
+			continue
+		}
 		jump := h.JumpHost
 		if jump == "" || strings.EqualFold(jump, "none") {
 			jump = "—"
 		}
 		rows = append(rows, [4]string{clean(h.Alias), clean(h.Hostname), clean(jump), clean(h.Comment)})
+		ids = append(ids, i)
 	}
 	for _, row := range rows {
 		for col := range widths {
@@ -334,7 +366,10 @@ func hostRows(hosts []Host) string {
 	var input strings.Builder
 	for i, row := range rows {
 		// The first row is a non-selectable fzf header; IDs still index hosts.
-		fmt.Fprintf(&input, "%d\t%-*s  %-*s  %-*s  %s\n", i-1, widths[0], row[0], widths[1], row[1], widths[2], row[2], row[3])
+		fmt.Fprintf(&input, "%d\t%-*s  %-*s  %-*s  %s\n", ids[i], widths[0], row[0], widths[1], row[1], widths[2], row[2], row[3])
+	}
+	if include != nil && len(rows) == 1 {
+		fmt.Fprintf(&input, "%d\t(no hosts are tagged; add a '# Windows' or '# RDP' comment inside or directly above a Host block)\n", emptyRowID)
 	}
 	return input.String()
 }
@@ -362,6 +397,9 @@ func preview(args []string) error {
 		return err
 	}
 	i, err := strconv.Atoi(args[2])
+	if i == emptyRowID {
+		return nil
+	}
 	if err != nil || i < 0 || i >= len(hosts) {
 		return fmt.Errorf("invalid preview selection")
 	}

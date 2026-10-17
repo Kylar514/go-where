@@ -14,6 +14,7 @@ type Host struct {
 	Hostname string
 	JumpHost string
 	Comment  string
+	Notes    []string
 	File     string
 	Line     int
 	Block    string
@@ -59,6 +60,7 @@ func readHosts(path string) ([]Host, error) {
 					h.Hostname = h.Alias
 				}
 				h.Comment = strings.Join(b.comment, " · ")
+				h.Notes = b.comment
 				hosts = append(hosts, h)
 				seen[h.Alias] = true
 			}

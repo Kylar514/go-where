@@ -1,4 +1,5 @@
 /local/
+/remdemconfig/
 /ssh-pick
 /dist/
 *.test

@@ -9,13 +9,14 @@ import (
 )
 
 type Config struct {
-	Destination      string   `json:"destination"`
-	Fallback         string   `json:"fallback"`
-	Editor           []string `json:"editor"`
-	EditDestination  string   `json:"edit_destination"`
-	Terminal         []string `json:"terminal"`
-	FallbackTerminal []string `json:"fallback_terminal"`
-	FloatingTerminal []string `json:"floating_terminal"`
+	Destination      string    `json:"destination"`
+	Fallback         string    `json:"fallback"`
+	Editor           []string  `json:"editor"`
+	EditDestination  string    `json:"edit_destination"`
+	Terminal         []string  `json:"terminal"`
+	FallbackTerminal []string  `json:"fallback_terminal"`
+	FloatingTerminal []string  `json:"floating_terminal"`
+	RDP              RDPConfig `json:"rdp"`
 }
 
 func defaultConfig() Config {
@@ -23,6 +24,7 @@ func defaultConfig() Config {
 		Destination: "tmux-pane", Fallback: "terminal", EditDestination: "tmux-pane",
 		Editor: []string{"nvim"}, Terminal: []string{"auto"},
 		FallbackTerminal: []string{"kitty"}, FloatingTerminal: []string{"auto"},
+		RDP: defaultRDPConfig(),
 	}
 }
 
@@ -79,7 +81,7 @@ func (c Config) validate() error {
 	if len(c.FallbackTerminal) > 0 && (c.FallbackTerminal[0] == "" || c.FallbackTerminal[0] == "auto") {
 		return fmt.Errorf("fallback_terminal must be an explicit command or an empty array to disable it")
 	}
-	return nil
+	return c.RDP.validate()
 }
 
 func ensureConfig(path string) error {

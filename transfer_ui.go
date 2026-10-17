@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,13 +13,66 @@ import (
 )
 
 type PickerState struct {
-	Mode   string
-	Focus  string
-	Marked []string
+	Mode    string
+	Focus   string
+	Marked  []string
+	RDPTags []string
 }
 
 func validMode(s string) bool {
-	return s == "ssh" || s == "scp" || s == "legacy-scp" || s == "rsync"
+	return s == "ssh" || s == "scp" || s == "legacy-scp" || s == "rsync" || s == "rdp"
+}
+
+func splitTags(csv string) []string {
+	if csv == "" {
+		return nil
+	}
+	return strings.Split(csv, ",")
+}
+
+func listKind(mode string) string {
+	if mode == "rdp" {
+		return "rdp"
+	}
+	return "all"
+}
+
+// IDs stay the host's index in the full list, so selections never depend on filtering.
+func rowsForMode(hosts []Host, mode string, tags []string) string {
+	if mode != "rdp" {
+		return hostRows(hosts)
+	}
+	return hostRowsFor(hosts, func(h Host) bool { return h.isRDP(tags) })
+}
+
+func readHostsFile(path string) ([]Host, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var hosts []Host
+	return hosts, json.Unmarshal(b, &hosts)
+}
+
+// Only RDP mode shows a different host list, so only crossing it reloads fzf.
+func modeReload(w io.Writer, modeFile, listedFile, hostsFile, tags string) error {
+	mode, err := readMode(modeFile)
+	if err != nil {
+		return err
+	}
+	listed, _ := os.ReadFile(listedFile)
+	if string(listed) == listKind(mode) {
+		return nil
+	}
+	if err := os.WriteFile(listedFile, []byte(listKind(mode)), 0600); err != nil {
+		return err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprint(w, "reload("+shellCommand([]string{exe, "__rows", hostsFile, modeFile, tags})+")")
+	return err
 }
 
 func modeWarning(mode string) string {
@@ -28,13 +83,15 @@ func modeWarning(mode string) string {
 		return "LEGACY SCP (-O): remote scp + POSIX shell required. Windows shells unsupported."
 	case "rsync":
 		return "RSYNC: rsync 3.1+ required on both ends. Native Windows OpenSSH alone is insufficient. No --delete."
+	case "rdp":
+		return "RDP: FreeRDP through this host's ProxyJump (SSH tunnel). Domain/user come from your rdp settings; the client prompts for the password."
 	}
 	return ""
 }
 
 // Restore by filtered rank, not source-file index: fuzzy search reorders hosts.
-func restorePicker(hosts []Host, query string, state *PickerState) (string, error) {
-	_, input, _ := strings.Cut(hostRows(hosts), "\n")
+func restorePicker(rows string, hosts []Host, query string, state *PickerState) (string, error) {
+	_, input, _ := strings.Cut(rows, "\n")
 	c := exec.Command("fzf", "--filter="+query, "--delimiter=\t", "--with-nth=2..")
 	c.Env, c.Stdin = withoutFZFOptions(os.Environ()), strings.NewReader(input)
 	out, err := c.Output()
@@ -74,7 +131,8 @@ func choose(title string, options []choice, text string) (string, bool, error) {
 	for _, option := range options {
 		fmt.Fprintf(&input, "%s\t%s\n", option.ID, clean(option.Label))
 	}
-	args := []string{"--height=90%", "--layout=default", "--border", "--header-first", "--no-sort", "--delimiter=\t", "--with-nth=2..",
+	// Matches are ranked (no --no-sort) so typing "rdp" prefers RDP over rsync's "dry-run".
+	args := []string{"--height=90%", "--layout=default", "--border", "--header-first", "--delimiter=\t", "--with-nth=2..",
 		"--prompt=" + title + " > ", "--header=Ctrl+J/K or arrows · Enter select · Esc back", "--bind=ctrl-j:down,ctrl-k:up"}
 	if text != "" {
 		f, err := os.CreateTemp("", "ssh-pick-review-*.txt")
@@ -117,6 +175,7 @@ func chooseMode(current string) (string, bool, error) {
 	return choose("Mode ("+current+")", []choice{
 		{"ssh", "SSH — interactive shell"}, {"scp", "SCP — SFTP-based file copy"},
 		{"legacy-scp", "Legacy SCP — scp -O, POSIX remote shell only"}, {"rsync", "rsync — efficient transfers with dry-run preview"},
+		{"rdp", "RDP — Windows hosts tagged in your SSH config, via FreeRDP"},
 	}, "")
 }
 

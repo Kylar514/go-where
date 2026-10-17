@@ -262,26 +262,41 @@ func launchTransfers(t Transfer, hosts []Host, dest string, o Origin, c Config, 
 	if len(hosts) == 0 || (t.Direction == "download" && len(hosts) != 1) {
 		return fmt.Errorf("select at least one host for upload or exactly one for download")
 	}
-	if strings.HasPrefix(dest, "tmux-") && o.Pane == "" {
-		return fmt.Errorf("%s requires tmux", dest)
+	if err := checkPlacement(len(hosts), dest, o); err != nil {
+		return err
 	}
-	if dest == "current" && len(hosts) > 1 {
-		return fmt.Errorf("multiple hosts need panes, windows or terminals, not current")
-	}
-	var jobs []transferJob
+	var labels []string
+	var argvs [][]string
 	for _, h := range hosts {
 		argv, err := transferCommand(t, h, sshConfig, false)
 		if err != nil {
 			return err // Validate every job before launching any of them.
 		}
-		jobs = append(jobs, transferJob{Label: t.Mode + " " + t.Direction + " · " + h.Alias, Argv: argv})
+		job := transferJob{Label: t.Mode + " " + t.Direction + " · " + h.Alias, Argv: argv}
+		labels = append(labels, job.Label)
+		argvs = append(argvs, []string{exe, "__run-transfer", encodeJob(job)})
 	}
+	return placeJobs(labels, argvs, dest, o, c)
+}
+
+func checkPlacement(jobs int, dest string, o Origin) error {
+	if strings.HasPrefix(dest, "tmux-") && o.Pane == "" {
+		return fmt.Errorf("%s requires tmux", dest)
+	}
+	if dest == "current" && jobs > 1 {
+		return fmt.Errorf("multiple hosts need panes, windows or terminals, not current")
+	}
+	return nil
+}
+
+// Each job is placed independently: one failed launch never cancels the others.
+func placeJobs(labels []string, argvs [][]string, dest string, o Origin, c Config) error {
 	var failures []error
 	session := ""
-	for _, job := range jobs {
-		argv := []string{exe, "__run-transfer", encodeJob(job)}
+	for i, argv := range argvs {
 		var err error
-		if dest == "tmux-session" {
+		switch dest {
+		case "tmux-session":
 			if session == "" {
 				name := "transfer-" + fmt.Sprintf("%x", time.Now().UnixNano())
 				var id string
@@ -292,13 +307,13 @@ func launchTransfers(t Transfer, hosts []Host, dest string, o Origin, c Config, 
 			} else {
 				err = run([]string{"tmux", "new-window", "-d", "-t", session + ":", shellCommand(argv)})
 			}
-		} else if dest == "current" {
-			err = runTransferJob(job)
-		} else {
+		case "current":
+			err = run(argv)
+		default:
 			err = launchCommand(dest, argv, o, c, false)
 		}
 		if err != nil {
-			failures = append(failures, fmt.Errorf("%s: %w", job.Label, err))
+			failures = append(failures, fmt.Errorf("%s: %w", labels[i], err))
 		}
 	}
 	if session != "" {
@@ -347,6 +362,39 @@ func previewTransfers(t Transfer, hosts []Host, sshConfig string) error {
 }
 
 func transferInternal(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("invalid internal transfer arguments")
+	}
+	switch args[0] {
+	case "__rows":
+		if len(args) != 4 {
+			return fmt.Errorf("invalid internal arguments")
+		}
+		hosts, err := readHostsFile(args[1])
+		if err != nil {
+			return err
+		}
+		mode, err := readMode(args[2])
+		if err != nil {
+			return err
+		}
+		fmt.Print(rowsForMode(hosts, mode, splitTags(args[3])))
+		return nil
+	case "__mode-reload":
+		if len(args) != 5 {
+			return fmt.Errorf("invalid internal arguments")
+		}
+		return modeReload(os.Stdout, args[1], args[2], args[3], args[4])
+	case "__run-rdp":
+		if len(args) != 2 {
+			return fmt.Errorf("invalid internal arguments")
+		}
+		job, err := decodeRDPJob(args[1])
+		if err != nil {
+			return err
+		}
+		return runRDPJob(job)
+	}
 	if len(args) != 2 {
 		return fmt.Errorf("invalid internal transfer arguments")
 	}

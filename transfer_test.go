@@ -152,13 +152,13 @@ func TestModeStateAndFilteredRestore(t *testing.T) {
 	fakeCommand(t, dir, "fzf", "printf '1\\tdb\\n0\\tweb\\n'")
 	hosts := []Host{{Alias: "web"}, {Alias: "db"}}
 	state := PickerState{Mode: "rsync", Focus: "db", Marked: []string{"web"}}
-	actions, err := restorePicker(hosts, "query", &state)
+	actions, err := restorePicker(hostRows(hosts), hosts, "query", &state)
 	if err != nil || actions != "pos(2)+select+pos(1)" {
 		t.Fatalf("filtered rank restore: %q, %v", actions, err)
 	}
 	// Source ordering can change on reload without selecting a different alias.
 	hosts = []Host{{Alias: "db"}, {Alias: "web"}}
-	actions, err = restorePicker(hosts, "query", &state)
+	actions, err = restorePicker(hostRows(hosts), hosts, "query", &state)
 	if err != nil || actions != "pos(1)+select+pos(2)" {
 		t.Fatalf("alias identity restore: %q, %v", actions, err)
 	}
