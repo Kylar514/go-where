@@ -47,12 +47,11 @@ func app(args []string) error {
 	context := fs.String("origin", "", "internal: captured tmux origin")
 	legacy := fs.Bool("legacy", false, "use the legacy SCP protocol (scp mode only)")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: go-where [ssh|scp|rsync|rdp] [options]\n       go-where scp --legacy [options]\n       go-where config [options]\n       go-where hyprland-rules [--config path]\n       go-where rdm-report EXPORT.json [--ssh-config path]\n\nCtrl+O changes mode. Transfer modes always review before execution.")
+		fmt.Fprintln(fs.Output(), "Usage: go-where [ssh|scp|rsync|rdp] [options]\n       go-where scp --legacy [options]\n       go-where config [options]\n       go-where rdm-report EXPORT.json [--ssh-config path]\n\nCtrl+O changes mode. Transfer modes always review before execution.")
 		fs.PrintDefaults()
 	}
 	editSettings := len(args) > 0 && args[0] == "config"
-	printHyprlandRules := len(args) > 0 && args[0] == "hyprland-rules"
-	if editSettings || printHyprlandRules {
+	if editSettings {
 		args = args[1:]
 	}
 	mode := "ssh"
@@ -101,9 +100,6 @@ func app(args []string) error {
 	}
 	if err := c.validate(); err != nil {
 		return err
-	}
-	if printHyprlandRules {
-		return writeHyprlandRules(os.Stdout, c.RDP.Environments)
 	}
 	var o Origin
 	if *context != "" {

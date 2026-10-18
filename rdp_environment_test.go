@@ -1,22 +1,21 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestRDPEnvironmentStyling(t *testing.T) {
+func TestRDPEnvironmentMetadata(t *testing.T) {
 	r := defaultRDPConfig()
 	r.User, r.DefaultDomain = "operator", "ad.example"
 	r.Environments = []RDPEnvironment{
-		{Name: "PROD", Jump: "prod-*", Color: "#0088f2"},
-		{Name: "DEV", Jump: "lab-*", Aliases: []string{"*dev*"}, Color: "#ff1a1a"},
-		{Name: "QA", Jump: "lab-*", Aliases: []string{"*qa*"}, Color: "#ebb450"},
-		{Name: "STG", Jump: "lab-*", Aliases: []string{"*stg*", "*tst*"}, Color: "#61aa30"},
-		{Name: "AZURE", Aliases: []string{"az-*"}, Color: "#cc66cc"},
+		{Name: "PROD", Jump: "prod-*"},
+		{Name: "DEV", Jump: "lab-*", Aliases: []string{"*dev*"}},
+		{Name: "QA", Jump: "lab-*", Aliases: []string{"*qa*"}},
+		{Name: "STG", Jump: "lab-*", Aliases: []string{"*stg*", "*tst*"}},
+		{Name: "AZURE", Aliases: []string{"az-*"}},
 	}
 	if err := r.validate(); err != nil {
 		t.Fatal(err)
@@ -67,24 +66,12 @@ func TestRDPEnvironmentStyling(t *testing.T) {
 	if strings.Count(args, "/title:") != 1 || strings.Count(args, "/floatbar:") != 1 || !strings.Contains(args, "/title:custom") {
 		t.Fatalf("explicit title/bar overrides must win: %s", args)
 	}
-	var rules bytes.Buffer
-	if err := writeHyprlandRules(&rules, r.Environments); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Count(rules.String(), "hl.window_rule") != len(r.Environments) || !strings.Contains(rules.String(), `rgb(ebb450) rgb(ebb450)`) || !strings.Contains(rules.String(), `title = "^\\[QA\\] .*"`) {
-		t.Fatalf("incorrect Lua rules: %s", rules.String())
-	}
-	if strings.Contains(rules.String(), "ad.example") || strings.Contains(rules.String(), "operator") || strings.Contains(rules.String(), "lab-*") {
-		t.Fatal("generated rules leaked login or routing data")
-	}
 	for _, invalid := range []RDPEnvironment{
-		{Name: "x\n", Jump: "*", Color: "#ffffff"},
-		{Name: `x"); os.execute("bad")`, Jump: "*", Color: "#ffffff"},
-		{Name: "DEV", Jump: "*", Color: "red"},
-		{Name: "DEV", Jump: "*", Color: "#fffffg"},
-		{Name: "DEV", Jump: "[", Color: "#ffffff"},
-		{Name: "DEV", Aliases: []string{""}, Color: "#ffffff"},
-		{Name: "DEV", Color: "#ffffff"},
+		{Name: "x\n", Jump: "*"},
+		{Name: "", Jump: "*"},
+		{Name: "DEV", Jump: "["},
+		{Name: "DEV", Aliases: []string{""}},
+		{Name: "DEV"},
 	} {
 		if validateEnvironments([]RDPEnvironment{invalid}) == nil {
 			t.Fatalf("invalid environment accepted: %+v", invalid)
@@ -94,10 +81,14 @@ func TestRDPEnvironmentStyling(t *testing.T) {
 		t.Fatal("duplicate environment names accepted")
 	}
 	config := filepath.Join(t.TempDir(), "config.json")
-	writeTestFile(t, config, `{"rdp":{"environments":[{"name":"QA","jump":"lab-*","color":"#ebb450"}]}}`)
+	writeTestFile(t, config, `{"rdp":{"environments":[{"name":"QA","jump":"lab-*"}]}}`)
 	c, err := loadConfig(config)
 	if err != nil || !c.RDP.TitleBar || len(c.RDP.Environments) != 1 {
 		t.Fatalf("config/default loading: %+v, %v", c.RDP, err)
+	}
+	writeTestFile(t, config, `{"rdp":{"environments":[{"name":"QA","aliases":["*qa*"],"color":"#ebb450"}]}}`)
+	if _, err := loadConfig(config); err == nil {
+		t.Fatal("obsolete compositor color setting must be rejected")
 	}
 	var roundTrip RDPConfig
 	b, _ := json.Marshal(r)

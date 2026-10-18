@@ -147,7 +147,7 @@ Omit `domain` to keep your existing domain rules; an explicit domain overrides t
 
 FreeRDP is detected from `rdp.client` or, if empty, from `xfreerdp3`, `xfreerdp`, `wlfreerdp3`, `sdl-freerdp`, and their `3` variants. SOCKS5 proxying requires FreeRDP 3.x; older clients fall back to a loopback port forward. `go-where rdm-report EXPORT.json` reads a Devolutions RDM JSON export and proposes `# Windows` tags by matching RDM `Url` values to SSH `HostName`s; it is read-only and never edits your config.
 
-### RDP window styling
+### RDP window metadata
 
 Windows show the SSH alias and resolved login, for example `[QA] app-qa — ad.example\operator`. Alternate accounts update the login in the title. Unmatched hosts get an alias/login title without an environment prefix.
 
@@ -158,29 +158,29 @@ Add rules inside your private `rdp` settings, for example:
 ```json
 "title_bar": true,
 "environments": [
-  { "name": "PROD", "jump": "prod-jump*", "color": "#0088f2" },
-  { "name": "DEV", "jump": "lab-jump*", "aliases": ["*dev*"], "color": "#ff1a1a" },
-  { "name": "QA", "jump": "lab-jump*", "aliases": ["*qa*"], "color": "#ebb450" },
-  { "name": "STG", "jump": "lab-jump*", "aliases": ["*stg*", "*tst*"], "color": "#61aa30" },
-  { "name": "AZURE", "aliases": ["az-*"], "color": "#cc66cc" }
+  { "name": "PROD", "jump": "prod-jump*" },
+  { "name": "DEV", "jump": "lab-jump*", "aliases": ["*dev*"] },
+  { "name": "QA", "jump": "lab-jump*", "aliases": ["*qa*"] },
+  { "name": "STG", "jump": "lab-jump*", "aliases": ["*stg*", "*tst*"] },
+  { "name": "AZURE", "aliases": ["az-*"] }
 ]
 ```
 
-Matching is case-insensitive and ordered: first match wins. `jump` matches any ProxyJump hop's hostname (without SSH user/port); `aliases` matches any listed pattern against the SSH alias. If both are present, both must match. At least one is required. Names are unique letters/digits/spaces/underscores/hyphens; colors are `#RRGGBB`. New environments need no Go changes. Labels are visual hints, not server environment verification or access controls.
+Matching is case-insensitive and ordered: first match wins. `jump` matches any ProxyJump hop's hostname (without SSH user/port); `aliases` matches any listed pattern against the SSH alias. If both are present, both must match. At least one is required. Names are unique letters/digits/spaces/underscores/hyphens. New environments need no Go changes. Labels are visual hints, not server environment verification or access controls.
 
-`go-where hyprland-rules [--config path]` prints **Lua** rules with matching active/inactive border colors. It does not change Hyprland itself. To use them in a Lua Hyprland configuration:
-
-```sh
-go-where hyprland-rules > ~/.config/hypr/go-where-environments.lua
-```
-
-Load the generated file after your other rules:
+Border colors and sizes belong entirely to your window manager, not this binary or its JSON config. For example, add an ordinary rule to your Hyprland `rules.lua`:
 
 ```lua
-dofile((os.getenv("XDG_CONFIG_HOME") or (os.getenv("HOME") .. "/.config")) .. "/hypr/go-where-environments.lua")
+hl.window_rule({
+  name = "rdp-qa",
+  match = { class = "^xfreerdp.*$", title = "^\\[QA\\] .*" },
+  border_color = "rgb(ebb450) rgb(ebb450)",
+  border_size = 3,
+  decorate = true,
+})
 ```
 
-Regenerate and reload Hyprland after editing environments, or use a dotfiles loader that runs this command on each reload. Output contains only labels/colors, not routes or credentials. Conventional `.conf` Hyprland configs cannot source this Lua output.
+Reload Hyprland after changing its rules. No generator, loader, or running `go-where` process is needed to apply styling. If upgrading from the experimental generated rules, remove `color` fields from `rdp.environments`; unknown settings are rejected.
 
 ### Transfer checks
 
