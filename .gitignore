@@ -1,5 +1,7 @@
 /local/
 /remdemconfig/
 /go-where
+/ssh-pick
+/go-ssh
 /dist/
 *.test
