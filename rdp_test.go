@@ -251,7 +251,7 @@ func TestRDPCommands(t *testing.T) {
 	if argv, _ = v6.tunnelArgv("forward", 41000); !hasArg(argv, "127.0.0.1:41000:[2001:db8::10]:3389") {
 		t.Fatalf("IPv6 target must be bracketed: %q", argv)
 	}
-	if got := job.clientArgs("socks", 41000); !reflect.DeepEqual(got, []string{"/v:192.0.2.10:3389", "/u:someone", "/d:qa.example", "/proxy:socks5://127.0.0.1:41000", "/cert:tofu", "/dynamic-resolution"}) {
+	if got := job.clientArgs("socks", 41000); !reflect.DeepEqual(got, []string{"/v:192.0.2.10:3389", "/u:someone", "/d:qa.example", "/proxy:socks5://127.0.0.1:41000", "/cert:tofu", `/title:web — qa.example\someone`, "/floatbar:sticky:on,default:visible,show:always", "/dynamic-resolution"}) {
 		t.Fatalf("socks client args: %q", got)
 	}
 	if got := job.clientArgs("forward", 41000); got[0] != "/v:127.0.0.1:41000" || hasArg(got, "/proxy:socks5://127.0.0.1:41000") {
@@ -407,6 +407,7 @@ func TestRDPPasswordNeverOnCommandLine(t *testing.T) {
 	fakeCommand(t, dir, "fetch-password", "printf 'sec ret-pw\\n'")
 	job := rdpTestJob("")
 	job.PasswordCommand = []string{"fetch-password"}
+	job.Title, job.TitleBar = `[QA] test-host — ad.example\operator`, true
 	if err := runRDPSession(job); err != nil {
 		t.Fatal(err)
 	}
@@ -417,6 +418,9 @@ func TestRDPPasswordNeverOnCommandLine(t *testing.T) {
 	}
 	if !strings.Contains(string(fd), "/p:sec ret-pw\n") || !strings.Contains(string(fd), "/v:192.0.2.20:3389\n") {
 		t.Fatalf("client did not receive its options on the pipe: %q", fd)
+	}
+	if !strings.Contains(string(fd), "/title:"+job.Title+"\n") || !strings.Contains(string(fd), "/floatbar:sticky:on,default:visible,show:always\n") {
+		t.Fatal("title and hostname bar options did not reach the client through the password pipe")
 	}
 	for _, body := range []string{"printf ''", "printf 'a\\nb\\n'", "exit 3"} {
 		fakeCommand(t, dir, "fetch-password", body)

@@ -30,17 +30,19 @@ type RDPAccount struct {
 }
 
 type RDPConfig struct {
-	User            string       `json:"user"`
-	DefaultDomain   string       `json:"default_domain"`
-	DomainRules     []DomainRule `json:"domain_rules"`
-	Tags            []string     `json:"tags"`
-	Port            int          `json:"port"`
-	Tunnel          string       `json:"tunnel"`
-	Client          []string     `json:"client"`
-	ClientArgs      []string     `json:"client_args"`
-	PasswordCommand []string     `json:"password_command"`
-	Destination     string       `json:"destination"`
-	Accounts        []RDPAccount `json:"accounts"`
+	User            string           `json:"user"`
+	DefaultDomain   string           `json:"default_domain"`
+	DomainRules     []DomainRule     `json:"domain_rules"`
+	Tags            []string         `json:"tags"`
+	Port            int              `json:"port"`
+	Tunnel          string           `json:"tunnel"`
+	Client          []string         `json:"client"`
+	ClientArgs      []string         `json:"client_args"`
+	PasswordCommand []string         `json:"password_command"`
+	Destination     string           `json:"destination"`
+	Accounts        []RDPAccount     `json:"accounts"`
+	Environments    []RDPEnvironment `json:"environments"`
+	TitleBar        bool             `json:"title_bar"`
 }
 
 func defaultRDPConfig() RDPConfig {
@@ -54,12 +56,17 @@ func defaultRDPConfig() RDPConfig {
 		PasswordCommand: []string{},
 		Destination:     "background",
 		Accounts:        []RDPAccount{},
+		Environments:    []RDPEnvironment{},
+		TitleBar:        true,
 	}
 }
 
 func safeValue(s string) bool { return clean(s) == s && !strings.ContainsAny(s, "\r\n") }
 
 func (r RDPConfig) validate() error {
+	if err := validateEnvironments(r.Environments); err != nil {
+		return err
+	}
 	names := map[string]bool{}
 	for _, account := range r.Accounts {
 		if strings.TrimSpace(account.Name) == "" || !safeValue(account.Name) || names[account.Name] {
@@ -230,6 +237,8 @@ func (r RDPConfig) domainFor(hops []hop) string {
 }
 
 type rdpJob struct {
+	Title           string
+	TitleBar        bool
 	Label           string
 	Host            string
 	Port            int
@@ -244,6 +253,9 @@ type rdpJob struct {
 }
 
 func (j rdpJob) validate() error {
+	if !safeValue(j.Title) {
+		return fmt.Errorf("RDP window title must not contain control characters")
+	}
 	if j.Host == "" || !safeValue(j.Host) || strings.ContainsAny(j.Host, " \t/%") || strings.HasPrefix(j.Host, "-") {
 		return fmt.Errorf("host address is empty or unsupported (SSH tokens are not expanded)")
 	}
@@ -268,6 +280,17 @@ func newRDPJob(r RDPConfig, h Host, sshConfig string) (rdpJob, error) {
 	}
 	job := rdpJob{Label: "rdp · " + h.Alias, Host: h.Hostname, Port: r.Port, Jump: jump, SSHConfig: sshConfig, Tunnel: r.Tunnel,
 		Client: r.Client, ClientArgs: r.ClientArgs, User: r.User, Domain: r.domainFor(hops), PasswordCommand: r.PasswordCommand}
+	job.Title, job.TitleBar = h.Alias, r.TitleBar
+	if env := r.environmentFor(h.Alias, hops); env != "" {
+		job.Title = "[" + env + "] " + job.Title
+	}
+	if job.User != "" {
+		login := job.User
+		if job.Domain != "" && !strings.ContainsAny(login, `\@`) {
+			login = job.Domain + `\` + login
+		}
+		job.Title += " — " + login
+	}
 	if err := job.validate(); err != nil {
 		return rdpJob{}, fmt.Errorf("%s: %w", h.Alias, err)
 	}
@@ -321,9 +344,16 @@ func (j rdpJob) clientArgs(mode string, port int) []string {
 	}
 	// Explicit client settings take precedence over the first-use trust default.
 	explicitCert := false
+	explicitTitle, explicitBar := false, false
 	for _, configured := range [][]string{j.Client, j.ClientArgs} {
 		for _, arg := range configured {
 			lower := strings.ToLower(arg)
+			if strings.HasPrefix(lower, "/title:") || strings.HasPrefix(lower, "/t:") {
+				explicitTitle = true
+			}
+			if lower == "/floatbar" || strings.HasPrefix(lower, "/floatbar:") {
+				explicitBar = true
+			}
 			if strings.HasPrefix(lower, "/cert:") || strings.HasPrefix(lower, "/cert-") {
 				explicitCert = true
 			}
@@ -331,6 +361,12 @@ func (j rdpJob) clientArgs(mode string, port int) []string {
 	}
 	if !explicitCert {
 		args = append(args, "/cert:tofu")
+	}
+	if j.Title != "" && !explicitTitle {
+		args = append(args, "/title:"+j.Title)
+	}
+	if j.TitleBar && !explicitBar {
+		args = append(args, "/floatbar:sticky:on,default:visible,show:always")
 	}
 	return append(args, j.ClientArgs...)
 }

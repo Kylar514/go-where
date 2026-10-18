@@ -147,6 +147,41 @@ Omit `domain` to keep your existing domain rules; an explicit domain overrides t
 
 FreeRDP is detected from `rdp.client` or, if empty, from `xfreerdp3`, `xfreerdp`, `wlfreerdp3`, `sdl-freerdp`, and their `3` variants. SOCKS5 proxying requires FreeRDP 3.x; older clients fall back to a loopback port forward. `go-where rdm-report EXPORT.json` reads a Devolutions RDM JSON export and proposes `# Windows` tags by matching RDM `Url` values to SSH `HostName`s; it is read-only and never edits your config.
 
+### RDP window styling
+
+Windows show the SSH alias and resolved login, for example `[QA] app-qa — ad.example\operator`. Alternate accounts update the login in the title. Unmatched hosts get an alias/login title without an environment prefix.
+
+The X11 FreeRDP **connection bar** is pinned and visible by default in both windowed and fullscreen modes. It shows that title without a compositor plugin. Unpin it for auto-hide; move to the top edge to reveal it. Set `rdp.title_bar` to `false` to disable the bar for new sessions. This is a client-drawn overlay, not a Hyprland title bar; other FreeRDP frontends may not implement it. Explicit `/title:` (or `/t:`) and `/floatbar:` client options override defaults. Custom titles need the environment prefix to retain border matching.
+
+Add rules inside your private `rdp` settings, for example:
+
+```json
+"title_bar": true,
+"environments": [
+  { "name": "PROD", "jump": "prod-jump*", "color": "#0088f2" },
+  { "name": "DEV", "jump": "lab-jump*", "aliases": ["*dev*"], "color": "#ff1a1a" },
+  { "name": "QA", "jump": "lab-jump*", "aliases": ["*qa*"], "color": "#ebb450" },
+  { "name": "STG", "jump": "lab-jump*", "aliases": ["*stg*", "*tst*"], "color": "#61aa30" },
+  { "name": "AZURE", "aliases": ["az-*"], "color": "#cc66cc" }
+]
+```
+
+Matching is case-insensitive and ordered: first match wins. `jump` matches any ProxyJump hop's hostname (without SSH user/port); `aliases` matches any listed pattern against the SSH alias. If both are present, both must match. At least one is required. Names are unique letters/digits/spaces/underscores/hyphens; colors are `#RRGGBB`. New environments need no Go changes. Labels are visual hints, not server environment verification or access controls.
+
+`go-where hyprland-rules [--config path]` prints **Lua** rules with matching active/inactive border colors. It does not change Hyprland itself. To use them in a Lua Hyprland configuration:
+
+```sh
+go-where hyprland-rules > ~/.config/hypr/go-where-environments.lua
+```
+
+Load the generated file after your other rules:
+
+```lua
+dofile((os.getenv("XDG_CONFIG_HOME") or (os.getenv("HOME") .. "/.config")) .. "/hypr/go-where-environments.lua")
+```
+
+Regenerate and reload Hyprland after editing environments, or use a dotfiles loader that runs this command on each reload. Output contains only labels/colors, not routes or credentials. Conventional `.conf` Hyprland configs cannot source this Lua output.
+
 ### Transfer checks
 
 `go test ./...` covers command construction, quoting, completion, Back navigation, independent batch launches, dry runs, and output retention using synthetic fixtures. To run the optional native transfer test, supply `GO_WHERE_TEST_CONFIG` pointing to a **disposable loopback server sharing the local filesystem** with alias `test-target`:
@@ -181,6 +216,8 @@ The test creates its own temporary source/destination directories and checks SCP
     "client_args": ["/dynamic-resolution"],
     "password_command": [],
     "accounts": [],
+    "environments": [],
+    "title_bar": true,
     "destination": "background"
   }
 }
