@@ -52,6 +52,7 @@ func app(args []string) error {
 	noPopup := fs.Bool("no-popup", false, "run inline instead of opening a tmux popup")
 	popup := fs.Bool("popup", false, "open inside a tmux popup (default: standalone TUI)")
 	tunnelsConfig := fs.String("tunnels-config", "", "Diglet connections.yaml (default: existing Diglet user config)")
+	inPopup := fs.Bool("in-popup", false, "internal: running inside a tmux popup that closes after a launch")
 	client := fs.String("client", "", "invoking tmux client (for bindings or shared panes)")
 	context := fs.String("origin", "", "internal: captured tmux origin")
 	legacy := fs.Bool("legacy", false, "use the legacy SCP protocol (scp mode only)")
@@ -130,7 +131,7 @@ func app(args []string) error {
 		return err
 	}
 	if o.Pane != "" && *popup && !*noPopup {
-		argv := []string{exe, mode, "--no-popup", "--origin", encodeOrigin(o), "--config", *config}
+		argv := []string{exe, mode, "--no-popup", "--in-popup", "--origin", encodeOrigin(o), "--config", *config}
 		if customSSHConfig {
 			argv = append(argv, "--ssh-config", *sshConfig)
 		}
@@ -245,7 +246,12 @@ func app(args []string) error {
 			err = launchRDP(selected, o, c, connectionConfig, exe, state.Debug)
 		} else if state.Mode != "ssh" {
 			draft.Mode = state.Mode
-			_, err = transferWizard(&draft, selected, target, o, c, connectionConfig, exe)
+			var launched bool
+			launched, err = transferWizard(&draft, selected, target, o, c, connectionConfig, exe)
+			// Without a launch (backed out of the wizard) the popup must remain open.
+			if *inPopup && launched {
+				return nil
+			}
 		} else {
 			err = connect(selected, target, o, c, connectionConfig)
 		}
@@ -253,6 +259,12 @@ func app(args []string) error {
 			if showErr := notice(err.Error()); showErr != nil {
 				return errors.Join(err, showErr)
 			}
+			continue
+		}
+		// Inside a tmux popup, an explicit launch closes the popup. Failed
+		// launches and non-launch actions (target, edit, reload) keep it open.
+		if *inPopup {
+			return nil
 		}
 	}
 }

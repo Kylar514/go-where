@@ -80,6 +80,32 @@ Host home
 	}
 }
 
+func TestPickerPopupExitsAfterLaunch(t *testing.T) {
+	scriptTUI(t, "\nenter\n0\tweb\n")
+	dir := t.TempDir()
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Setenv("TMUX", "")
+	t.Setenv("TMUX_PANE", "")
+	log := filepath.Join(dir, "calls")
+	t.Setenv("CALLS", log)
+	writeTestFile(t, filepath.Join(dir, "ssh-config"), "Host web\n HostName 192.0.2.1\n")
+	defer os.Remove(filepath.Join(dir, "ssh-config"))
+	fakeCommand(t, dir, "ssh", "printf '%s\\n' \"$@\" > \"$CALLS\"")
+	if err := app([]string{"--ssh-config", filepath.Join(dir, "ssh-config"), "--in-popup", "--destination", "current"}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(log); !strings.Contains(string(b), "web") {
+		t.Fatalf("popup launch missing ssh call: %q", b)
+	}
+	// A failed launch must keep the process running: the notice closes, the
+	// picker returns, and the user cancels instead of relaunching.
+	scriptTUI(t, "\nenter\n0\tweb\n", "back", "\ncancel\n")
+	fakeCommand(t, dir, "ssh", "exit 1")
+	if err := app([]string{"--ssh-config", filepath.Join(dir, "ssh-config"), "--in-popup", "--destination", "current"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPickerHeaderAndHelp(t *testing.T) {
 	for _, mode := range []string{"ssh", "scp", "legacy-scp", "rsync", "rdp"} {
 		help := pickerHelp(mode)

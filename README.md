@@ -13,7 +13,7 @@ CGO_ENABLED=0 go build -trimpath -o "$HOME/.local/bin/go-where" .
 go-where
 ```
 
-The TUI runs in the current terminal by default, capturing the originating tmux session/window/pane/client when available. Connections still open in that original tmux target. Outside tmux, the configured fallback is used; **Target / Ctrl+G** lets you explicitly select an existing tmux pane or another destination. It never guesses a "current" tmux session. Use `--popup` to opt into a tmux popup. Launched RDP/SSH/transfers return to the picker; editing still closes it.
+The TUI runs in the current terminal by default, capturing the originating tmux session/window/pane/client when available. Connections still open in that original tmux target. Outside tmux, the configured fallback is used; **Target / Ctrl+G** lets you explicitly select an existing tmux pane or another destination. It never guesses a "current" tmux session. Use `--popup` to opt into a tmux popup; it closes automatically after a successful launch (SSH, RDP or transfer) so the connection takes over. Failed launches, cancels and edits keep it open. In a standalone terminal the picker stays open after launching.
 
 ```sh
 go-where --destination tmux-window
