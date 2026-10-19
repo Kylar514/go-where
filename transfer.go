@@ -316,7 +316,7 @@ func placeJobs(labels []string, argvs [][]string, dest string, o Origin, c Confi
 			failures = append(failures, fmt.Errorf("%s: %w", labels[i], err))
 		}
 	}
-	if session != "" {
+	if session != "" && o.Client != "" {
 		if err := run([]string{"tmux", "switch-client", "-c", o.Client, "-t", session}); err != nil {
 			failures = append(failures, err)
 		}
@@ -362,106 +362,16 @@ func previewTransfers(t Transfer, hosts []Host, sshConfig string) error {
 }
 
 func transferInternal(args []string) error {
-	if len(args) < 2 {
+	if len(args) != 2 {
 		return fmt.Errorf("invalid internal transfer arguments")
 	}
 	switch args[0] {
-	case "__rdp-account":
-		if len(args) != 4 {
-			return fmt.Errorf("invalid internal arguments")
-		}
-		return chooseRDPAccount(args[1], args[2], args[3])
-	case "__picker-header":
-		if len(args) != 4 {
-			return fmt.Errorf("invalid internal arguments")
-		}
-		mode, err := readMode(args[1])
-		if err != nil {
-			return err
-		}
-		fmt.Print(pickerHeader(mode, args[2], args[3]))
-		return nil
-	case "__rows":
-		if len(args) != 4 {
-			return fmt.Errorf("invalid internal arguments")
-		}
-		hosts, err := readHostsFile(args[1])
-		if err != nil {
-			return err
-		}
-		mode, err := readMode(args[2])
-		if err != nil {
-			return err
-		}
-		fmt.Print(rowsForMode(hosts, mode, splitTags(args[3])))
-		return nil
-	case "__mode-reload":
-		if len(args) != 5 {
-			return fmt.Errorf("invalid internal arguments")
-		}
-		return modeReload(os.Stdout, args[1], args[2], args[3], args[4])
 	case "__run-rdp":
-		if len(args) != 2 {
-			return fmt.Errorf("invalid internal arguments")
-		}
 		job, err := decodeRDPJob(args[1])
 		if err != nil {
 			return err
 		}
 		return runRDPJob(job)
-	}
-	if len(args) != 2 {
-		return fmt.Errorf("invalid internal transfer arguments")
-	}
-	switch args[0] {
-	case "__rdp-account-ready":
-		b, err := os.ReadFile(args[1])
-		if err != nil {
-			return err
-		}
-		if len(b) > 0 {
-			fmt.Print("accept")
-		}
-		return nil
-	case "__help":
-		mode, err := readMode(args[1])
-		if err != nil {
-			return err
-		}
-		_, _, err = choose("Help — Enter or Esc to return", []choice{{"back", "Return to hosts"}}, pickerHelp(mode))
-		return err
-	case "__mode", "__mode-prompt":
-		mode, err := readMode(args[1])
-		if err != nil {
-			return err
-		}
-		if args[0] == "__mode-prompt" {
-			fmt.Print(strings.ToUpper(mode) + " > ")
-			return nil
-		}
-		chosen, back, err := chooseMode(mode)
-		if err != nil || back {
-			return err
-		}
-		return writeMode(args[1], chosen)
-	case "__complete":
-		matches, err := completeLocal(args[1])
-		if err != nil {
-			return err
-		}
-		for _, match := range matches {
-			fmt.Println(match)
-		}
-		return nil
-	case "__text":
-		b, err := os.ReadFile(args[1])
-		if err != nil {
-			return err
-		}
-		for _, line := range strings.Split(string(b), "\n") {
-			fmt.Println(clean(line))
-		}
-		return nil
 	case "__run-transfer":
 		b, err := base64.RawURLEncoding.DecodeString(args[1])
 		if err != nil {

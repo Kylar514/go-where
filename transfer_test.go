@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	tea "github.com/charmbracelet/bubbletea"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -137,48 +137,44 @@ if [ ! -f "$CALLS.first" ]; then touch "$CALLS.first"; exit 1; fi`)
 }
 
 func TestModeStateAndFilteredRestore(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "mode")
-	if err := writeMode(path, "rsync"); err != nil {
-		t.Fatal(err)
-	}
-	if mode, err := readMode(path); err != nil || mode != "rsync" {
-		t.Fatalf("mode state: %q, %v", mode, err)
-	}
-	if err := writeMode(path, "shell-command"); err == nil {
+	if validMode("shell-command") {
 		t.Fatal("accepted invalid mode")
 	}
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
-	fakeCommand(t, dir, "fzf", "printf '1\\tdb\\n0\\tweb\\n'")
 	hosts := []Host{{Alias: "web"}, {Alias: "db"}}
 	state := PickerState{Mode: "rsync", Focus: "db", Marked: []string{"web"}}
-	actions, err := restorePicker(hostRows(hosts), hosts, "query", &state)
-	if err != nil || actions != "pos(2)+select+pos(1)" {
-		t.Fatalf("filtered rank restore: %q, %v", actions, err)
-	}
-	// Source ordering can change on reload without selecting a different alias.
-	hosts = []Host{{Alias: "db"}, {Alias: "web"}}
-	actions, err = restorePicker(hostRows(hosts), hosts, "query", &state)
-	if err != nil || actions != "pos(1)+select+pos(2)" {
-		t.Fatalf("alias identity restore: %q, %v", actions, err)
+	for i := 0; i < 2; i++ {
+		m := newPickerModel(hosts, "", "terminal", Origin{}, state, defaultConfig())
+		h, ok := m.activeHost()
+		if !ok || h.Alias != "db" || !m.marked["web"] {
+			t.Fatal("reload lost alias identities")
+		}
+		hosts = []Host{{Alias: "db"}, {Alias: "web"}}
 	}
 }
 
 func TestPathPromptCompletesAndPreservesBackInput(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
-	t.Setenv("STEPS", dir)
-	fakeCommand(t, dir, "fzf", `if [ ! -f "$STEPS/first" ]; then
-  touch "$STEPS/first"
-  printf 'tab\nquery\n%s\n' "$STEPS/a file"
-else
-  printf 'enter\n%s\n' "$STEPS/a file"
-fi`)
+	writeTestFile(t, filepath.Join(dir, "a file"), "data")
+	old := runTUI
+	t.Cleanup(func() { runTUI = old })
+	runTUI = func(model tea.Model) (tea.Model, error) {
+		m := model.(*pathModel)
+		m.input.SetValue(dir + "/a")
+		m.complete()
+		m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		return m, nil
+	}
 	path, back, err := pathPrompt("Local source", "", true, "/fake/go-where")
 	if err != nil || back || path != filepath.Join(dir, "a file") {
 		t.Fatalf("Tab/Enter: %q, %v, %v", path, back, err)
 	}
-	fakeCommand(t, dir, "fzf", `printf '%s\n' back 'C:\Users\Kyle\Downloads\new file'`)
+	runTUI = func(model tea.Model) (tea.Model, error) {
+		m := model.(*pathModel)
+		m.input.SetValue(`C:\Users\Kyle\Downloads\new file`)
+		m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		return m, nil
+	}
 	path, back, err = pathPrompt("Remote", "", false, "/fake/go-where")
 	if err != nil || !back || path != `C:\Users\Kyle\Downloads\new file` {
 		t.Fatalf("Back/Windows syntax: %q, %v, %v", path, back, err)
@@ -252,18 +248,12 @@ func TestTransferWizardBackAndMultiUpload(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 	t.Setenv("STEPS", dir)
-	fakeCommand(t, dir, "fzf", `n=0; if [ -f "$STEPS/count" ]; then read -r n < "$STEPS/count"; fi
-n=$((n+1)); printf '%s\n' "$n" > "$STEPS/count"
-printf '%s\n' "$@" >> "$STEPS/args"
-cat "$STEPS/$n"`)
 	fakeCommand(t, dir, "scp", "exit 99") // Must only be checked, never run in the picker.
 	fakeCommand(t, dir, "tmux", `printf '%s\n' "$@" >> "$STEPS/launches"`)
 	source := filepath.Join(dir, "source file")
 	writeTestFile(t, source, "data")
 	steps := []string{"upload\tUpload\n", "enter\n" + source + "\n", "back\n/old destination\n", "enter\n" + source + "\n", "enter\n/first destination\n", "back\tBack\n", "enter\n/final destination\n", "run\tRun\n"}
-	for i, out := range steps {
-		writeTestFile(t, filepath.Join(dir, strconv.Itoa(i+1)), out)
-	}
+	seen := scriptTUI(t, steps...)
 	draft := Transfer{Mode: "scp", Direction: "upload"}
 	launched, err := transferWizard(&draft, []Host{{Alias: "a"}, {Alias: "b"}}, "tmux-pane", Origin{"%1", "@1", "$1", "client"}, defaultConfig(), "", "/fake/go-where")
 	if err != nil || !launched || draft.Remote != "/final destination" || draft.Local != source {
@@ -273,9 +263,9 @@ cat "$STEPS/$n"`)
 	if strings.Count(string(b), "split-window") != 2 {
 		t.Fatalf("expected one independent job per host: %s", b)
 	}
-	b, _ = os.ReadFile(filepath.Join(dir, "args"))
-	if !strings.Contains(string(b), "--query=/old destination") || !strings.Contains(string(b), "--query="+source) {
-		t.Fatalf("Back discarded entered values: %s", b)
+	inputs := strings.Join(*seen, "\n")
+	if !strings.Contains(inputs, "path:/old destination") || !strings.Contains(inputs, "path:"+source) {
+		t.Fatalf("Back discarded entered values: %s", inputs)
 	}
 }
 

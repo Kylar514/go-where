@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	tea "github.com/charmbracelet/bubbletea"
 	"net"
 	"os"
 	"os/signal"
@@ -78,30 +79,26 @@ func TestRDPAccounts(t *testing.T) {
 }
 
 func TestRDPAccountChooser(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
-	modeFile, configFile, selectionFile := filepath.Join(dir, "mode"), filepath.Join(dir, "config.json"), filepath.Join(dir, "selection")
-	writeTestFile(t, modeFile, "rdp")
-	writeTestFile(t, configFile, `{"rdp":{"accounts":[{"name":"Admin","user":"operator"}]}}`)
-	fakeCommand(t, dir, "fzf", `printf '1\tAdmin\n'`)
-	if err := chooseRDPAccount(modeFile, configFile, selectionFile); err != nil {
-		t.Fatal(err)
+	c := defaultConfig()
+	c.RDP.Accounts = []RDPAccount{{Name: "Admin", User: "operator"}}
+	hosts := []Host{{Alias: "web", Hostname: "192.0.2.1", Notes: []string{"RDP"}}}
+	m := newPickerModel(hosts, "", "terminal", Origin{}, PickerState{Mode: "rdp"}, c)
+	m.action("account")
+	m.dialog.cursor = 1
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.state.Account.User != "operator" || m.key != "enter" {
+		t.Fatal("chosen account not applied to this launch")
 	}
-	b, _ := os.ReadFile(selectionFile)
-	if !strings.Contains(string(b), `"user":"operator"`) {
-		t.Fatalf("selection: %s", b)
+	m = newPickerModel(hosts, "", "terminal", Origin{}, m.state, c)
+	m.action("account")
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.key != "" || m.state.Account.User != "" {
+		t.Fatal("cancel or reopening retained a previous account")
 	}
-	fakeCommand(t, dir, "fzf", "exit 130")
-	if err := chooseRDPAccount(modeFile, configFile, selectionFile); err != nil {
-		t.Fatal(err)
-	}
-	if b, _ := os.ReadFile(selectionFile); len(b) != 0 {
-		t.Fatal("cancel retained a prior account selection")
-	}
-	writeTestFile(t, modeFile, "ssh")
-	fakeCommand(t, dir, "fzf", "exit 2")
-	if err := chooseRDPAccount(modeFile, configFile, selectionFile); err != nil {
-		t.Fatalf("account chooser must be inactive outside RDP: %v", err)
+	m.switchMode("ssh")
+	m.action("account")
+	if m.dialog != nil {
+		t.Fatal("account chooser active outside RDP")
 	}
 }
 
@@ -142,16 +139,18 @@ Host linux
 	if !reflect.DeepEqual(tagged, []string{"inside", "inline"}) {
 		t.Fatalf("tagged hosts: %v", tagged)
 	}
-	rows := strings.Split(strings.TrimSuffix(rowsForMode(hosts, "rdp", []string{"windows", "rdp"}), "\n"), "\n")
-	if len(rows) != 3 || !strings.HasPrefix(rows[0], "-1\tHOST") || !strings.HasPrefix(rows[1], "1\tinside") || !strings.HasPrefix(rows[2], "2\tinline") {
-		t.Fatalf("filtered rows must keep full-list IDs: %q", rows)
+	m := newPickerModel(hosts, "", "terminal", Origin{}, PickerState{Mode: "rdp"}, defaultConfig())
+	if !reflect.DeepEqual(m.visible, []int{1, 2}) {
+		t.Fatalf("filtered IDs: %v", m.visible)
 	}
-	if rowsForMode(hosts, "ssh", nil) != hostRows(hosts) {
-		t.Fatal("non-RDP modes must list every host")
+	m.switchMode("ssh")
+	if len(m.visible) != len(hosts) {
+		t.Fatal("SSH must list every host")
 	}
-	empty := rowsForMode(hosts, "rdp", []string{"nothing"})
-	if !strings.Contains(empty, "-2\t(no hosts are tagged") || strings.Count(empty, "\n") != 2 {
-		t.Fatalf("empty RDP list needs a placeholder: %q", empty)
+	m.config.RDP.Tags = []string{"nothing"}
+	m.switchMode("rdp")
+	if len(m.visible) != 0 {
+		t.Fatal("empty RDP list must not select a host")
 	}
 }
 
@@ -500,21 +499,15 @@ func TestLaunchRDPPlacementAndValidation(t *testing.T) {
 }
 
 func TestModeReloadOnlyWhenListChanges(t *testing.T) {
-	dir := t.TempDir()
-	modeFile, listedFile, hostsFile := filepath.Join(dir, "mode"), filepath.Join(dir, "listed"), filepath.Join(dir, "hosts.json")
-	writeTestFile(t, listedFile, "all")
-	var out bytes.Buffer
-	for _, step := range []struct {
-		mode   string
-		reload bool
-	}{{"scp", false}, {"rdp", true}, {"rdp", false}, {"ssh", true}, {"rsync", false}} {
-		writeTestFile(t, modeFile, step.mode)
-		out.Reset()
-		if err := modeReload(&out, modeFile, listedFile, hostsFile, "windows,rdp"); err != nil {
-			t.Fatal(err)
+	m := newPickerModel([]Host{{Alias: "web", Notes: []string{"RDP"}}, {Alias: "db"}}, "", "terminal", Origin{}, PickerState{Mode: "ssh", Marked: []string{"db"}}, defaultConfig())
+	for _, mode := range []string{"scp", "rdp", "rdp", "ssh", "rsync"} {
+		m.switchMode(mode)
+		want := 2
+		if mode == "rdp" {
+			want = 1
 		}
-		if got := strings.HasPrefix(out.String(), "reload('"); got != step.reload || (got && !strings.Contains(out.String(), "__rows")) {
-			t.Fatalf("mode %s: reload=%v output=%q", step.mode, got, out.String())
+		if len(m.visible) != want || !m.marked["db"] {
+			t.Fatal("mode switch discarded hosts or marks")
 		}
 	}
 }

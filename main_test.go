@@ -82,14 +82,6 @@ Host home
 
 func TestPickerHeaderAndHelp(t *testing.T) {
 	for _, mode := range []string{"ssh", "scp", "legacy-scp", "rsync", "rdp"} {
-		header := pickerHeader(mode, "tmux-pane", "background")
-		want := "Enter → tmux pane"
-		if mode == "rdp" {
-			want = "Enter → background"
-		}
-		if !strings.Contains(header, want) || !strings.Contains(header, "│    ? → help") || strings.Contains(header, "Tab") {
-			t.Fatalf("%s header: %q", mode, header)
-		}
 		help := pickerHelp(mode)
 		if !strings.Contains(help, "Shift+Tab") || !strings.Contains(help, "Ctrl+Alt+E") {
 			t.Fatalf("%s help missing shortcuts: %q", mode, help)
@@ -97,9 +89,6 @@ func TestPickerHeaderAndHelp(t *testing.T) {
 		if strings.Contains(help, "New tmux pane") == (mode == "rdp") {
 			t.Fatalf("%s help advertises incorrect placement", mode)
 		}
-	}
-	if !strings.Contains(pickerHeader("rdp", "current", ""), "Enter → background") {
-		t.Fatal("RDP header must default to background")
 	}
 }
 
@@ -162,22 +151,6 @@ Host command-disabled
 	for i, h := range hosts {
 		if h.JumpHost != want[i] {
 			t.Errorf("%s jump: %q, want %q", h.Alias, h.JumpHost, want[i])
-		}
-	}
-	rows := strings.Split(strings.TrimSuffix(hostRows(hosts), "\n"), "\n")
-	if len(rows) != len(hosts)+1 || !strings.HasPrefix(rows[0], "-1\tHOST") {
-		t.Fatalf("missing non-selectable column labels: %v", rows)
-	}
-	_, heading, _ := strings.Cut(rows[0], "\t")
-	jumpColumn := strings.Index(heading, "JUMPHOST")
-	for i, row := range rows[1:] {
-		_, display, _ := strings.Cut(row, "\t")
-		label := want[i]
-		if label == "" || label == "none" {
-			label = "—"
-		}
-		if !strings.HasPrefix(display[jumpColumn:], label) {
-			t.Errorf("misaligned jump column: %q", row)
 		}
 	}
 }
@@ -303,36 +276,16 @@ if [ "$1" = new-session ]; then printf '$42\n'; fi`)
 }
 
 func TestPickerProtocol(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
-	t.Setenv("FZF_DEFAULT_OPTS", "--filter=broken")
-	fakeCommand(t, dir, "fzf", `if [ -n "$FZF_DEFAULT_OPTS" ]; then exit 99; fi
-for expected in '--height=45' '--layout=default' '--header-first' '--header-lines=1' '--preview-window=up:10:wrap'; do
-  found=false
-  for arg in "$@"; do
-    if [ "$arg" = "$expected" ]; then found=true; fi
-  done
-  if [ "$found" != true ]; then exit 97; fi
-done
-case "$*" in
-  *ctrl-u:half-page-up,ctrl-d:half-page-down*) ;;
-  *) exit 98 ;;
-esac
-IFS= read -r header
-case "$header" in *HOST*HOSTNAME*JUMPHOST*COMMENT*) ;; *) exit 96 ;; esac
-IFS= read -r row
-printf 'query\nctrl-alt-w\n%s\n' "$row"`)
+	scriptTUI(t, "query\nctrl-alt-w\n0\tweb\n", "notfound\nctrl-r\n", "cancel")
 	hosts := []Host{{Alias: "web", Hostname: "192.0.2.1", Comment: "Production"}}
 	key, query, selected, err := pick(hosts, "/fake/go-where", "", "tmux-pane", Origin{}, nil)
 	if err != nil || key != "ctrl-alt-w" || query != "query" || len(selected) != 1 || selected[0].Alias != "web" {
 		t.Fatalf("picker: %q %q %+v %v", key, query, selected, err)
 	}
-	fakeCommand(t, dir, "fzf", "printf 'notfound\\nctrl-r\\n'; exit 1")
 	key, _, _, err = pick(hosts, "/fake/go-where", "", "terminal", Origin{}, nil)
 	if err != nil || key != "ctrl-r" {
 		t.Fatalf("reload with no matches: %q, %v", key, err)
 	}
-	fakeCommand(t, dir, "fzf", "exit 130")
 	key, _, _, err = pick(hosts, "/fake/go-where", "", "terminal", Origin{}, nil)
 	if err != nil || key != "cancel" {
 		t.Fatalf("cancel: %q, %v", key, err)
@@ -340,6 +293,7 @@ printf 'query\nctrl-alt-w\n%s\n' "$row"`)
 }
 
 func TestAppCustomConfigAndEditor(t *testing.T) {
+	scriptTUI(t, "\nenter\n0\tweb\n", "cancel", "\nenter\n0\tweb\n", "cancel")
 	dir := t.TempDir()
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 	t.Setenv("HOME", dir)
@@ -350,7 +304,6 @@ func TestAppCustomConfigAndEditor(t *testing.T) {
 	t.Setenv("CALLS", log)
 	root := filepath.Join(dir, ".ssh", "config")
 	writeTestFile(t, root, "Host web\n HostName 192.0.2.1\n")
-	fakeCommand(t, dir, "fzf", "IFS= read -r header; IFS= read -r row; printf '\\nenter\\n%s\\n' \"$row\"")
 	fakeCommand(t, dir, "ssh", "printf '%s\\n' \"$@\" > \"$CALLS\"")
 	if err := app([]string{"--destination", "current"}); err != nil {
 		t.Fatal(err)

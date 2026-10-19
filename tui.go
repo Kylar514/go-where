@@ -1,0 +1,696 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	digletconfig "github.com/kylar514/diglet/config"
+	"github.com/sahilm/fuzzy"
+)
+
+type tunnelInfo struct {
+	status, pid int
+	owner       string
+}
+type tunnelPoll struct{}
+type tunnelStatusMsg struct {
+	statuses map[string]tunnelInfo
+	err      error
+}
+type tunnelActionMsg struct {
+	name string
+	err  error
+}
+type hitRegion struct {
+	x, y, width int
+	action      string
+	index       int
+}
+type pickerModel struct {
+	hosts                         []Host
+	state                         PickerState
+	config                        Config
+	dest                          string
+	origin                        Origin
+	search                        textinput.Model
+	preview                       viewport.Model
+	visible                       []int
+	marked                        map[string]bool
+	cursor, offset, width, height int
+	transferMode                  string
+	dialog                        *dialogModel
+	dialogKind                    string
+	hits                          []hitRegion
+	key, status                   string
+	statusError                   bool
+	positions                     map[string]string
+	selected                      []Host
+	tunnels                       []digletconfig.Connection
+	tunnelPath                    string
+	tunnelLoadErr                 error
+	tunnelStatus                  map[string]tunnelInfo
+	pending                       map[string]bool
+}
+
+func newPickerModel(hosts []Host, query, dest string, o Origin, state PickerState, c Config) *pickerModel {
+	input := textinput.New()
+	input.Prompt = "/ "
+	input.Placeholder = "Search hosts, addresses, comments…"
+	input.SetValue(query)
+	input.Focus()
+	m := &pickerModel{hosts: hosts, state: state, config: c, dest: dest, origin: o, search: input, preview: viewport.New(1, 1), marked: map[string]bool{}, transferMode: "scp", tunnelStatus: map[string]tunnelInfo{}, pending: map[string]bool{}, positions: map[string]string{}}
+	m.state.Account = RDPAccount{}
+	if state.Mode == "" {
+		m.state.Mode = "ssh"
+	}
+	if state.Mode == "scp" || state.Mode == "legacy-scp" || state.Mode == "rsync" {
+		m.transferMode = state.Mode
+	}
+	for _, alias := range state.Marked {
+		m.marked[alias] = true
+	}
+	m.loadTunnels()
+	m.refilter()
+	for i, id := range m.visible {
+		if m.state.Mode != "tunnels" && hosts[id].Alias == state.Focus {
+			m.cursor = i
+			break
+		}
+	}
+	m.updatePreview()
+	return m
+}
+
+func (m *pickerModel) loadTunnels() {
+	m.tunnelPath = m.config.TunnelsConfig
+	if m.tunnelPath == "" {
+		m.tunnelPath = digletconfig.DefaultConfigPath()
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		m.tunnelPath = expandHome(m.tunnelPath, home)
+	}
+	cfg, err := digletconfig.Load(m.tunnelPath)
+	m.tunnelLoadErr = err
+	if err == nil {
+		m.tunnels = cfg.Connections
+	}
+}
+
+func (m *pickerModel) Init() tea.Cmd { return tea.Batch(textinput.Blink, tunnelTick()) }
+func tunnelTick() tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return tunnelPoll{} })
+}
+
+func (m *pickerModel) refilter() {
+	var ids []int
+	var labels []string
+	if m.state.Mode == "tunnels" {
+		for i, c := range m.tunnels {
+			ids = append(ids, i)
+			labels = append(labels, c.Name+" "+c.TunnelType+" "+c.SSHHost+" "+c.Resource+" "+c.Namespace)
+		}
+	} else {
+		for i, h := range m.hosts {
+			if m.state.Mode == "rdp" && !h.isRDP(m.config.RDP.Tags) {
+				continue
+			}
+			ids = append(ids, i)
+			labels = append(labels, h.Alias+" "+h.Hostname+" "+h.JumpHost+" "+h.Comment)
+		}
+	}
+	m.visible = nil
+	if m.search.Value() == "" {
+		m.visible = ids
+	} else {
+		for _, match := range fuzzy.Find(m.search.Value(), labels) {
+			m.visible = append(m.visible, ids[match.Index])
+		}
+	}
+	m.cursor = min(max(0, m.cursor), max(0, len(m.visible)-1))
+	m.scrollToCursor()
+}
+func (m *pickerModel) rows() int { return max(1, m.height-11) }
+func (m *pickerModel) scrollToCursor() {
+	if m.cursor < m.offset {
+		m.offset = m.cursor
+	}
+	if m.cursor >= m.offset+m.rows() {
+		m.offset = m.cursor - m.rows() + 1
+	}
+	m.offset = min(max(0, m.offset), max(0, len(m.visible)-1))
+}
+func (m *pickerModel) switchMode(mode string) {
+	previous := ""
+	if len(m.visible) > 0 {
+		if m.state.Mode == "tunnels" {
+			previous = m.tunnels[m.visible[m.cursor]].Name
+		} else {
+			previous = m.hosts[m.visible[m.cursor]].Alias
+		}
+		m.positions[m.state.Mode] = previous
+	}
+	m.state.Mode = mode
+	if mode == "scp" || mode == "legacy-scp" || mode == "rsync" {
+		m.transferMode = mode
+	}
+	m.cursor, m.offset = 0, 0
+	m.refilter()
+	wanted := m.positions[mode]
+	if wanted == "" && mode != "tunnels" {
+		wanted = previous
+	}
+	for i, id := range m.visible {
+		name := ""
+		if mode == "tunnels" {
+			name = m.tunnels[id].Name
+		} else {
+			name = m.hosts[id].Alias
+		}
+		if name == wanted {
+			m.cursor = i
+			break
+		}
+	}
+	m.scrollToCursor()
+	m.preview.GotoTop()
+	m.updatePreview()
+}
+func (m *pickerModel) activeHost() (Host, bool) {
+	if m.state.Mode == "tunnels" || len(m.visible) == 0 {
+		return Host{}, false
+	}
+	return m.hosts[m.visible[m.cursor]], true
+}
+func (m *pickerModel) selection(highlightOnly bool) []Host {
+	if m.state.Mode == "tunnels" {
+		return nil
+	}
+	if !highlightOnly {
+		var hosts []Host
+		for _, h := range m.hosts {
+			if m.marked[h.Alias] && (m.state.Mode != "rdp" || h.isRDP(m.config.RDP.Tags)) {
+				hosts = append(hosts, h)
+			}
+		}
+		if len(hosts) > 0 {
+			return hosts
+		}
+	}
+	h, ok := m.activeHost()
+	if !ok {
+		return nil
+	}
+	return []Host{h}
+}
+func (m *pickerModel) finish(key string) tea.Cmd {
+	if key == "enter" && m.state.Mode == "tunnels" {
+		return m.toggleTunnel()
+	}
+	if key == "enter" || strings.HasPrefix(key, "ctrl-alt-") || key == "ctrl-e" {
+		m.selected = m.selection(key == "ctrl-e" || key == "ctrl-alt-e")
+		if len(m.selected) == 0 && key != "ctrl-alt-s" {
+			return nil
+		}
+	}
+	m.key = key
+	m.state.Debug = key == "ctrl-alt-t" && m.state.Mode == "rdp"
+	return tea.Quit
+}
+func (m *pickerModel) openDialog(kind, title string, options []choice, text string) {
+	m.dialogKind = kind
+	m.dialog = newDialog(title, options, text)
+	m.dialog.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+}
+func (m *pickerModel) accountChoices() []choice {
+	options := []choice{{"0", "Default"}}
+	h, ok := m.activeHost()
+	if !ok {
+		return options
+	}
+	for i := 0; i <= len(m.config.RDP.Accounts); i++ {
+		r := m.config.RDP
+		label := "Default"
+		if i > 0 {
+			account := r.Accounts[i-1]
+			label = account.Name
+			r = r.withAccount(account)
+		}
+		job, err := newRDPJob(r, h, "")
+		if err == nil {
+			login := job.User
+			if job.Domain != "" {
+				login = job.Domain + `\` + login
+			}
+			label += " — " + login
+			if len(m.selection(false)) > 1 {
+				label += " (domain resolved per host)"
+			}
+		}
+		if i == 0 {
+			options[0].Label = label
+		} else {
+			options = append(options, choice{strconv.Itoa(i), label})
+		}
+	}
+	return options
+}
+func (m *pickerModel) action(action string) tea.Cmd {
+	switch action {
+	case "help":
+		text := pickerHelp(m.state.Mode)
+		if m.state.Mode == "tunnels" {
+			text = "TUNNELS\nEnter / Toggle  Start or stop the highlighted tunnel\nCtrl+E          Edit Diglet connections.yaml\nCtrl+R          Reload config\nTunnels remain running when this TUI closes.\nOnly Diglet-owned processes can be stopped.\n"
+		}
+		m.openDialog("help", "Keyboard & mouse", []choice{{"back", "Return"}}, text)
+	case "mode":
+		m.openDialog("mode", "Choose mode", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnels", "Tunnels"}, {"scp", "SCP"}, {"legacy-scp", "Legacy SCP"}, {"rsync", "rsync"}}, "")
+	case "account":
+		if m.state.Mode == "rdp" && len(m.visible) > 0 {
+			m.openDialog("account", "Connect as…", m.accountChoices(), "Applies to this launch only. No automatic credential retries.")
+		}
+	case "target":
+		return m.finish("target")
+	case "connect":
+		return m.finish("enter")
+	case "protocol":
+		m.openDialog("mode", "Transfer protocol", []choice{{"scp", "SCP (SFTP)"}, {"legacy-scp", "Legacy SCP (-O)"}, {"rsync", "rsync"}}, "")
+	}
+	return nil
+}
+func (m *pickerModel) toggleTunnel() tea.Cmd {
+	if len(m.visible) == 0 {
+		return nil
+	}
+	c := m.tunnels[m.visible[m.cursor]]
+	if m.pending[c.Name] {
+		return nil
+	}
+	info := m.tunnelStatus[c.Name]
+	if info.status == 3 && info.pid == 0 {
+		m.status = fmt.Sprintf("Port %d is occupied; no unrelated process will be stopped", c.LocalPort)
+		m.statusError = true
+		return nil
+	}
+	m.pending[c.Name] = true
+	return func() tea.Msg { return tunnelActionMsg{c.Name, toggleManagedTunnel(c, info.pid > 0)} }
+}
+func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tunnelPoll:
+		if m.state.Mode != "tunnels" || len(m.tunnels) == 0 {
+			return m, tunnelTick()
+		}
+		connections := append([]digletconfig.Connection(nil), m.tunnels...)
+		return m, func() tea.Msg { s, e := tunnelStatuses(connections); return tunnelStatusMsg{s, e} }
+	case tunnelStatusMsg:
+		if msg.err != nil {
+			m.status = msg.err.Error()
+			m.statusError = true
+		} else {
+			m.tunnelStatus = msg.statuses
+			if m.statusError {
+				m.status = ""
+				m.statusError = false
+			}
+		}
+		m.updatePreview()
+		return m, tunnelTick()
+	case tunnelActionMsg:
+		delete(m.pending, msg.name)
+		if msg.err != nil {
+			m.status = msg.err.Error()
+			m.statusError = true
+		} else {
+			m.status = msg.name + ": tunnel updated"
+			m.statusError = false
+		}
+		return m, nil
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		m.search.Width = max(1, msg.Width-8)
+		m.preview.Width = max(1, msg.Width-max(30, msg.Width/2)-5)
+		m.preview.Height = max(1, m.rows()-2)
+		m.scrollToCursor()
+		m.updatePreview()
+	}
+	if m.dialog != nil {
+		_, cmd := m.dialog.Update(msg)
+		if !m.dialog.done {
+			return m, cmd
+		}
+		d, kind := m.dialog, m.dialogKind
+		m.dialog = nil
+		if d.back {
+			return m, nil
+		}
+		switch kind {
+		case "mode":
+			m.switchMode(d.result)
+		case "account":
+			i, _ := strconv.Atoi(d.result)
+			if i > 0 {
+				m.state.Account = m.config.RDP.Accounts[i-1]
+			}
+			return m, m.finish("enter")
+		}
+		return m, nil
+	}
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		key := strings.ReplaceAll(msg.String(), "alt+ctrl+", "ctrl+alt+")
+		if m.width > 0 && (m.width < 30 || m.height < 12) && key != "esc" && key != "ctrl+c" {
+			return m, nil
+		}
+		switch key {
+		case "ctrl+c", "esc":
+			return m, m.finish("cancel")
+		case "?", "f1":
+			return m, m.action("help")
+		case "ctrl+o":
+			return m, m.action("mode")
+		case "ctrl+g":
+			return m, m.action("target")
+		case "alt+a":
+			return m, m.action("account")
+		case "alt+1":
+			m.switchMode("ssh")
+			return m, nil
+		case "alt+2":
+			m.switchMode("rdp")
+			return m, nil
+		case "alt+3":
+			m.switchMode("tunnels")
+			return m, nil
+		case "alt+4":
+			m.switchMode(m.transferMode)
+			return m, nil
+		case "up", "ctrl+k":
+			m.cursor = max(0, m.cursor-1)
+		case "down", "ctrl+j":
+			m.cursor = min(max(0, len(m.visible)-1), m.cursor+1)
+		case "ctrl+u", "pgup":
+			m.cursor = max(0, m.cursor-max(1, m.rows()/2))
+		case "ctrl+d", "pgdown":
+			m.cursor = min(max(0, len(m.visible)-1), m.cursor+max(1, m.rows()/2))
+		case "shift+up":
+			m.preview.ScrollUp(1)
+			return m, nil
+		case "shift+down":
+			m.preview.ScrollDown(1)
+			return m, nil
+		case "tab", "shift+tab":
+			if h, ok := m.activeHost(); ok {
+				m.marked[h.Alias] = !m.marked[h.Alias]
+				delta := -1
+				if msg.String() == "shift+tab" {
+					delta = 1
+				}
+				m.cursor = max(0, min(len(m.visible)-1, m.cursor+delta))
+			}
+		case "ctrl+e":
+			if m.state.Mode == "tunnels" {
+				return m, m.finish("tunnel-edit")
+			}
+			return m, m.finish("ctrl-e")
+		case "enter", "ctrl+r", "ctrl+s", "ctrl+alt+p", "ctrl+alt+w", "ctrl+alt+n", "ctrl+alt+t", "ctrl+alt+s", "ctrl+alt+e":
+			return m, m.finish(strings.ReplaceAll(key, "+", "-"))
+		default:
+			old := m.search.Value()
+			var cmd tea.Cmd
+			m.search, cmd = m.search.Update(msg)
+			if m.search.Value() != old {
+				m.cursor, m.offset = 0, 0
+				m.refilter()
+				m.preview.GotoTop()
+				m.updatePreview()
+			}
+			return m, cmd
+		}
+		m.scrollToCursor()
+		m.preview.GotoTop()
+		m.updatePreview()
+	case tea.MouseMsg:
+		if m.width < 30 || m.height < 12 {
+			return m, nil
+		}
+		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+			delta := 3
+			if msg.Button == tea.MouseButtonWheelUp {
+				delta = -3
+			}
+			if m.width >= 90 && msg.X > m.width/2 {
+				if delta < 0 {
+					m.preview.ScrollUp(-delta)
+				} else {
+					m.preview.ScrollDown(delta)
+				}
+			} else {
+				m.cursor = max(0, min(max(0, len(m.visible)-1), m.cursor+delta))
+				m.scrollToCursor()
+				m.updatePreview()
+			}
+			return m, nil
+		}
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
+			for _, hit := range m.hits {
+				if msg.Y == hit.y && msg.X >= hit.x && msg.X < hit.x+hit.width {
+					if hit.action == "row" {
+						m.cursor = hit.index
+						if msg.X >= 1 && msg.X <= 3 {
+							if h, ok := m.activeHost(); ok {
+								m.marked[h.Alias] = !m.marked[h.Alias]
+							}
+						}
+						m.updatePreview()
+						return m, nil
+					}
+					if strings.HasPrefix(hit.action, "mode:") {
+						m.switchMode(strings.TrimPrefix(hit.action, "mode:"))
+						return m, nil
+					}
+					return m, m.action(hit.action)
+				}
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m *pickerModel) updatePreview() {
+	var text string
+	if m.state.Mode == "tunnels" {
+		if len(m.visible) > 0 {
+			c := m.tunnels[m.visible[m.cursor]]
+			text = fmt.Sprintf("%s\n\nType       %s\nLocal      127.0.0.1:%d\nRemote     %d\nSSH host   %s\nResource   %s\nNamespace  %s\n\n%s\n\n%s", c.Name, c.TunnelType, c.LocalPort, c.RemotePort, c.SSHHost, c.Resource, c.Namespace, m.tunnelLabel(c.Name), tunnelCommandPreview(c))
+		} else {
+			text = "No tunnels configured.\n\nCtrl+E creates/edits your Diglet connections file.\n\n" + m.tunnelPath
+			if m.tunnelLoadErr != nil {
+				text += "\n\n" + m.tunnelLoadErr.Error()
+			}
+		}
+	} else if h, ok := m.activeHost(); ok {
+		text = fmt.Sprintf("%s\n\nAddress   %s\nJump      %s\nNotes     %s\nSource    %s:%d\n\n", h.Alias, h.Hostname, h.JumpHost, h.Comment, h.File, h.Line)
+		if m.state.Mode == "rdp" {
+			job, err := newRDPJob(m.config.RDP, h, "")
+			if err != nil {
+				text += err.Error()
+			} else {
+				text += "Default account\n" + job.Domain + `\` + job.User + "\n\nWindow title\n" + job.Title + "\n\nAlt+A chooses another account.\n"
+			}
+		}
+		text += modeWarning(m.state.Mode) + "\n\n" + h.Block
+	} else {
+		text = "No matching hosts.\n\nRDP lists hosts with an indented # Windows or # RDP tag."
+	}
+	m.preview.SetContent(ansi.Hardwrap(cleanLines(text), max(1, m.preview.Width), true))
+}
+func tunnelCommandPreview(c digletconfig.Connection) string {
+	if c.TunnelType == "ssh" {
+		return shellCommand([]string{"ssh", "-o", "ExitOnForwardFailure=yes", "-L", fmt.Sprintf("%d:localhost:%d", c.LocalPort, c.RemotePort), "-N", c.SSHHost})
+	}
+	if c.TunnelType == "kubectl" {
+		args := []string{"kubectl", "port-forward", c.Resource, fmt.Sprintf("%d:%d", c.LocalPort, c.RemotePort)}
+		if c.Namespace != "" {
+			args = append(args, "-n", c.Namespace)
+		}
+		return shellCommand(args)
+	}
+	return "Docker tunnels are not implemented."
+}
+func (m *pickerModel) tunnelLabel(name string) string {
+	if m.pending[name] {
+		return "◌ working"
+	}
+	info := m.tunnelStatus[name]
+	switch info.status {
+	case 1:
+		return "◌ connecting"
+	case 2:
+		return "● active"
+	case 3:
+		return "! occupied"
+	}
+	return "○ inactive"
+}
+func (m *pickerModel) View() string {
+	if m.dialog != nil {
+		return m.dialog.View()
+	}
+	if m.width == 0 {
+		return "Loading go-where…"
+	}
+	m.hits = nil
+	if m.width < 30 || m.height < 12 {
+		return fit("Resize terminal (30×12 minimum) · Esc exits", m.width)
+	}
+	width := m.width - 2
+	header := tuiAccent.Render("GO-WHERE") + tuiDim.Render("   connections · tunnels · transfers")
+	var tabs strings.Builder
+	for _, tab := range []struct{ label, mode string }{{"SSH", "ssh"}, {"RDP", "rdp"}, {"Tunnels", "tunnels"}, {"Transfers", m.transferMode}} {
+		if m.width < 55 {
+			if tab.mode == "tunnels" {
+				tab.label = "Tun"
+			}
+			if tab.mode == m.transferMode {
+				tab.label = "Files"
+			}
+		}
+		x := lipgloss.Width(tabs.String())
+		label := " " + tab.label + " "
+		if m.state.Mode == tab.mode {
+			tabs.WriteString(tuiSelected.Render(label))
+		} else {
+			tabs.WriteString(tuiDim.Render(label))
+		}
+		m.hits = append(m.hits, hitRegion{x, 2, len(label), "mode:" + tab.mode, 0})
+		tabs.WriteString("  ")
+	}
+	dest := m.dest
+	if m.state.Mode == "rdp" {
+		dest = rdpDestination(m.config, false)
+	}
+	context := "Enter → " + strings.ReplaceAll(dest, "-", " ")
+	if m.state.Mode == "tunnels" {
+		context = "Enter → start / stop"
+	}
+	if m.state.Mode == m.transferMode {
+		context = strings.ToUpper(m.state.Mode) + " ▾ · Enter → transfer setup"
+		m.hits = append(m.hits, hitRegion{0, 3, lipgloss.Width(context), "protocol", 0})
+	}
+	lines := []string{fit(header, width), "", tabs.String(), fit(tuiDim.Render(context), width), m.search.View(), ""}
+	listWidth := width
+	if m.width >= 90 {
+		listWidth = max(30, m.width/2)
+	}
+	var left []string
+	for row := 0; row < m.rows(); row++ {
+		i := m.offset + row
+		line := ""
+		if i < len(m.visible) {
+			id := m.visible[i]
+			if m.state.Mode == "tunnels" {
+				c := m.tunnels[id]
+				line = fmt.Sprintf("  %-20s %s", clean(c.Name), m.tunnelLabel(c.Name))
+			} else {
+				h := m.hosts[id]
+				mark := "[ ]"
+				if m.marked[h.Alias] {
+					mark = "[✓]"
+				}
+				line = fmt.Sprintf(" %s %-20s %s", mark, clean(h.Alias), clean(h.Hostname))
+				if listWidth > 65 {
+					line += "  " + clean(h.Comment)
+				}
+			}
+			if i == m.cursor {
+				line = tuiSelected.Render(fit("›"+strings.TrimPrefix(line, " "), listWidth))
+			}
+			m.hits = append(m.hits, hitRegion{0, 6 + row, listWidth, "row", i})
+		} else if row == 0 {
+			line = tuiDim.Render("No matches · Ctrl+R reload · ? help")
+		}
+		left = append(left, fit(line, listWidth))
+	}
+	body := strings.Join(left, "\n")
+	if m.width >= 90 {
+		panel := tuiDim.Render("DETAILS") + "\n" + m.preview.View()
+		body = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(listWidth).Render(body), " │ ", panel)
+	}
+	lines = append(lines, body, strings.Repeat("─", width))
+	var buttons strings.Builder
+	buttonsList := []struct{ label, action string }{{"Connect", "connect"}, {"Target", "target"}, {"Help", "help"}}
+	if m.state.Mode == "rdp" {
+		buttonsList = append([]struct{ label, action string }{{"Connect", "connect"}, {"Account", "account"}}, buttonsList[1:]...)
+	}
+	if m.state.Mode == "tunnels" {
+		buttonsList = []struct{ label, action string }{{"Toggle", "connect"}, {"Help", "help"}}
+	}
+	for _, b := range buttonsList {
+		x := lipgloss.Width(buttons.String())
+		label := "[ " + b.label + " ]"
+		buttons.WriteString(tuiAccent.Render(label))
+		m.hits = append(m.hits, hitRegion{x, 6 + m.rows() + 1, len(label), b.action, 0})
+		buttons.WriteString("  ")
+	}
+	status := tuiDim.Render(clean(m.status))
+	if m.statusError {
+		status = tuiError.Render(clean(m.status))
+	}
+	lines = append(lines, fit(buttons.String(), width), fit(tuiDim.Render(fmt.Sprintf("%d results · %d marked    Ctrl+O mode · Ctrl+R reload · Esc exit", len(m.visible), m.markCount())), width), fit(status, width))
+	return strings.Join(lines, "\n")
+}
+func (m *pickerModel) markCount() int {
+	n := 0
+	for _, marked := range m.marked {
+		if marked {
+			n++
+		}
+	}
+	return n
+}
+
+func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (string, string, []Host, error) {
+	if state == nil {
+		state = &PickerState{Mode: "ssh"}
+	}
+	c := defaultConfig()
+	if state.ConfigPath != "" {
+		var err error
+		c, err = loadConfig(state.ConfigPath)
+		if err != nil {
+			return "", query, nil, err
+		}
+	}
+	if len(state.RDPTags) > 0 {
+		c.RDP.Tags = state.RDPTags
+	}
+	if state.RDPDestination != "" {
+		c.RDP.Destination = state.RDPDestination
+	}
+	if state.TunnelsConfig != "" {
+		c.TunnelsConfig = state.TunnelsConfig
+	}
+	m := newPickerModel(hosts, query, dest, o, *state, c)
+	if _, err := runTUI(m); err != nil {
+		return "", query, nil, err
+	}
+	*state = m.state
+	state.Marked = nil
+	for _, h := range hosts {
+		if m.marked[h.Alias] {
+			state.Marked = append(state.Marked, h.Alias)
+		}
+	}
+	if h, ok := m.activeHost(); ok {
+		state.Focus = h.Alias
+	}
+	return m.key, m.search.Value(), m.selected, nil
+}

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -488,6 +489,9 @@ func sessionEnded(code int) bool {
 }
 
 func runRDPSession(j rdpJob) error {
+	if runtime.GOOS == "windows" && len(j.PasswordCommand) > 0 {
+		return fmt.Errorf("password_command pipe transport is not yet supported on Windows; use a FreeRDP client prompt")
+	}
 	if err := j.validate(); err != nil {
 		return err
 	}

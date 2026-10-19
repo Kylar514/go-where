@@ -115,8 +115,6 @@ func TestPickerActionDestinations(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
 	log := filepath.Join(dir, "calls")
 	t.Setenv("CALLS", log)
-	fakeCommand(t, dir, "fzf", `IFS= read -r header; IFS= read -r row
-printf '\n%s\n%s\n' "$ACTION" "$row"`)
 	fakeCommand(t, dir, "tmux", `printf '%s\n' "$@" >> "$CALLS"
 if [ "$1" = new-session ]; then printf '$42\n'; fi`)
 	fakeCommand(t, dir, "test-terminal", `printf 'terminal\n' >> "$CALLS"; printf '%s\n' "$@" >> "$CALLS"`)
@@ -141,6 +139,7 @@ if [ "$1" = new-session ]; then printf '$42\n'; fi`)
 		{"ctrl-alt-t", "terminal\nssh\n-F\n" + sshConfig + "\n--\nweb"},
 	} {
 		t.Run(tc.key, func(t *testing.T) {
+			scriptTUI(t, "\n"+tc.key+"\n0\tweb\n")
 			t.Setenv("ACTION", tc.key)
 			writeTestFile(t, log, "")
 			if err := app([]string{"--no-popup", "--origin", encodeOrigin(o), "--config", settings, "--ssh-config", sshConfig}); err != nil {

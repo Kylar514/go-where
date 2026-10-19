@@ -137,7 +137,10 @@ func connect(hosts []Host, dest string, o Origin, c Config, sshConfig string) er
 				return fmt.Errorf("session %s created; opening %s failed: %w", name, h.Alias, err)
 			}
 		}
-		return run([]string{"tmux", "switch-client", "-c", o.Client, "-t", id})
+		if o.Client != "" {
+			return run([]string{"tmux", "switch-client", "-c", o.Client, "-t", id})
+		}
+		return nil
 	}
 	for i, h := range hosts {
 		if err := launchCommand(dest, ssh(h), o, c, false); err != nil {

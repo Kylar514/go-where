@@ -9,6 +9,7 @@ import (
 )
 
 type Config struct {
+	TunnelsConfig    string    `json:"tunnels_config,omitempty"`
 	Destination      string    `json:"destination"`
 	Fallback         string    `json:"fallback"`
 	Editor           []string  `json:"editor"`

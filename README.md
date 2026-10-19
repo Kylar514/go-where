@@ -1,30 +1,32 @@
 # go-where
 
-A Linux-first SSH host picker: one Go executable, fzf for the UI, OpenSSH for connections. No plugin framework or host database. Native Windows integration is deferred.
+A lightweight, keyboard- and mouse-driven connection workspace. One Go executable with a Bubble Tea TUI: SSH, RDP, managed tunnels, and transfers using installed native tools. Credentials stay local. This branch is the first unified-TUI prototype; no shared server or authentication service is included yet.
 
 ## Build and run
 
-Requires Go 1.23+ to build. Runtime requirements: fzf and OpenSSH; tmux 3.3+ for popups, `xdg-terminal-exec` for system-default terminal selection (or an explicit terminal command), and Neovim for editing. Transfer modes need OpenSSH SCP with `-s`/`-O` support or rsync 3.1+ as applicable. Go is not needed to run the compiled executable. The mode UI is verified with fzf 0.74.5; older builds must support `transform-prompt`, `reload`, `become`, and result-event bindings.
+Requires Go 1.26.2+ to build (matching the reused Diglet module). Runtime requirements depend on the action: OpenSSH for SSH/SCP, FreeRDP for RDP, kubectl for Kubernetes tunnels, rsync 3.1+ for rsync, and `ss` for Linux tunnel monitoring. fzf is no longer required. tmux is optional; Linux terminal auto-selection uses `xdg-terminal-exec` or your configured terminal. Editing uses your configured editor (default Neovim). Go is not needed to run the compiled executable.
 
 ```sh
 go test ./...
 mkdir -p "$HOME/.local/bin"
-go build -o "$HOME/.local/bin/go-where" .
+CGO_ENABLED=0 go build -trimpath -o "$HOME/.local/bin/go-where" .
 go-where
 ```
 
-Inside an attached tmux pane, this opens a popup and captures the originating session/window/pane/client. Outside tmux, it runs in your terminal. Enter opens new panes in the original window, or new windows in your preferred terminal outside tmux. It never picks an arbitrary tmux session.
+The TUI runs in the current terminal by default, capturing the originating tmux session/window/pane/client when available. Connections still open in that original tmux target. Outside tmux, the configured fallback is used; **Target / Ctrl+G** lets you explicitly select an existing tmux pane or another destination. It never guesses a "current" tmux session. Use `--popup` to opt into a tmux popup. Launched RDP/SSH/transfers return to the picker; editing still closes it.
 
 ```sh
 go-where --destination tmux-window
 go-where --destination current          # SSH in the picker terminal; one host only
-go-where --no-popup                     # inline picker, still targets the original tmux pane
+go-where --popup                       # optional tmux popup; default is standalone
 go-where --ssh-config ./local/config    # also passes this file to ssh -F
 go-where config                        # create/open settings without overwriting them
 go-where --help
 go-where scp                           # Start in modern SCP mode
 go-where scp --legacy                  # Explicit legacy SCP; never an automatic retry
 go-where rsync
+go-where tunnels                       # Existing Diglet connections, start/stop/status
+go-where tunnels --tunnels-config ./local/connections.yaml
 ```
 
 With the default SSH config, connections use `ssh -- alias`, preserving normal user and system SSH configuration. With `--ssh-config`, connections use `ssh -F path -- alias`; OpenSSH's usual `-F` semantics apply (including skipping the system config).
@@ -33,9 +35,9 @@ With the default SSH config, connections use `ssh -- alias`, preserving normal u
 
 Type to search aliases, configured hostnames/IPs, jump hosts, and descriptions. Plain `j`/`k` remain search characters, not modal Vim navigation.
 
-The preview occupies 10 rows at the top; longer blocks scroll. The host list shows up to 25 results at once, scrolling through the rest; smaller terminals show fewer rows. It grows upward from the bottom, with the first result nearest the search prompt and the shortcut legend underneath.
+Click a mode tab or use **Alt+1/2/3/4** for SSH/RDP/Tunnels/Transfers. Wide terminals show a scrolling host list beside a details preview; narrow terminals hide the preview. Lists and dialogs resize with the terminal rather than requesting a fixed height. The minimum picker size is 30 columns × 12 rows; smaller terminals show a resize hint and cannot launch hidden actions.
 
-Columns are labeled **HOST**, **HOSTNAME / IP**, **JUMPHOST**, and **COMMENT**, with aligned labels pinned just above search. JUMPHOST shows the block's `ProxyJump` value, including multi-hop chains, or `—` when absent/disabled. A block using `ProxyCommand` shows `ProxyCommand` rather than guessing a jump alias from a shell command. Like HOSTNAME / IP, this is block-level metadata, not evaluation of wildcard/Match defaults; OpenSSH determines the actual connection route.
+Rows show host aliases and addresses; the preview shows jump routes, comments, source location, and the SSH block. This remains block-level metadata, not evaluation of wildcard/Match defaults; OpenSSH determines the actual route. Click a row to select it, its checkbox to mark it, and **Connect** to launch. Mouse wheel scrolls the list or preview beneath the pointer.
 
 | Key | Action |
 |---|---|
@@ -44,7 +46,9 @@ Columns are labeled **HOST**, **HOSTNAME / IP**, **JUMPHOST**, and **COMMENT**, 
 | Ctrl+J / Ctrl+K or arrows | Move down / up |
 | Tab / Shift+Tab | Toggle selection and move to the next / previous result |
 | Enter | Connect using your configured default |
-| Ctrl+O | Choose SSH, SCP, Legacy SCP, rsync, or RDP without losing the current search, highlight, or marks |
+| Ctrl+O | Choose SSH, SCP, Legacy SCP, rsync, RDP, or Tunnels |
+| Alt+1 / 2 / 3 / 4 | SSH / RDP / Tunnels / Transfers |
+| Ctrl+G | Choose a tmux pane or terminal destination |
 | Ctrl+Alt+P | New pane per host in the originating window |
 | Ctrl+Alt+W | New window per host in the originating session |
 | Ctrl+Alt+N | New session, one window per host; switch the originating client |
@@ -60,11 +64,32 @@ Columns are labeled **HOST**, **HOSTNAME / IP**, **JUMPHOST**, and **COMMENT**, 
 
 Connection actions use marked hosts, or the highlighted host if nothing is marked. Editing always uses the highlighted host. Editing closes the picker so it doesn't obscure the editor; reopen when finished. Mode switching keeps the existing picker alive, preserving its exact navigation state. After reopening/reloading, only matching selections can be restored. Pane-edit shortcuts require tmux rather than falling back to a different destination.
 
-Ctrl+Shift letter bindings were tested and rejected by fzf itself (`unsupported key: ctrl-shift-p`), so modified actions use Ctrl+Alt instead. N means new session, leaving S for settings. No Alt-only or function-key bindings are required. fzf's raw terminal mode receives Ctrl+S without enabling shell flow control; the physical terminal/compositor must still pass these keys through.
-
-The picker ignores `FZF_DEFAULT_OPTS`, `FZF_DEFAULT_OPTS_FILE`, and `FZF_DEFAULT_COMMAND` so personal fzf bindings/output options cannot corrupt its selection protocol.
+N means new session, leaving S for settings. The terminal/compositor must pass the configured shortcuts through. Use the mouse or Ctrl+O when an Alt+number binding is reserved by your terminal.
 
 Explicit tmux actions require tmux; only the default Enter action uses the configured fallback. Panes are split horizontally from the original pane. Large selections can run out of pane space: failures report how many hosts opened and never silently reroute the rest. A failed new-session operation may leave a partially populated session; no existing session is deleted or replaced.
+
+## Tunnels (Diglet)
+
+The Tunnels mode embeds Diglet's existing tunnel engine as a pinned Go dependency; it does not launch a second Diglet executable or modify that project. It reads `~/.config/diglet/connections.yaml` on Linux (the OS user-config directory on Windows). Override this with `--tunnels-config PATH` or the top-level JSON setting `"tunnels_config": "PATH"`. Existing Diglet YAML remains valid and uses the same ownership registry, so the two tools can recognize their managed tunnels.
+
+Press **Enter** or click **Toggle** to start/stop a tunnel. Status distinguishes inactive, connecting, active, and occupied ports. Only owned processes with matching process identities are stopped; unrelated port users and RDP session tunnels are not touched. Managed tunnels intentionally outlive the TUI. **Ctrl+E** creates/edits the tunnel config; **Ctrl+R** reloads it. SSH and kubectl are supported; Docker remains unimplemented. SSH-agent/key access and kubeconfig remain local.
+
+```yaml
+connections:
+  - name: database
+    tunnel_type: ssh
+    ssh_host: db-jump
+    local_port: 15432
+    remote_port: 5432
+```
+
+## Platform status
+
+- **Linux:** unit tests and real-terminal smoke checks cover navigation, mouse clicks, account selection, native launches, and tunnel lifecycle using synthetic endpoints. Existing native connection tests remain in place.
+- **Windows:** cross-compiles; native terminal auto-selection uses Windows Terminal (`wt.exe`). Diglet supplies a Windows process/listener backend. Runtime verification is still required. FreeRDP password-command piping is explicitly unsupported here for now; use the client prompt rather than putting passwords on argv.
+- **macOS:** cross-compiles; terminal auto-selection uses Terminal.app through AppleScript. Managed tunnel monitoring/start/stop is explicitly unavailable until the Darwin backend is added. Native connection behavior still needs macOS testing.
+
+Cross-compilation is not a claim of complete platform support. No installer, desktop shortcut, shared-inventory server, or SSO is included in this first UI merge. The tunnel engine comes from [Diglet](https://github.com/kylar514/diglet), also MIT-licensed.
 
 ## Transfers
 
@@ -240,7 +265,7 @@ Invalid or unknown settings fail clearly. `go-where config` can still open malfo
 - Reads `~/.ssh/config` and nested `Include` globs in lexical order, including quoted paths and `~/`. Relative includes resolve under `~/.ssh`, as OpenSSH specifies for user config, even with `--ssh-config`.
 - Lists explicit aliases, including multiple aliases on a `Host` line. Wildcards, negated patterns, and option-like aliases are excluded. Duplicate aliases use their first source location for preview/editing.
 - Searches a block's directly configured `HostName`, falling back to its alias. This is **not** a DNS lookup or fully evaluated effective hostname: wildcard defaults, Match conditions, and token expansion remain OpenSSH's responsibility.
-- Uses descriptive comments immediately before `Host`, inline comments, and standalone comments within a block. Common commented-out SSH directives and separator lines are excluded from search descriptions but remain visible in the preview. Comment classification is deliberately heuristic; it does not rewrite your files.
+- Uses inline comments and indented comments within a `Host` block. Unindented standalone headings and common commented-out SSH directives are excluded from search descriptions but remain visible in the source preview. It does not rewrite your files.
 - Does not run `ssh -G`, `Match exec`, ProxyCommand, or network probes while browsing. Only connecting runs OpenSSH and the commands authorized by your SSH config.
 - Includes inside `Match` are rejected explicitly rather than guessed. Include environment/token expansion, system-wide host discovery, and `known_hosts` discovery are not implemented. Missing Include glob matches are ignored, as in OpenSSH; cycles, unreadable matched files, and malformed quoting are errors.
 
@@ -251,8 +276,8 @@ Preview data is kept in a mode-0600 temporary file and removed on normal exit. A
 No launch key is imposed. Once you choose one, a binding can launch the same executable, for example:
 
 ```tmux
-# Example only: prefix, then Ctrl+F. go-where opens its own popup.
-bind-key C-f run-shell 'go-where --client "#{client_name}"'
+# Example only: prefix, then Ctrl+F. Opt into a popup while retaining tmux origin.
+bind-key C-f run-shell 'go-where --popup --client "#{client_name}"'
 ```
 
 Passing the client explicitly matters when multiple clients share the same pane. Without it, the command requires exactly one attached client viewing the invoking pane and refuses ambiguity. Session-qualified targets also avoid sending new panes into the wrong session when windows are linked.

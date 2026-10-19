@@ -6,8 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -20,6 +21,15 @@ func terminalCommand(c Config, argv []string, floating bool) ([]string, error) {
 		return append(append([]string{}, c.FloatingTerminal...), argv...), nil
 	}
 	if prefix[0] == "auto" {
+		if runtime.GOOS == "windows" {
+			if _, err := exec.LookPath("wt.exe"); err == nil {
+				return append([]string{"wt.exe", "new-tab", "--"}, argv...), nil
+			}
+			return nil, fmt.Errorf("install Windows Terminal or configure terminal explicitly")
+		}
+		if runtime.GOOS == "darwin" {
+			return []string{"osascript", "-e", `tell application "Terminal" to do script ` + strconv.Quote(shellCommand(argv))}, nil
+		}
 		args := []string{"--print-cmd=\\0"}
 		if floating {
 			args = append(args, "--app-id="+editorAppID)
@@ -96,7 +106,7 @@ func spawnBackground(argv []string) error {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = devnull, log, log
 	// ponytail: detached job; its output lives in rdp.log, no supervisor process.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	prepareDetached(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("launch background RDP session: %w", err)
 	}
@@ -119,7 +129,7 @@ func spawnTerminal(c Config, argv []string, floating bool) error {
 	cmd := exec.Command(args[0], args[1:]...)
 	// No popup pipes: child diagnostics remain available after the picker exits.
 	cmd.Stdout, cmd.Stderr = log, log
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	prepareDetached(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("launch terminal: %w; configure terminal/fallback_terminal", err)
 	}

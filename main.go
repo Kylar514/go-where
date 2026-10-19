@@ -1,12 +1,10 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,8 +19,17 @@ func main() {
 }
 
 func app(args []string) error {
-	if len(args) > 0 && args[0] == "__preview" {
-		return preview(args[1:])
+	if len(args) > 0 && args[0] == "probe" {
+		if len(args) != 4 {
+			return fmt.Errorf("invalid tunnel probe arguments")
+		}
+		port, e1 := strconv.Atoi(args[2])
+		pid, e2 := strconv.Atoi(args[3])
+		if e1 != nil || e2 != nil || port < 1 || port > 65535 || pid < 1 {
+			return fmt.Errorf("invalid tunnel probe arguments")
+		}
+		runTunnelProbe(args[1], port, pid)
+		return nil
 	}
 	if len(args) > 0 && strings.HasPrefix(args[0], "__") {
 		return transferInternal(args)
@@ -43,11 +50,13 @@ func app(args []string) error {
 	config := fs.String("config", settings, "picker settings (JSON)")
 	dest := fs.String("destination", "", "override default: tmux-pane, tmux-window, tmux-session, terminal, current")
 	noPopup := fs.Bool("no-popup", false, "run inline instead of opening a tmux popup")
+	popup := fs.Bool("popup", false, "open inside a tmux popup (default: standalone TUI)")
+	tunnelsConfig := fs.String("tunnels-config", "", "Diglet connections.yaml (default: existing Diglet user config)")
 	client := fs.String("client", "", "invoking tmux client (for bindings or shared panes)")
 	context := fs.String("origin", "", "internal: captured tmux origin")
 	legacy := fs.Bool("legacy", false, "use the legacy SCP protocol (scp mode only)")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: go-where [ssh|scp|rsync|rdp] [options]\n       go-where scp --legacy [options]\n       go-where config [options]\n       go-where rdm-report EXPORT.json [--ssh-config path]\n\nCtrl+O changes mode. Transfer modes always review before execution.")
+		fmt.Fprintln(fs.Output(), "Usage: go-where [ssh|scp|rsync|rdp|tunnels] [options]\n       go-where scp --legacy [options]\n       go-where config [options]\n       go-where rdm-report EXPORT.json [--ssh-config path]\n\nCtrl+O changes mode. Transfer modes always review before execution.")
 		fs.PrintDefaults()
 	}
 	editSettings := len(args) > 0 && args[0] == "config"
@@ -120,7 +129,7 @@ func app(args []string) error {
 	if err != nil {
 		return err
 	}
-	if o.Pane != "" && !*noPopup {
+	if o.Pane != "" && *popup && !*noPopup {
 		argv := []string{exe, mode, "--no-popup", "--origin", encodeOrigin(o), "--config", *config}
 		if customSSHConfig {
 			argv = append(argv, "--ssh-config", *sshConfig)
@@ -128,16 +137,19 @@ func app(args []string) error {
 		if *dest != "" {
 			argv = append(argv, "--destination", *dest)
 		}
-		// 45 fzf rows plus the popup's two border rows.
+		if *tunnelsConfig != "" {
+			argv = append(argv, "--tunnels-config", *tunnelsConfig)
+		}
 		cwd, err := os.Getwd()
 		if err != nil {
 			return err
 		}
-		return run([]string{"tmux", "display-popup", "-EE", "-c", o.Client, "-d", cwd, "-w", "90%", "-h", "47", shellCommand(argv)})
+		return run([]string{"tmux", "display-popup", "-EE", "-c", o.Client, "-d", cwd, "-w", "90%", "-h", "90%", shellCommand(argv)})
 	}
 	query := ""
 	state := PickerState{Mode: mode}
 	draft := Transfer{Direction: "upload"}
+	sessionDest := ""
 	for {
 		c, err = loadConfig(*config)
 		if err != nil {
@@ -146,16 +158,20 @@ func app(args []string) error {
 		if *dest != "" {
 			c.Destination = *dest
 		}
-		hosts, err := readHosts(*sshConfig)
-		if err != nil {
-			return err
+		if sessionDest != "" {
+			c.Destination = sessionDest
 		}
-		if len(hosts) == 0 {
-			return fmt.Errorf("no explicit host aliases found in %s", *sshConfig)
+		if *tunnelsConfig != "" {
+			c.TunnelsConfig = *tunnelsConfig
+		}
+		hosts, err := readHosts(*sshConfig)
+		if err != nil && !(os.IsNotExist(err) && !customSSHConfig) {
+			return err
 		}
 		state.RDPTags = c.RDP.Tags
 		state.ConfigPath = *config
 		state.RDPDestination = rdpDestination(c, false)
+		state.TunnelsConfig = c.TunnelsConfig
 		pickDest := destination(c.Destination, o, c)
 		var key string
 		var selected []Host
@@ -164,6 +180,28 @@ func app(args []string) error {
 			return err
 		}
 		switch key {
+		case "target":
+			chosen, nextOrigin, back, targetErr := chooseTarget(o, c.Destination)
+			err = targetErr
+			if err != nil {
+				if showErr := notice(err.Error()); showErr != nil {
+					return showErr
+				}
+			}
+			if !back && err == nil {
+				sessionDest, o = chosen, nextOrigin
+			}
+			continue
+		case "tunnel-edit":
+			path := c.TunnelsConfig
+			if path == "" {
+				path = defaultTunnelPath()
+			}
+			path = expandHome(path, home)
+			if err := ensureTunnelConfig(path); err != nil {
+				return err
+			}
+			return editFile(path, 0, c.EditDestination, false, o, c)
 		case "ctrl-r":
 			continue
 		case "ctrl-s", "ctrl-alt-s":
@@ -204,17 +242,18 @@ func app(args []string) error {
 		}
 		if state.Mode == "rdp" {
 			c.RDP = c.RDP.withAccount(state.Account)
-			return launchRDP(selected, o, c, connectionConfig, exe, state.Debug)
-		}
-		if state.Mode != "ssh" {
+			err = launchRDP(selected, o, c, connectionConfig, exe, state.Debug)
+		} else if state.Mode != "ssh" {
 			draft.Mode = state.Mode
-			launched, err := transferWizard(&draft, selected, target, o, c, connectionConfig, exe)
-			if err != nil || launched {
-				return err
-			}
-			continue
+			_, err = transferWizard(&draft, selected, target, o, c, connectionConfig, exe)
+		} else {
+			err = connect(selected, target, o, c, connectionConfig)
 		}
-		return connect(selected, target, o, c, connectionConfig)
+		if err != nil {
+			if showErr := notice(err.Error()); showErr != nil {
+				return errors.Join(err, showErr)
+			}
+		}
 	}
 }
 
@@ -225,219 +264,4 @@ func clean(s string) string {
 		}
 		return r
 	}, s)
-}
-
-func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (key, nextQuery string, selected []Host, err error) {
-	if state == nil {
-		state = &PickerState{Mode: "ssh"}
-	}
-	state.Account = RDPAccount{}
-	accountFile, err := os.CreateTemp("", "go-where-account-*.json")
-	if err != nil {
-		return "", query, nil, err
-	}
-	defer os.Remove(accountFile.Name())
-	if err := accountFile.Close(); err != nil {
-		return "", query, nil, err
-	}
-	modeFile, err := os.CreateTemp("", "go-where-mode-*")
-	if err != nil {
-		return "", query, nil, err
-	}
-	defer os.Remove(modeFile.Name())
-	_, err = modeFile.WriteString(state.Mode)
-	closeErr := modeFile.Close()
-	if err = errors.Join(err, closeErr); err != nil {
-		return "", query, nil, err
-	}
-	listedFile, err := os.CreateTemp("", "go-where-listed-*")
-	if err != nil {
-		return "", query, nil, err
-	}
-	defer os.Remove(listedFile.Name())
-	_, err = listedFile.WriteString(listKind(state.Mode))
-	closeErr = listedFile.Close()
-	if err = errors.Join(err, closeErr); err != nil {
-		return "", query, nil, err
-	}
-	f, err := os.CreateTemp("", "go-where-*.json")
-	if err != nil {
-		return "", query, nil, err
-	}
-	defer os.Remove(f.Name())
-	err = json.NewEncoder(f).Encode(hosts)
-	closeErr = f.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return "", query, nil, err
-	}
-	input := rowsForMode(hosts, state.Mode, state.RDPTags)
-	header := pickerHeader(state.Mode, dest, state.RDPDestination)
-	expect := []string{"enter", "ctrl-alt-p", "ctrl-alt-w", "ctrl-alt-n", "ctrl-alt-t", "ctrl-s", "ctrl-alt-s", "ctrl-r"}
-	args := []string{
-		// 25 results + 10 preview rows + 10 rows of borders, labels and controls.
-		"--height=45",
-		"--multi", "--sync", "--layout=default", "--header-first", "--header-lines=1", "--border", "--delimiter=\t", "--with-nth=2..",
-		"--prompt=" + strings.ToUpper(state.Mode) + " > ", "--header=" + header, "--query=" + query, "--print-query",
-		"--expect=" + strings.Join(expect, ","),
-		// Editing always uses the highlighted row, not the multiselection.
-		"--bind=ctrl-j:down,ctrl-k:up,tab:toggle-up,shift-tab:toggle-down,ctrl-u:half-page-up,ctrl-d:half-page-down,ctrl-e:become(printf '%s\\n' {q} ctrl-e {}),ctrl-alt-e:become(printf '%s\\n' {q} ctrl-alt-e {})",
-		// Ctrl+O picks a mode; the list reloads only when it crosses RDP mode's filtered view.
-		"--id-nth=1",
-		"--bind=ctrl-o:execute(" + shellCommand([]string{exe, "__mode", modeFile.Name()}) + ")+transform-prompt(" + shellCommand([]string{exe, "__mode-prompt", modeFile.Name()}) + ")+transform-header(" + shellCommand([]string{exe, "__picker-header", modeFile.Name(), dest, state.RDPDestination}) + ")+transform(" + shellCommand([]string{exe, "__mode-reload", modeFile.Name(), listedFile.Name(), f.Name(), strings.Join(state.RDPTags, ",")}) + ")+refresh-preview",
-		"--bind=?:execute(" + shellCommand([]string{exe, "__help", modeFile.Name()}) + ")",
-		"--bind=alt-a:execute(" + shellCommand([]string{exe, "__rdp-account", modeFile.Name(), state.ConfigPath, accountFile.Name()}) + ")+transform(" + shellCommand([]string{exe, "__rdp-account-ready", accountFile.Name()}) + ")",
-		"--preview=" + shellCommand([]string{exe, "__preview", f.Name(), modeFile.Name()}) + " {1}",
-		// ponytail: cap preview at 10 rows to preserve list space; dynamic sizing if needed.
-		"--preview-window=up:10:wrap",
-	}
-	if state.Focus != "" || len(state.Marked) > 0 {
-		restore, err := restorePicker(input, hosts, query, state)
-		if err != nil {
-			return "", query, nil, err
-		}
-		if restore != "" {
-			args = append(args, "--bind=result:"+restore+"+unbind(result)")
-		}
-	}
-	// become returns only the highlighted row for editing, even with marks.
-	// printf receives fzf's shell-quoted placeholders, not executable host data.
-	c := exec.Command("fzf", args...)
-	c.Env = withoutFZFOptions(os.Environ())
-	c.Stdin, c.Stderr = strings.NewReader(input), os.Stderr
-	out, runErr := c.Output()
-	state.Mode, err = readMode(modeFile.Name())
-	if err != nil {
-		return "", query, nil, err
-	}
-	if runErr != nil {
-		var exit *exec.ExitError
-		if errors.As(runErr, &exit) {
-			if exit.ExitCode() == 130 || (exit.ExitCode() == 1 && len(out) == 0) {
-				return "cancel", query, nil, nil
-			}
-			if exit.ExitCode() != 1 {
-				return "", query, nil, fmt.Errorf("fzf: %w", runErr)
-			}
-		} else {
-			return "", query, nil, fmt.Errorf("fzf: %w", runErr)
-		}
-	}
-	lines := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
-	if len(lines) < 2 {
-		return "", query, nil, fmt.Errorf("unexpected fzf output")
-	}
-	nextQuery, key = lines[0], lines[1]
-	accountData, err := os.ReadFile(accountFile.Name())
-	if err != nil {
-		return "", query, nil, err
-	}
-	if len(accountData) > 0 {
-		if err := json.Unmarshal(accountData, &state.Account); err != nil {
-			return "", query, nil, err
-		}
-	}
-	// In RDP mode Ctrl+Alt+T reuses the terminal key from the other modes as the
-	// debug trigger: a visible terminal instead of the usual detached launch.
-	state.Debug = key == "ctrl-alt-t" && state.Mode == "rdp"
-	rows := lines[2:]
-	state.Marked = nil
-	for _, row := range rows {
-		id, _, _ := strings.Cut(row, "\t")
-		i, parseErr := strconv.Atoi(id)
-		if i == emptyRowID {
-			continue
-		}
-		if parseErr != nil || i < 0 || i >= len(hosts) {
-			return "", query, nil, fmt.Errorf("invalid picker selection")
-		}
-		selected = append(selected, hosts[i])
-		state.Marked = append(state.Marked, hosts[i].Alias)
-	}
-	if len(state.Marked) > 0 {
-		state.Focus = state.Marked[0]
-	}
-	return key, nextQuery, selected, nil
-}
-
-func hostRows(hosts []Host) string { return hostRowsFor(hosts, nil) }
-
-// emptyRowID marks a non-selectable placeholder, shown when a filter hides every host.
-const emptyRowID = -2
-
-func hostRowsFor(hosts []Host, include func(Host) bool) string {
-	rows := [][4]string{{"HOST", "HOSTNAME / IP", "JUMPHOST", "COMMENT"}}
-	ids := []int{-1}
-	var widths [3]int
-	for i, h := range hosts {
-		if include != nil && !include(h) {
-			continue
-		}
-		jump := h.JumpHost
-		if jump == "" || strings.EqualFold(jump, "none") {
-			jump = "—"
-		}
-		rows = append(rows, [4]string{clean(h.Alias), clean(h.Hostname), clean(jump), clean(h.Comment)})
-		ids = append(ids, i)
-	}
-	for _, row := range rows {
-		for col := range widths {
-			widths[col] = max(widths[col], len([]rune(row[col])))
-		}
-	}
-	var input strings.Builder
-	for i, row := range rows {
-		// The first row is a non-selectable fzf header; IDs still index hosts.
-		fmt.Fprintf(&input, "%d\t%-*s  %-*s  %-*s  %s\n", ids[i], widths[0], row[0], widths[1], row[1], widths[2], row[2], row[3])
-	}
-	if include != nil && len(rows) == 1 {
-		fmt.Fprintf(&input, "%d\t(no hosts are tagged; add an indented '# Windows' or '# RDP' comment inside a Host block)\n", emptyRowID)
-	}
-	return input.String()
-}
-
-func withoutFZFOptions(env []string) []string {
-	var result []string
-	for _, v := range env {
-		if !strings.HasPrefix(v, "FZF_DEFAULT_OPTS=") && !strings.HasPrefix(v, "FZF_DEFAULT_OPTS_FILE=") && !strings.HasPrefix(v, "FZF_DEFAULT_COMMAND=") {
-			result = append(result, v)
-		}
-	}
-	return result
-}
-
-func preview(args []string) error {
-	if len(args) != 3 {
-		return fmt.Errorf("invalid preview arguments")
-	}
-	b, err := os.ReadFile(args[0])
-	if err != nil {
-		return err
-	}
-	var hosts []Host
-	if err := json.Unmarshal(b, &hosts); err != nil {
-		return err
-	}
-	i, err := strconv.Atoi(args[2])
-	if i == emptyRowID {
-		return nil
-	}
-	if err != nil || i < 0 || i >= len(hosts) {
-		return fmt.Errorf("invalid preview selection")
-	}
-	h := hosts[i]
-	mode, err := readMode(args[1])
-	if err != nil {
-		return err
-	}
-	if warning := modeWarning(mode); warning != "" {
-		fmt.Printf("%s\n\n", warning)
-	}
-	fmt.Printf("%s\n%s:%d\n\n%s\n\n", clean(h.Alias), clean(h.File), h.Line, clean(h.Comment))
-	for n, line := range strings.Split(h.Block, "\n") {
-		fmt.Printf("%5d  %s\n", h.Line+n, clean(line))
-	}
-	return nil
 }
