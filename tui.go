@@ -137,7 +137,17 @@ func (m *pickerModel) refilter() {
 	m.cursor = min(max(0, m.cursor), max(0, len(m.visible)-1))
 	m.scrollToCursor()
 }
-func (m *pickerModel) rows() int { return max(1, m.height-11) }
+func (m *pickerModel) rows() int { return max(1, min(20, m.height-10)) }
+
+// viewSplit: 70% list / 30% details on wide terminals; single column otherwise.
+func viewSplit(width int) (listWidth, previewWidth int) {
+	total := width - 2
+	if width >= 90 {
+		lw := max(40, total*7/10)
+		return lw, max(20, total-lw-3)
+	}
+	return total, 0
+}
 func (m *pickerModel) scrollToCursor() {
 	if m.cursor < m.offset {
 		m.offset = m.cursor
@@ -336,7 +346,8 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.search.Width = max(1, msg.Width-8)
-		m.preview.Width = max(1, msg.Width-max(30, msg.Width/2)-5)
+		_, previewWidth := viewSplit(msg.Width)
+		m.preview.Width = max(1, previewWidth)
 		m.preview.Height = max(1, m.rows()-2)
 		m.scrollToCursor()
 		m.updatePreview()
@@ -392,14 +403,16 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "alt+4":
 			m.switchMode(m.transferMode)
 			return m, nil
+		// The list renders bottom-up: up moves the highlight visually up
+		// (a higher entry index), down moves visually down.
 		case "up", "ctrl+k":
-			m.cursor = max(0, m.cursor-1)
-		case "down", "ctrl+j":
 			m.cursor = min(max(0, len(m.visible)-1), m.cursor+1)
+		case "down", "ctrl+j":
+			m.cursor = max(0, m.cursor-1)
 		case "ctrl+u", "pgup":
-			m.cursor = max(0, m.cursor-max(1, m.rows()/2))
-		case "ctrl+d", "pgdown":
 			m.cursor = min(max(0, len(m.visible)-1), m.cursor+max(1, m.rows()/2))
+		case "ctrl+d", "pgdown":
+			m.cursor = max(0, m.cursor-max(1, m.rows()/2))
 		case "shift+up":
 			m.preview.ScrollUp(1)
 			return m, nil
@@ -409,9 +422,9 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab", "shift+tab":
 			if h, ok := m.activeHost(); ok {
 				m.marked[h.Alias] = !m.marked[h.Alias]
-				delta := -1
+				delta := 1
 				if msg.String() == "shift+tab" {
-					delta = 1
+					delta = -1
 				}
 				m.cursor = max(0, min(len(m.visible)-1, m.cursor+delta))
 			}
@@ -446,14 +459,15 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Button == tea.MouseButtonWheelUp {
 				delta = -3
 			}
-			if m.width >= 90 && msg.X > m.width/2 {
+			listWidth, _ := viewSplit(m.width)
+			if m.width >= 90 && msg.X > listWidth {
 				if delta < 0 {
 					m.preview.ScrollUp(-delta)
 				} else {
 					m.preview.ScrollDown(delta)
 				}
 			} else {
-				m.cursor = max(0, min(max(0, len(m.visible)-1), m.cursor+delta))
+				m.cursor = max(0, min(max(0, len(m.visible)-1), m.cursor-delta))
 				m.scrollToCursor()
 				m.updatePreview()
 			}
@@ -570,7 +584,7 @@ func (m *pickerModel) View() string {
 		} else {
 			tabs.WriteString(tuiDim.Render(label))
 		}
-		m.hits = append(m.hits, hitRegion{x, 2, len(label), "mode:" + tab.mode, 0})
+		m.hits = append(m.hits, hitRegion{x, 1, len(label), "mode:" + tab.mode, 0})
 		tabs.WriteString("  ")
 	}
 	dest := m.dest
@@ -583,17 +597,30 @@ func (m *pickerModel) View() string {
 	}
 	if m.state.Mode == m.transferMode {
 		context = strings.ToUpper(m.state.Mode) + " ▾ · Enter → transfer setup"
-		m.hits = append(m.hits, hitRegion{0, 3, lipgloss.Width(context), "protocol", 0})
+		m.hits = append(m.hits, hitRegion{0, 2, lipgloss.Width(context), "protocol", 0})
 	}
-	lines := []string{fit(header, width), "", tabs.String(), fit(tuiDim.Render(context), width), m.search.View(), ""}
-	listWidth := width
-	if m.width >= 90 {
-		listWidth = max(30, m.width/2)
-	}
+	lines := []string{fit(header, width), tabs.String(), fit(tuiDim.Render(context), width)}
+	listWidth, _ := viewSplit(m.width)
 	var left []string
+	// Fixed column titles; the list scrolls beneath them.
+	if m.state.Mode == "tunnels" {
+		left = append(left, fit(tuiDim.Render(fmt.Sprintf("  %-20s %s", "NAME", "STATUS")), listWidth))
+	} else if listWidth > 65 {
+		left = append(left, fit(tuiDim.Render(fmt.Sprintf("    %-20s %-13s  %s", "HOST", "HOSTNAME / IP", "COMMENT")), listWidth))
+	} else {
+		left = append(left, fit(tuiDim.Render(fmt.Sprintf("    %-20s %s", "HOST", "HOSTNAME / IP")), listWidth))
+	}
+	// Rows anchor to the bottom and fill upward (fzf --layout=reverse): the
+	// first result sits on the last slot, older entries stack above it.
+	pad := max(0, m.rows()-len(m.visible))
+	occupied := m.rows() - pad
 	for row := 0; row < m.rows(); row++ {
-		i := m.offset + row
 		line := ""
+		if row < pad {
+			left = append(left, "")
+			continue
+		}
+		i := m.offset + occupied - 1 - (row - pad)
 		if i < len(m.visible) {
 			id := m.visible[i]
 			if m.state.Mode == "tunnels" {
@@ -607,14 +634,14 @@ func (m *pickerModel) View() string {
 				}
 				line = fmt.Sprintf(" %s %-20s %s", mark, clean(h.Alias), clean(h.Hostname))
 				if listWidth > 65 {
-					line += "  " + clean(h.Comment)
+					line = fmt.Sprintf(" %s %-20s %-13s  %s", mark, clean(h.Alias), clean(h.Hostname), clean(h.Comment))
 				}
 			}
 			if i == m.cursor {
 				line = tuiSelected.Render(fit("›"+strings.TrimPrefix(line, " "), listWidth))
 			}
-			m.hits = append(m.hits, hitRegion{0, 6 + row, listWidth, "row", i})
-		} else if row == 0 {
+			m.hits = append(m.hits, hitRegion{0, 4 + row, listWidth, "row", i})
+		} else if row == m.rows()-1 {
 			line = tuiDim.Render("No matches · Ctrl+R reload · ? help")
 		}
 		left = append(left, fit(line, listWidth))
@@ -624,7 +651,12 @@ func (m *pickerModel) View() string {
 		panel := tuiDim.Render("DETAILS") + "\n" + m.preview.View()
 		body = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(listWidth).Render(body), " │ ", panel)
 	}
-	lines = append(lines, body, strings.Repeat("─", width))
+	legend := "Tab mark · Ctrl+O mode · Ctrl+G target · Esc exit · ? all shortcuts"
+	if m.state.Mode == "tunnels" {
+		legend = "Enter toggle · Ctrl+E edit · Ctrl+R reload · Esc exit · ? all shortcuts"
+	}
+	// Below the list: search bar, hotkey legend, separator, buttons, info, status.
+	lines = append(lines, body, m.search.View(), fit(tuiDim.Render(legend), width), strings.Repeat("─", width))
 	var buttons strings.Builder
 	buttonsList := []struct{ label, action string }{{"Connect", "connect"}, {"Target", "target"}, {"Help", "help"}}
 	if m.state.Mode == "rdp" {
@@ -637,7 +669,7 @@ func (m *pickerModel) View() string {
 		x := lipgloss.Width(buttons.String())
 		label := "[ " + b.label + " ]"
 		buttons.WriteString(tuiAccent.Render(label))
-		m.hits = append(m.hits, hitRegion{x, 6 + m.rows() + 1, len(label), b.action, 0})
+		m.hits = append(m.hits, hitRegion{x, m.rows() + 7, len(label), b.action, 0})
 		buttons.WriteString("  ")
 	}
 	status := tuiDim.Render(clean(m.status))

@@ -145,7 +145,22 @@ func app(args []string) error {
 		if err != nil {
 			return err
 		}
-		return run([]string{"tmux", "display-popup", "-EE", "-c", o.Client, "-d", cwd, "-w", "90%", "-h", "90%", shellCommand(argv)})
+		// Fit the popup to the TUI's content, not a screen-filling 90%.
+		// The TUI inside derives its layout from the popup size, so the
+		// height here equals the list rows plus the fixed chrome.
+		w, h := "90%", "90%"
+		sizeOK := false
+		if cw, ch, ok := tmuxClientSize(o.Client); ok {
+			rows := max(1, min(20, ch-14))
+			// tmux counts the popup border inside -w/-h (probed: the child
+			// sees size minus 2), so add 2 in both directions.
+			w, h = strconv.Itoa(min(cw-2, 122)), strconv.Itoa(rows+12)
+			sizeOK = true
+		}
+		if os.Getenv("GO_WHERE_DEBUG") != "" {
+			fmt.Fprintf(os.Stderr, "go-where: popup size client=%q ok=%t w=%s h=%s\n", o.Client, sizeOK, w, h)
+		}
+		return run([]string{"tmux", "display-popup", "-EE", "-c", o.Client, "-d", cwd, "-w", w, "-h", h, shellCommand(argv)})
 	}
 	query := ""
 	state := PickerState{Mode: mode}
@@ -267,6 +282,29 @@ func app(args []string) error {
 			return nil
 		}
 	}
+}
+
+func tmuxClientSize(client string) (int, int, bool) {
+	// list-clients is the only tmux query that reliably reports sizes for a
+	// specific client from a spawned process; display-message's client
+	// context proved unreliable (probed on real tmux). Match by name.
+	out, err := output("tmux", "list-clients", "-F", "#{client_name}\t#{client_width}\t#{client_height}")
+	if err != nil {
+		return 0, 0, false
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) != 3 || (client != "" && fields[0] != client) {
+			continue
+		}
+		w, err1 := strconv.Atoi(fields[1])
+		h, err2 := strconv.Atoi(fields[2])
+		if err1 != nil || err2 != nil || w < 40 || h < 26 {
+			continue
+		}
+		return w, h, true
+	}
+	return 0, 0, false
 }
 
 func clean(s string) string {

@@ -112,9 +112,25 @@ func TestUnifiedMouseAndDialogs(t *testing.T) {
 	m := newPickerModel([]Host{{Alias: "a"}, {Alias: "b"}}, "", "terminal", Origin{}, PickerState{Mode: "ssh"}, c)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m.View()
-	m.Update(tea.MouseMsg{X: 2, Y: 7, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	// Two hosts bottom-anchor and fill upward: the second row sits at 4+13.
+	m.Update(tea.MouseMsg{X: 2, Y: 17, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	if h, _ := m.activeHost(); h.Alias != "b" {
 		t.Fatal("mouse did not select second row")
+	}
+	// Bottom-up rendering: Up moves the highlight to the row above.
+	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if h, _ := m.activeHost(); h.Alias != "b" {
+		t.Fatal("up moved away from the clicked row above")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m.Update(tea.KeyMsg{Type: tea.KeyHome})
+	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if h, _ := m.activeHost(); h.Alias != "b" {
+		t.Fatal("up did not reach the visually higher row")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if h, _ := m.activeHost(); h.Alias != "a" {
+		t.Fatal("down did not move the highlight visually down")
 	}
 	m.View()
 	for _, hit := range m.hits {
