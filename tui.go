@@ -62,8 +62,9 @@ type pickerModel struct {
 
 func newPickerModel(hosts []Host, query, dest string, o Origin, state PickerState, c Config) *pickerModel {
 	input := textinput.New()
-	input.Prompt = "/ "
-	input.Placeholder = "Search hosts, addresses, comments…"
+	input.Prompt = "⌕ Search: "
+	input.PromptStyle = tuiAccent
+	input.Placeholder = "host, address, comments…"
 	input.SetValue(query)
 	input.Focus()
 	m := &pickerModel{hosts: hosts, state: state, config: c, dest: dest, origin: o, search: input, preview: viewport.New(1, 1), marked: map[string]bool{}, transferMode: "scp", tunnelStatus: map[string]tunnelInfo{}, pending: map[string]bool{}, positions: map[string]string{}}
@@ -345,7 +346,7 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.search.Width = max(1, msg.Width-8)
+		m.search.Width = max(1, msg.Width-4-lipgloss.Width(m.search.Prompt))
 		_, previewWidth := viewSplit(msg.Width)
 		m.preview.Width = max(1, previewWidth)
 		m.preview.Height = max(1, m.rows()-1)
@@ -673,8 +674,8 @@ func (m *pickerModel) View() string {
 	if m.state.Mode == "tunnels" {
 		legend = "Enter toggle │ ←/→ mode │ Ctrl+E edit │ Ctrl+R reload │ ? help"
 	}
-	// Below the list: search bar, hotkey legend, separator, buttons, info, status.
-	lines = append(lines, body, m.search.View(), strings.Repeat("─", width))
+	// Separate the search input from results without adding another row.
+	lines = append(lines, body, strings.Repeat("─", width), m.search.View())
 	var buttons strings.Builder
 	buttonsList := []struct{ label, action string }{{"Connect", "connect"}, {"Target", "target"}, {"Help", "help"}}
 	if m.state.Mode == "rdp" {

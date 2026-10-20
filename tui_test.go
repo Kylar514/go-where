@@ -226,6 +226,11 @@ func TestModeKeysAndFramedLayout(t *testing.T) {
 		t.Fatal("Backspace must edit search, not switch modes")
 	}
 	view := m.View()
+	lines := strings.Split(view, "\n")
+	searchRow := 3 + m.rows() + 1
+	if !strings.Contains(lines[searchRow], "⌕ Search:") || !strings.Contains(lines[searchRow-1], "────") || !strings.Contains(lines[searchRow+1], "Toggle") {
+		t.Fatal("search must sit between separator and action buttons")
+	}
 	if strings.Contains(view, "connections ·") || strings.Count(view, "Ctrl+R") != 1 || !strings.Contains(view, "╭─ Details") || !strings.Contains(view, "╰") {
 		t.Fatalf("unexpected layout: %s", view)
 	}
