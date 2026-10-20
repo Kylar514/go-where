@@ -12,14 +12,19 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
+var popupFrameEnabled bool
+
 var runTUI = func(m tea.Model) (tea.Model, error) {
+	if popupFrameEnabled {
+		m = &popupFrame{model: m}
+	}
 	return tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 }
 
 var (
 	tuiAccent   = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
 	tuiDim      = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	tuiSelected = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("24"))
+	tuiSelected = lipgloss.NewStyle().Reverse(true).Bold(true)
 	tuiError    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
 )
 
@@ -72,8 +77,8 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.query.Width = max(1, msg.Width-6)
 		m.preview.Width = max(1, msg.Width-4)
-		content:=ansi.Hardwrap(cleanLines(m.text),m.preview.Width,true)
-		m.preview.Height=min(lipgloss.Height(content),max(1,min(msg.Height/2,msg.Height-8)))
+		content := ansi.Hardwrap(cleanLines(m.text), m.preview.Width, true)
+		m.preview.Height = min(lipgloss.Height(content), max(1, min(msg.Height/2, msg.Height-8)))
 		m.preview.SetContent(content)
 	case tea.KeyMsg:
 		if m.width > 0 && (m.width < 24 || m.height < 9) && msg.String() != "esc" && msg.String() != "ctrl+c" {

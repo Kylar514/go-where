@@ -112,8 +112,8 @@ func TestUnifiedMouseAndDialogs(t *testing.T) {
 	m := newPickerModel([]Host{{Alias: "a"}, {Alias: "b"}}, "", "terminal", Origin{}, PickerState{Mode: "ssh"}, c)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m.View()
-	// Two hosts bottom-anchor and fill upward: the second row sits at 4+13.
-	m.Update(tea.MouseMsg{X: 2, Y: 17, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	// Second result sits one row above the bottom of the reverse list.
+	m.Update(tea.MouseMsg{X: 2, Y: 3 + m.rows() - 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	if h, _ := m.activeHost(); h.Alias != "b" {
 		t.Fatal("mouse did not select second row")
 	}
@@ -122,8 +122,7 @@ func TestUnifiedMouseAndDialogs(t *testing.T) {
 	if h, _ := m.activeHost(); h.Alias != "b" {
 		t.Fatal("up moved away from the clicked row above")
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyLeft})
-	m.Update(tea.KeyMsg{Type: tea.KeyHome})
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if h, _ := m.activeHost(); h.Alias != "b" {
 		t.Fatal("up did not reach the visually higher row")
@@ -200,5 +199,73 @@ func TestUnifiedSelectionAndSmallDialogs(t *testing.T) {
 		if lipgloss.Height(d.View()) > size[1] || lipgloss.Width(d.View()) > size[0] {
 			t.Fatalf("dialog overflows %v: %dx%d %q", size, lipgloss.Width(d.View()), lipgloss.Height(d.View()), d.View())
 		}
+	}
+}
+
+func TestModeKeysAndFramedLayout(t *testing.T) {
+	c := defaultConfig()
+	c.TunnelsConfig = t.TempDir() + "/missing"
+	m := newPickerModel([]Host{{Alias: "demo"}}, "", "terminal", Origin{}, PickerState{Mode: "ssh"}, c)
+	m.Update(tea.WindowSizeMsg{Width: 148, Height: 28})
+	for _, step := range []struct {
+		key  tea.KeyType
+		mode string
+	}{
+		{tea.KeyRight, "rdp"}, {tea.KeyCtrlL, "tunnels"}, {tea.KeyRight, "scp"},
+		{tea.KeyRight, "ssh"}, {tea.KeyLeft, "scp"}, {tea.KeyCtrlH, "tunnels"},
+	} {
+		m.Update(tea.KeyMsg{Type: step.key})
+		if m.state.Mode != step.mode {
+			t.Fatalf("key %v: mode %s", step.key, m.state.Mode)
+		}
+	}
+	m.search.SetValue("abc")
+	m.search.CursorEnd()
+	m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if m.search.Value() != "ab" || m.state.Mode != "tunnels" {
+		t.Fatal("Backspace must edit search, not switch modes")
+	}
+	view := m.View()
+	if strings.Contains(view, "connections ·") || strings.Count(view, "Ctrl+R") != 1 || !strings.Contains(view, "╭─ Details") || !strings.Contains(view, "╰") {
+		t.Fatalf("unexpected layout: %s", view)
+	}
+	if lipgloss.Width(view) > 148 || lipgloss.Height(view) != 28 {
+		t.Fatalf("layout size %dx%d", lipgloss.Width(view), lipgloss.Height(view))
+	}
+}
+
+func TestPopupFrameLayoutAndMouse(t *testing.T) {
+	c := defaultConfig()
+	c.TunnelsConfig = t.TempDir() + "/missing"
+	picker := newPickerModel([]Host{{Alias: "demo"}}, "", "terminal", Origin{}, PickerState{Mode: "ssh"}, c)
+	frame := &popupFrame{model: picker}
+	frame.Update(tea.WindowSizeMsg{Width: 150, Height: 30})
+	view := frame.View()
+	if picker.width != 148 || picker.height != 28 || lipgloss.Width(view) != 150 || lipgloss.Height(view) != 30 {
+		t.Fatalf("frame/child dimensions wrong: %dx%d / %dx%d", lipgloss.Width(view), lipgloss.Height(view), picker.width, picker.height)
+	}
+	if !strings.Contains(view, "╭─ go-where ") || !strings.Contains(view, "╰") {
+		t.Fatal("missing frame")
+	}
+	for _, hit := range picker.hits {
+		if hit.action == "mode:tunnels" {
+			frame.Update(tea.MouseMsg{X: hit.x + 1, Y: hit.y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+			break
+		}
+	}
+	if picker.state.Mode != "tunnels" {
+		t.Fatal("frame did not translate mouse coordinates")
+	}
+	frame.Update(tea.MouseMsg{X: 0, Y: 0, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if picker.state.Mode != "tunnels" {
+		t.Fatal("border click reached content")
+	}
+	picker.action("help")
+	if !strings.Contains(frame.View(), "╭─ go-where ") {
+		t.Fatal("dialog lost outer frame")
+	}
+	frame.Update(tea.WindowSizeMsg{Width: 2, Height: 2})
+	if frame.View() != "" {
+		t.Fatal("tiny frame overflowed")
 	}
 }

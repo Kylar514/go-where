@@ -26,6 +26,8 @@ func pickerHelp(mode string) string {
 	return "LAUNCH\n" + launch + `
 
 NAVIGATE & SELECT
+←/→, Ctrl+H/L  Previous / next mode (wraps around)
+Backspace      Delete search text (terminals sending Ctrl+H switch mode)
 ↑/↓, Ctrl+J/K  Move through hosts
 Ctrl+U/D       Move half a page
 Tab            Mark and move up

@@ -151,17 +151,19 @@ func app(args []string) error {
 		w, h := "90%", "90%"
 		sizeOK := false
 		if cw, ch, ok := tmuxClientSize(o.Client); ok {
-			rows := max(1, min(20, ch-14))
-			// tmux counts the popup border inside -w/-h (probed: the child
-			// sees size minus 2), so add 2 in both directions.
-			w, h = strconv.Itoa(min(cw-2, 122)), strconv.Itoa(rows+12)
+			rows := max(1, min(20, ch-12))
+			// Reserve two cells for go-where's frame inside the borderless popup.
+			w, h = strconv.Itoa(min(cw-2, 150)), strconv.Itoa(rows+10)
 			sizeOK = true
 		}
 		if os.Getenv("GO_WHERE_DEBUG") != "" {
 			fmt.Fprintf(os.Stderr, "go-where: popup size client=%q ok=%t w=%s h=%s\n", o.Client, sizeOK, w, h)
 		}
-		return run([]string{"tmux", "display-popup", "-EE", "-c", o.Client, "-d", cwd, "-w", w, "-h", h, shellCommand(argv)})
+		return run([]string{"tmux", "display-popup", "-EE", "-B", "-s", "fg=default,bg=default", "-c", o.Client, "-d", cwd, "-w", w, "-h", h, shellCommand(argv)})
 	}
+	previousFrame := popupFrameEnabled
+	popupFrameEnabled = *inPopup
+	defer func() { popupFrameEnabled = previousFrame }()
 	query := ""
 	state := PickerState{Mode: mode}
 	draft := Transfer{Direction: "upload"}

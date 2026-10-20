@@ -48,6 +48,7 @@ Rows show host aliases and addresses; the preview shows jump routes, comments, s
 | Enter | Connect using your configured default |
 | Ctrl+O | Choose SSH, SCP, Legacy SCP, rsync, RDP, or Tunnels |
 | Alt+1 / 2 / 3 / 4 | SSH / RDP / Tunnels / Transfers |
+| ← / →, Ctrl+H / Ctrl+L | Previous / next mode, wrapping at either end |
 | Ctrl+G | Choose a tmux pane or terminal destination |
 | Ctrl+Alt+P | New pane per host in the originating window |
 | Ctrl+Alt+W | New window per host in the originating session |
@@ -67,6 +68,8 @@ Connection actions use marked hosts, or the highlighted host if nothing is marke
 N means new session, leaving S for settings. The terminal/compositor must pass the configured shortcuts through. Use the mouse or Ctrl+O when an Alt+number binding is reserved by your terminal.
 
 Explicit tmux actions require tmux; only the default Enter action uses the configured fallback. Panes are split horizontally from the original pane. Large selections can run out of pane space: failures report how many hosts opened and never silently reroute the rest. A failed new-session operation may leave a partially populated session; no existing session is deleted or replaced.
+
+Popups have a rounded, terminal-background frame titled `go-where`, capped at 150 columns. The reverse list shows at most 20 entries beside a rounded Details box in a 70/30 split. Search sits below the list, with one shortcut footer below the buttons. Ctrl+H switches tabs; terminals that encode Backspace as Ctrl+H must send DEL instead to delete search text.
 
 ## Tunnels (Diglet)
 

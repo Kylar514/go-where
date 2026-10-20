@@ -106,6 +106,27 @@ func TestPickerPopupExitsAfterLaunch(t *testing.T) {
 	}
 }
 
+func TestPopupFrameAndSize(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Setenv("CALLS", filepath.Join(dir, "calls"))
+	fakeCommand(t, dir, "tmux", `if [ "$1" = list-clients ]; then printf '/dev/pts/0\t173\t90\n'; else printf '%s\n' "$@" > "$CALLS"; fi`)
+	settings := filepath.Join(dir, "config.json")
+	writeTestFile(t, settings, "{}")
+	if err := app([]string{"--popup", "--config", settings, "--origin", encodeOrigin(Origin{Pane: "%1", Window: "@1", Session: "$1", Client: "/dev/pts/0"})}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "calls"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"-w\n150\n-h\n30", "-B\n", "fg=default,bg=default"} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("missing %q: %s", want, b)
+		}
+	}
+}
+
 func TestPickerHeaderAndHelp(t *testing.T) {
 	for _, mode := range []string{"ssh", "scp", "legacy-scp", "rsync", "rdp"} {
 		help := pickerHelp(mode)
