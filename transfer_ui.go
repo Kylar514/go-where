@@ -80,7 +80,43 @@ type choice struct{ ID, Label string }
 
 func choose(title string, options []choice, text string) (string, bool, error) {
 	m := newDialog(title, options, text)
+	key := menuKey(title)
+	return runChoice(m, key)
+}
+
+func chooseOne(title string, options []choice, text, current string) (string, bool, error) {
+	m := newDialog(title, options, text)
+	m.singleChoice, m.current = true, current
+	for i, option := range options {
+		if option.ID == current {
+			m.cursor = i
+			break
+		}
+	}
+	return runChoice(m, menuKey(title))
+}
+
+func runChoice(m *dialogModel, key string) (string, bool, error) {
+	if position, ok := menuPositions[key]; ok {
+		m.query.SetValue(position.query)
+		m.refilter()
+		m.cursor = min(position.cursor, max(0, len(m.filtered)-1))
+		for i, index := range m.filtered {
+			if m.options[index].ID == position.selected {
+				m.cursor = i
+				break
+			}
+		}
+		m.restorePreview = &position.preview
+	}
 	_, err := runTUI(m)
+	if menuPositions != nil {
+		position := menuPosition{query: m.query.Value(), cursor: m.cursor, preview: m.preview.YOffset}
+		if len(m.filtered) > 0 {
+			position.selected = m.options[m.filtered[m.cursor]].ID
+		}
+		menuPositions[key] = position
+	}
 	return m.result, m.back, err
 }
 func notice(message string) error {

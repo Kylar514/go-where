@@ -122,7 +122,7 @@ func TestLocalAgentOverrideUIKeepsDatabaseDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := Host{SourceID: s.ID, ConnectionID: r.ID, Alias: r.Alias}
-	scriptTUI(t, "none", "apply", "save")
+	scriptTUI(t, "none", "save")
 	if err := editConnectionAgentOverride(path, h); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestLocalAgentOverrideUIKeepsDatabaseDefault(t *testing.T) {
 	if rows[0].SSHAgent != "legacy" {
 		t.Fatal("local override modified the database")
 	}
-	scriptTUI(t, "inherit", "apply", "save")
+	scriptTUI(t, "inherit", "save")
 	if err = editConnectionAgentOverride(path, h); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestLocalAgentOverrideUIKeepsDatabaseDefault(t *testing.T) {
 		t.Fatal("inherit did not restore database default")
 	}
 	before, _ := os.ReadFile(path)
-	scriptTUI(t, "default", "apply", "back")
+	scriptTUI(t, "default", "back")
 	if err = editConnectionAgentOverride(path, h); err != nil {
 		t.Fatal(err)
 	}

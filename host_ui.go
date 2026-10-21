@@ -6,6 +6,7 @@ import (
 )
 
 func editInventoryHost(c Config, state *PickerState, selected *Host) error {
+	defer menuSession()()
 	preferred := state.Source
 	if selected != nil {
 		preferred = selected.SourceID
@@ -415,7 +416,7 @@ func chooseHostProfiles(c Config, selected []Host) ([]Host, bool, error) {
 				options = append(options, choice{p.ID, label})
 			}
 		}
-		id, back, err := choose("Connect as — "+h.Alias, options, "One-launch profile choice; saved defaults are unchanged.")
+		id, back, err := chooseOne("Connect as — "+h.Alias, options, "One-launch profile choice; saved defaults are unchanged.", h.ConnectionID)
 		if err != nil || back {
 			return nil, back, err
 		}

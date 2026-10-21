@@ -18,7 +18,7 @@ func agentNames(c Config) []string {
 	return names
 }
 
-func chooseAgent(c Config, override bool) (string, bool, error) {
+func chooseAgent(c Config, override bool, current string) (string, bool, error) {
 	options := []choice{}
 	if override {
 		options = append(options, choice{"inherit", "Inherit connection's agent setting"})
@@ -29,7 +29,7 @@ func chooseAgent(c Config, override bool) (string, bool, error) {
 	for _, name := range agentNames(c) {
 		options = append(options, choice{name, "Profile: " + name})
 	}
-	return choose("SSH agent", options, "This selects a signing agent, not agent forwarding or legacy SSH algorithms. Definitions are local settings. Missing profiles/endpoints fail rather than falling back.")
+	return chooseOne("SSH agent", options, "This selects a signing agent, not agent forwarding or legacy SSH algorithms. Definitions are local settings. Missing profiles/endpoints fail rather than falling back.", current)
 }
 
 func cloneAgentSettings(c Config) Config {
@@ -68,6 +68,7 @@ func settingsDraft(path string) (original []byte, before, draft Config, err erro
 }
 
 func settingsMenu(path string) (raw bool, err error) {
+	defer menuSession()()
 	original, before, draft, err := settingsDraft(path)
 	if err != nil {
 		return false, err
@@ -89,7 +90,7 @@ func settingsMenu(path string) (raw bool, err error) {
 		}
 		switch id {
 		case "general":
-			v, b, e := choose("Startup mode", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnels", "Tunnels"}, {"scp", "Transfers — SCP"}, {"rsync", "Transfers — rsync"}, {"legacy-scp", "Transfers — legacy SCP"}}, "An explicit CLI mode, e.g. go-where rdp, wins over this preference.")
+			v, b, e := chooseOne("Startup mode", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnels", "Tunnels"}, {"scp", "Transfers — SCP"}, {"rsync", "Transfers — rsync"}, {"legacy-scp", "Transfers — legacy SCP"}}, "An explicit CLI mode, e.g. go-where rdp, wins over this preference.", mode)
 			if e != nil {
 				return false, e
 			}
@@ -186,7 +187,11 @@ func editAgentProfiles(c *Config) error {
 			}
 			switch action {
 			case "kind":
-				v, b, e := choose("Endpoint type", []choice{{"env", "Environment variable"}, {"socket", "Literal socket / Windows pipe"}}, "")
+				current := "env"
+				if p.SocketEnv == "" {
+					current = "socket"
+				}
+				v, b, e := chooseOne("Endpoint type", []choice{{"env", "Environment variable"}, {"socket", "Literal socket / Windows pipe"}}, "", current)
 				if e != nil {
 					return e
 				}
@@ -248,12 +253,11 @@ func editAgentOverrideDraft(c *Config, h Host) error {
 	if r.kind() != "ssh" {
 		return fmt.Errorf("agent overrides belong to SSH records, including jump hosts referenced by RDP/tunnels")
 	}
-	name, origin := effectiveAgent(*c, s.ID, r)
-	id, back, err := chooseAgent(*c, true)
-	if err != nil || back {
-		return err
+	current := "inherit"
+	if o := c.Overrides[s.ID][r.ID]; o.SSHAgent != nil {
+		current = *o.SSHAgent
 	}
-	_, back, err = choose("Apply local agent override?", []choice{{"apply", "Apply to settings draft"}}, h.Alias+" ["+s.Name+"]\nCurrent: "+agentChoiceLabel(name)+" — "+origin+"\nNew: "+id+"\nOnly your local settings change. The connection database is untouched.")
+	id, back, err := chooseAgent(*c, true, current)
 	if err != nil || back {
 		return err
 	}
@@ -313,6 +317,7 @@ func editConnectionAgentOverride(path string, h Host) error {
 }
 
 func editConnectionOverride(path string, h Host, edit func(*Config, Host) error) error {
+	defer menuSession()()
 	original, before, draft, err := settingsDraft(path)
 	if err != nil {
 		return err

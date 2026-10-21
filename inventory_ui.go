@@ -145,6 +145,7 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 }
 
 func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connection) error {
+	defer menuSession()()
 	preferred := state.Source
 	if h != nil {
 		preferred = h.SourceID
@@ -212,7 +213,7 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 			}
 			continue
 		case "ssh_agent":
-			v, b, e := chooseAgent(c, false)
+			v, b, e := chooseAgent(c, false, r.SSHAgent)
 			if e != nil {
 				return e
 			}
@@ -254,7 +255,11 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 			for _, host := range hosts {
 				choices = append(choices, choice{host.ID, host.Alias + " — " + host.Address})
 			}
-			v, b, e := choose("Tunnel remote target", choices, "Saved hosts share their address and local host-address override. The target is reached from the SSH host.")
+			current := r.RemoteHostID
+			if current == "" {
+				current = "custom"
+			}
+			v, b, e := chooseOne("Tunnel remote target", choices, "Saved hosts share their address and local host-address override. The target is reached from the SSH host.", current)
 			if e != nil {
 				return e
 			}
@@ -268,16 +273,18 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 			}
 			continue
 		case "type":
-			kind, b, e := choose("Connection type", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnel", "Tunnel"}}, "")
+			kind, b, e := chooseOne("Connection type", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnel", "Tunnel"}}, "", r.kind())
 			if e != nil {
 				return e
 			}
 			if b || kind == r.kind() {
 				continue
 			}
-			_, b, e = choose("Change type?", []choice{{"change", "Change to " + kind}}, "Type-specific fields will be reset. Name, tags and notes are retained; SSH/RDP address, user and jump are retained when compatible. No change is stored until Save.")
-			if e != nil {
-				return e
+			if existing || r.User != "" || r.IdentityFile != "" || r.JumpID != "" || r.Domain != nil || r.Account != "" || tunnelBackendConfigured(r) {
+				_, b, e = choose("Change type?", []choice{{"change", "Change to " + kind}}, "Type-specific fields will be reset. Name, tags and notes are retained; SSH/RDP address, user and jump are retained when compatible. No change is stored until Save.")
+				if e != nil {
+					return e
+				}
 			}
 			if !b {
 				r = connectionWithType(r, kind)
@@ -298,9 +305,11 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 				continue
 			}
 			if selected.ID != s.ID {
-				_, b, e = choose("Change source?", []choice{{"change", "Change source"}}, "Jump/SSH connection references will be cleared. Nothing is saved until Save.")
-				if e != nil {
-					return e
+				if r.JumpID != "" || r.SSHID != "" || r.RemoteHostID != "" {
+					_, b, e = choose("Change source?", []choice{{"change", "Change source"}}, "Jump/SSH connection references will be cleared. Nothing is saved until Save.")
+					if e != nil {
+						return e
+					}
 				}
 				if !b {
 					s = selected
@@ -311,14 +320,16 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 			}
 			continue
 		case "tunnel_type":
-			v, b, e := choose("Tunnel backend", []choice{{"ssh", "SSH"}, {"kubectl", "kubectl"}}, "")
+			v, b, e := chooseOne("Tunnel backend", []choice{{"ssh", "SSH"}, {"kubectl", "kubectl"}}, "", r.TunnelType)
 			if e != nil {
 				return e
 			}
 			if !b && v != r.TunnelType {
-				_, b, e = choose("Change tunnel backend?", []choice{{"change", "Change backend"}}, "SSH host/remote target and Kubernetes resource/context fields will be reset. Bind and ports are retained.")
-				if e != nil {
-					return e
+				if tunnelBackendConfigured(r) {
+					_, b, e = choose("Change tunnel backend?", []choice{{"change", "Change backend"}}, "SSH host/remote target and Kubernetes resource/context fields will be reset. Bind and ports are retained.")
+					if e != nil {
+						return e
+					}
 				}
 				if !b {
 					r.TunnelType = v
@@ -339,7 +350,7 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 			for _, a := range c.RDP.Accounts {
 				choices = append(choices, choice{a.Name, a.Name})
 			}
-			v, b, e := choose("RDP account", choices, "Saved accounts are local profiles. Custom values are retained when switching, but only the selected mode is used. A saved account without a domain uses the editable connection domain.")
+			v, b, e := chooseOne("RDP account", choices, "Saved accounts are local profiles. Custom values are retained when switching, but only the selected mode is used. A saved account without a domain uses the editable connection domain.", r.Account)
 			if e != nil {
 				return e
 			}
@@ -421,7 +432,11 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 			if id == "ssh_id" {
 				title = "Tunnel SSH profile in " + s.Name
 			}
-			v, b, e := choose(title, choices, "References stay pinned to this profile, even if the host's default changes.")
+			current := r.JumpID
+			if id == "ssh_id" {
+				current = r.SSHID
+			}
+			v, b, e := chooseOne(title, choices, "References stay pinned to this profile, even if the host's default changes.", current)
 			if e != nil {
 				return e
 			}
@@ -533,4 +548,8 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 			}
 		}
 	}
+}
+
+func tunnelBackendConfigured(r Connection) bool {
+	return r.SSHID != "" || r.RemoteHostID != "" || (r.RemoteHost != "" && r.RemoteHost != "localhost") || r.Resource != "" || r.Namespace != "" || r.Context != ""
 }

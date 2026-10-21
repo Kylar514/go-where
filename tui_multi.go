@@ -20,22 +20,21 @@ type multiItem struct {
 // multiDialog is a searchable checklist. Two pinned rows sit under the list so
 // "Done" and "Type a name manually" stay reachable however long it is.
 type multiDialog struct {
-	title         string
-	items         []multiItem
-	filtered      []int
-	cursor        int // over filtered items, then Done, then manual entry
-	query         textinput.Model
-	preview       viewport.Model
-	text          string
-	width, height int
-	done, back    bool
-	action        string // "done" or "manual"
+	title          string
+	items          []multiItem
+	filtered       []int
+	cursor         int // over filtered items, then Done, then manual entry
+	query          textinput.Model
+	preview        viewport.Model
+	text           string
+	width, height  int
+	done, back     bool
+	action         string // "done" or "manual"
+	restorePreview *int
 }
 
 func newMultiDialog(title string, items []multiItem, text string) *multiDialog {
-	input := textinput.New()
-	input.Prompt = "/ "
-	input.Focus()
+	input := menuSearch()
 	m := &multiDialog{title: title, items: append([]multiItem(nil), items...), text: text, query: input, preview: viewport.New(1, 1)}
 	m.refilter()
 	return m
@@ -97,10 +96,7 @@ func (m *multiDialog) tooSmall() bool { return m.width < 24 || m.height < 10 }
 func (m *multiDialog) Init() tea.Cmd { return textinput.Blink }
 
 func (m *multiDialog) listStart() int {
-	if m.text != "" {
-		return 4 + m.preview.Height + 1
-	}
-	return 4
+	return m.height - 5 - m.itemRows()
 }
 
 func (m *multiDialog) itemRows() int {
@@ -108,7 +104,24 @@ func (m *multiDialog) itemRows() int {
 	if m.text != "" {
 		rows -= m.preview.Height + 1
 	}
-	return max(1, rows)
+	return max(1, min(20, rows))
+}
+
+func (m *multiDialog) move(delta int) {
+	n := len(m.filtered)
+	position := m.cursor
+	if position < n {
+		position = n - 1 - position
+	}
+	if delta == -1 || delta == 1 {
+		position = cycleCursor(position, delta, n+2)
+	} else {
+		position = min(n+1, max(0, position+delta))
+	}
+	if position < n {
+		position = n - 1 - position
+	}
+	m.cursor = position
 }
 
 func (m *multiDialog) offset() int {
@@ -119,26 +132,30 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.query.Width = max(1, msg.Width-6)
+		m.query.Width = max(1, msg.Width-ansi.StringWidth(m.query.Prompt)-1)
 		m.preview.Width = max(1, msg.Width-4)
 		content := ansi.Hardwrap(cleanLines(m.text), m.preview.Width, true)
 		m.preview.Height = min(lipgloss.Height(content), max(1, (msg.Height-8)/2))
 		m.preview.SetContent(content)
+		if m.restorePreview != nil {
+			m.preview.SetYOffset(*m.restorePreview)
+			m.restorePreview = nil
+		}
 	case tea.KeyMsg:
-		if m.width > 0 && m.tooSmall() && msg.String() != "esc" && msg.String() != "ctrl+c" {
+		if m.width > 0 && m.tooSmall() && msg.String() != "esc" && msg.String() != "ctrl+c" && msg.String() != "ctrl+h" && msg.String() != "left" {
 			return m, nil
 		}
 		switch msg.String() {
-		case "esc", "ctrl+c":
+		case "esc", "ctrl+c", "ctrl+h", "left":
 			m.done, m.back = true, true
 			return m, tea.Quit
 		case "up", "ctrl+k":
-			m.cursor = max(0, m.cursor-1)
+			m.move(-1)
 			return m, nil
 		case "down", "ctrl+j":
-			m.cursor = min(len(m.filtered)+1, m.cursor+1)
+			m.move(1)
 			return m, nil
-		case " ", "enter":
+		case " ", "enter", "ctrl+l":
 			return m, m.activate(m.cursor)
 		case "ctrl+u":
 			m.preview.HalfPageUp()
@@ -161,8 +178,8 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Button == tea.MouseButtonWheelUp {
 				delta = -3
 			}
-			if msg.Y >= m.listStart() {
-				m.cursor = min(len(m.filtered)+1, max(0, m.cursor+delta))
+			if msg.Y >= m.listStart() && msg.Y < m.listStart()+m.itemRows()+2 {
+				m.move(delta)
 			} else if delta < 0 {
 				m.preview.ScrollUp(3)
 			} else {
@@ -174,9 +191,10 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			row := msg.Y - m.listStart()
+			index := m.offset() + m.itemRows() - 1 - row
 			switch {
-			case row >= 0 && row < m.itemRows() && m.offset()+row < len(m.filtered):
-				m.cursor = m.offset() + row
+			case row >= 0 && row < m.itemRows() && index < len(m.filtered):
+				m.cursor = index
 				return m, m.activate(m.cursor)
 			case row == m.itemRows():
 				m.cursor = len(m.filtered)
@@ -189,7 +207,11 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	var cmd tea.Cmd
+	old := m.query.Value()
 	m.query, cmd = m.query.Update(msg)
+	if old != m.query.Value() {
+		m.cursor = 0
+	}
 	m.refilter()
 	return m, cmd
 }
@@ -202,9 +224,12 @@ func (m *multiDialog) View() string {
 		return fit("Resize terminal · Esc back", m.width)
 	}
 	w := m.width - 2
-	lines := []string{tuiAccent.Render(fit(m.title, w)), tuiDim.Render(fit("Space / Enter / click toggle    Esc discard    Ctrl+U/D scroll details", w)), "", m.query.View()}
+	lines := []string{tuiAccent.Render(fit(m.title+" — Select several", w))}
 	if m.text != "" {
 		lines = append(lines, m.preview.View(), "")
+	}
+	for lipgloss.Height(strings.Join(lines, "\n")) < m.listStart() {
+		lines = append(lines, "")
 	}
 	row := func(index int, plain, styled string) string {
 		if index == m.cursor {
@@ -213,8 +238,16 @@ func (m *multiDialog) View() string {
 		return fit("  "+styled, w)
 	}
 	rows, offset := m.itemRows(), m.offset()
-	shown := 0
-	for i := offset; i < min(len(m.filtered), offset+rows); i++ {
+	for slot := rows - 1; slot >= 0; slot-- {
+		i := offset + slot
+		if i >= len(m.filtered) {
+			if len(m.filtered) == 0 && slot == 0 {
+				lines = append(lines, tuiDim.Render("No matches"))
+			} else {
+				lines = append(lines, "")
+			}
+			continue
+		}
 		item := m.items[m.filtered[i]]
 		box := "[ ]"
 		if item.Checked {
@@ -227,21 +260,10 @@ func (m *multiDialog) View() string {
 			styled += tuiDim.Render("  — " + clean(item.Note))
 		}
 		lines = append(lines, row(i, plain, styled))
-		shown++
-	}
-	if len(m.filtered) == 0 {
-		lines = append(lines, tuiDim.Render("No matches"))
-		shown++
-	}
-	for ; shown < rows; shown++ {
-		lines = append(lines, "")
 	}
 	done := fmt.Sprintf("[ Done — apply %d selected ]", m.checkedCount())
 	manual := "[ Type a name manually… ]"
 	lines = append(lines, row(len(m.filtered), done, tuiAccent.Render(done)), row(len(m.filtered)+1, manual, tuiAccent.Render(manual)))
-	for used := lipgloss.Height(strings.Join(lines, "\n")); used < m.height-1; used++ {
-		lines = append(lines, "")
-	}
-	lines = append(lines, tuiAccent.Render("[ Back ]"))
+	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), fit(tuiAccent.Render("[ Back ]")+"  Ctrl+H/← discard · Ctrl+L/Enter/Space toggle · ↑/↓ move · Ctrl+U/D details", m.width))
 	return strings.Join(lines, "\n")
 }

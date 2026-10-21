@@ -94,12 +94,16 @@ func compatibilityDetails(c Config, sourceID string, r Connection) string {
 	return details + fmt.Sprintf("Additional host-key algorithms: %s (%s)\nAdditional public-key signature algorithms: %s (%s)\n", kexLabel(host), origin(r.ExtraHostKeyAlgorithms, o.ExtraHostKeyAlgorithms), kexLabel(pubkey), origin(r.ExtraPubkeyAlgorithms, o.ExtraPubkeyAlgorithms))
 }
 
-func chooseIdentitiesOnly(inherit bool) (*bool, bool, error) {
+func chooseIdentitiesOnly(inherit bool, current *bool) (*bool, bool, error) {
 	first, label := "default", "Default — OpenSSH behavior"
 	if inherit {
 		first, label = "inherit", "Inherit database setting"
 	}
-	id, back, err := choose("Identities only", []choice{{first, label}, {"yes", "Yes — restrict offered keys to configured identities"}, {"no", "No — permit other available identities"}}, "")
+	selected := first
+	if current != nil {
+		selected = identitiesOnlyLabel(current)
+	}
+	id, back, err := chooseOne("Identities only", []choice{{first, label}, {"yes", "Yes — restrict offered keys to configured identities"}, {"no", "No — permit other available identities"}}, "", selected)
 	if err != nil || back {
 		return nil, back, err
 	}
@@ -111,6 +115,7 @@ func chooseIdentitiesOnly(inherit bool) (*bool, bool, error) {
 }
 
 func editSSHCompatibility(r *Connection) error {
+	defer menuSession()()
 	draft := *r
 	for {
 		id, back, err := choose("SSH compatibility", []choice{
@@ -125,7 +130,7 @@ func editSSHCompatibility(r *Connection) error {
 		}
 		switch id {
 		case "identities":
-			v, b, e := chooseIdentitiesOnly(false)
+			v, b, e := chooseIdentitiesOnly(false, draft.IdentitiesOnly)
 			if e != nil {
 				return e
 			}
@@ -162,6 +167,7 @@ func editSSHCompatibility(r *Connection) error {
 }
 
 func editCompatibilityOverrideDraft(c *Config, h Host) error {
+	defer menuSession()()
 	s, r, err := storedRecord(h, *c)
 	if err != nil {
 		return err
@@ -196,7 +202,7 @@ func editCompatibilityOverrideDraft(c *Config, h Host) error {
 		}
 		switch id {
 		case "identities":
-			v, b, e := chooseIdentitiesOnly(true)
+			v, b, e := chooseIdentitiesOnly(true, o.IdentitiesOnly)
 			if e != nil {
 				return e
 			}

@@ -205,6 +205,7 @@ func chooseAlgorithms(directive, title, intro string, current []string) ([]strin
 		selected[name] = true
 	}
 	listed := append([]string(nil), current...)
+	position := menuPosition{}
 	for {
 		entries, note := algorithmCandidates(directive, listed)
 		items := make([]multiItem, len(entries))
@@ -216,12 +217,17 @@ func chooseAlgorithms(directive, title, intro string, current []string) ([]strin
 			text += "\n\n" + note
 		}
 		m := newMultiDialog(title, items, text)
+		m.query.SetValue(position.query)
+		m.refilter()
+		m.cursor = min(position.cursor, len(m.filtered)+1)
+		m.restorePreview = &position.preview
 		if _, err := runTUI(m); err != nil {
 			return nil, false, err
 		}
 		if m.back {
 			return nil, true, nil
 		}
+		position = menuPosition{query: m.query.Value(), cursor: m.cursor, preview: m.preview.YOffset}
 		for _, item := range m.items {
 			selected[item.ID] = item.Checked
 		}

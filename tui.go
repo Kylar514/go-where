@@ -576,9 +576,9 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The list renders bottom-up: up moves the highlight visually up
 		// (a higher entry index), down moves visually down.
 		case "up", "ctrl+k":
-			m.cursor = min(max(0, len(m.visible)-1), m.cursor+1)
+			m.cursor = cycleCursor(m.cursor, 1, len(m.visible))
 		case "down", "ctrl+j":
-			m.cursor = max(0, m.cursor-1)
+			m.cursor = cycleCursor(m.cursor, -1, len(m.visible))
 		case "ctrl+u", "pgup":
 			m.cursor = min(max(0, len(m.visible)-1), m.cursor+max(1, m.rows()/2))
 		case "ctrl+d", "pgdown":

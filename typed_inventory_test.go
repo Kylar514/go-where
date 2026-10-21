@@ -109,14 +109,14 @@ func TestDynamicEditorCreatesRDPAndTunnel(t *testing.T) {
 	c := defaultConfig()
 	c.Sources = []InventorySource{s}
 	state := PickerState{Source: s.ID, Mode: "ssh"}
-	scriptTUI(t, "type", "rdp", "change", "alias", "enter\ndesktop", "address", "enter\n192.0.2.2", "domain", "enter\nLAB", "save")
+	scriptTUI(t, "type", "rdp", "alias", "enter\ndesktop", "address", "enter\n192.0.2.2", "domain", "enter\nLAB", "save")
 	if err := editConnection(c, &state, nil); err != nil {
 		t.Fatal(err)
 	}
 	if state.Mode != "rdp" {
 		t.Fatal("saved RDP did not focus its mode")
 	}
-	scriptTUI(t, "type", "tunnel", "change", "tunnel_type", "kubectl", "change", "alias", "enter\nweb", "resource", "enter\nservice/web", "save")
+	scriptTUI(t, "type", "tunnel", "tunnel_type", "kubectl", "alias", "enter\nweb", "resource", "enter\nservice/web", "save")
 	if err := editConnection(c, &state, nil); err != nil {
 		t.Fatal(err)
 	}

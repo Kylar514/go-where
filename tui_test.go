@@ -139,11 +139,10 @@ func TestUnifiedMouseAndDialogs(t *testing.T) {
 	}
 	// Bottom-up rendering: Up moves the highlight to the row above.
 	m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if h, _ := m.activeHost(); h.Alias != "b" {
-		t.Fatal("up moved away from the clicked row above")
+	if h, _ := m.activeHost(); h.Alias != "a" {
+		t.Fatal("up at the top did not wrap to the bottom")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if h, _ := m.activeHost(); h.Alias != "b" {
 		t.Fatal("up did not reach the visually higher row")
 	}

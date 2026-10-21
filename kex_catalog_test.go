@@ -180,7 +180,6 @@ func TestMultiDialogKeysFilterAndPinnedRows(t *testing.T) {
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if m.cursor != 2 {
 		t.Fatalf("cursor must stop on the last pinned row, got %d", m.cursor)
 	}
@@ -190,13 +189,11 @@ func TestMultiDialogKeysFilterAndPinnedRows(t *testing.T) {
 	}
 	m = newMultiDialog("Pick", items, "")
 	m.Update(tea.WindowSizeMsg{Width: 70, Height: 20})
-	m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if m.cursor != 0 {
-		t.Fatal("cursor moved above the first row")
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.cursor != len(m.filtered) {
+		t.Fatal("down should reach the pinned Done row")
 	}
-	for i := 0; i < 3; i++ {
-		m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	}
+	m.cursor = len(m.filtered)
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if !m.done || m.action != "done" || m.back {
 		t.Fatal("first pinned row applies")
@@ -221,7 +218,7 @@ func TestMultiDialogMouseAndSmallTerminals(t *testing.T) {
 	press := func(row int) {
 		m.Update(tea.MouseMsg{X: 4, Y: m.listStart() + row, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	}
-	press(1)
+	press(m.itemRows() - 2)
 	if !m.items[1].Checked || m.done {
 		t.Fatal("clicking a row must toggle it")
 	}

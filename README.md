@@ -276,6 +276,26 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+Settings menus and checklists use the picker-style bottom search bar (`⌕ Search:`)
+and bottom-up lists. **Ctrl+H / Left arrow / Esc** go back; **Ctrl+L / Enter**
+activate the highlighted row (toggle in a checklist). **Up / Ctrl+K** move visually
+up and **Down / Ctrl+J** move down, wrapping between the first and last rows in
+the picker, menus, checklists (including pinned actions), and completion lists.
+Mouse-wheel and page scrolling remain bounded. Parent menus retain their filter, highlighted
+item and scroll position while visiting submenus; reopening the overall menu
+starts a fresh visit. Text-entry fields retain normal cursor movement. Checklist
+Done and manual-entry actions remain pinned below the algorithm list.
+
+Screens distinguish **Settings / actions** (editable/submenu rows end in `›`),
+**Choose one** (`○` choices and `●` for the current value), and **Select several**
+(`[ ]` / `[✓]` checklists with a separate Apply/Done action). Single-choice
+selection returns immediately; checklist toggles remain a draft until Done.
+Text/path editors place their field label and input below a separator at the
+bottom, with completion candidates above and acceptance/cancel controls below.
+Ordinary selections apply directly to the draft without a second confirmation.
+Changing a tunnel backend only asks again when populated backend settings would
+be discarded. Deletion, separate saves and transfer execution retain confirmation.
+
 ### Shared hosts and connection profiles (inventory v6)
 
 Database inventory is host-centric: **Ctrl+N** adds a host with one shared name,
