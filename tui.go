@@ -357,7 +357,7 @@ func (m *pickerModel) finish(key string) tea.Cmd {
 	if key == "enter" && m.state.Mode == "tunnels" {
 		return m.toggleTunnel()
 	}
-	if key == "enter" || strings.HasPrefix(key, "ctrl-alt-") || key == "ctrl-e" {
+	if key == "enter" || key == "connect-as" || strings.HasPrefix(key, "ctrl-alt-") || key == "ctrl-e" {
 		m.selected = m.selection(key == "ctrl-e" || key == "ctrl-alt-e")
 		if len(m.selected) == 0 && key != "ctrl-alt-s" {
 			return nil
@@ -432,6 +432,8 @@ func (m *pickerModel) action(action string) tea.Cmd {
 		return m.finish("settings")
 	case "connect":
 		return m.finish("enter")
+	case "connect-as":
+		return m.finish("connect-as")
 	case "protocol":
 		m.openDialog("mode", "Transfer protocol", []choice{{"scp", "SCP (SFTP)"}, {"legacy-scp", "Legacy SCP (-O)"}, {"rsync", "rsync"}}, "")
 	}
@@ -598,6 +600,10 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "ctrl+e":
 			return m, m.finish("ctrl-e")
+		case "alt+p":
+			if m.state.Mode != "tunnels" {
+				return m, m.finish("connect-as")
+			}
 		case "enter", "ctrl+r", "ctrl+s", "ctrl+alt+p", "ctrl+alt+w", "ctrl+alt+n", "ctrl+alt+t", "ctrl+alt+s", "ctrl+alt+e":
 			return m, m.finish(strings.ReplaceAll(key, "+", "-"))
 		default:
@@ -845,6 +851,9 @@ func (m *pickerModel) View() string {
 	lines = append(lines, body, strings.Repeat("─", width), m.search.View())
 	var buttons strings.Builder
 	buttonsList := []struct{ label, action string }{{"Connect", "connect"}, {"Target", "target"}, {"Help", "help"}}
+	if m.state.Mode != "tunnels" {
+		buttonsList = append(buttonsList, struct{ label, action string }{"Connect as", "connect-as"})
+	}
 	buttonsList = append(buttonsList, struct{ label, action string }{"Settings", "settings"})
 	buttonsList = append(buttonsList, struct{ label, action string }{"Sources", "sources"})
 	if m.state.Mode == "rdp" {

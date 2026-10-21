@@ -37,6 +37,11 @@ func resolveValue(value string, vars map[string]string) (string, error) {
 }
 
 func resolvedConnection(c Config, s InventorySource, r Connection) (Connection, error) {
+	if r.HostID != "" {
+		if o := c.HostOverrides[s.ID][r.HostID]; o.Address != nil {
+			r.Address = *o.Address
+		}
+	}
 	o := c.Overrides[s.ID][r.ID]
 	if o.User != nil {
 		r.User = *o.User
@@ -74,9 +79,30 @@ func resolvedConnection(c Config, s InventorySource, r Connection) (Connection, 
 		resolveDomain = a.Domain == nil
 	}
 	if r.kind() == "tunnel" {
+		if r.RemoteHostID != "" {
+			hosts, err := sourceInventoryHosts(s)
+			if err != nil {
+				return r, err
+			}
+			found := false
+			for _, host := range hosts {
+				if host.ID == r.RemoteHostID {
+					r.RemoteHost, err = hostAddress(c, s.ID, host)
+					if err != nil {
+						return r, err
+					}
+					found = true
+				}
+			}
+			if !found {
+				return r, fmt.Errorf("missing remote target host")
+			}
+		}
 		fields = []*string{&r.Bind}
 		if r.TunnelType == "ssh" {
-			fields = append(fields, &r.RemoteHost)
+			if r.RemoteHostID == "" {
+				fields = append(fields, &r.RemoteHost)
+			}
 		} else {
 			fields = append(fields, &r.Resource, &r.Namespace, &r.Context)
 		}
@@ -332,6 +358,9 @@ func managedDetails(h Host, c Config) string {
 	j, err := managedJob(h, c)
 	if err != nil {
 		return metadata + "Managed SSH: " + err.Error()
+	}
+	if s, r, e := storedRecord(h, c); e == nil {
+		metadata += "Profile: " + r.ProfileName + "\nHost ID: " + r.HostID + "\nSource: " + s.Name + "\n\n"
 	}
 	return metadata + "Resolved SSH settings (personal SSH config is not read):\n\n" + j.Configuration
 }

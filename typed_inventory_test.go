@@ -22,6 +22,13 @@ func TestTypedInventoryMigrationAndReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	data, _ := json.Marshal(old)
+	if _, err = db.Exec("UPDATE connections SET data=? WHERE id=?", string(data), old.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec("DROP TABLE hosts"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = db.Exec("PRAGMA user_version=1"); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +68,7 @@ func TestTypedInventoryMigrationAndReferences(t *testing.T) {
 	}
 	var version int
 	db.QueryRow("PRAGMA user_version").Scan(&version)
-	if version != 5 {
+	if version != 6 {
 		t.Fatal("migration did not update version")
 	}
 	db.Exec("PRAGMA user_version=99")

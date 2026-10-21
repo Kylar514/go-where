@@ -32,7 +32,7 @@ func connectionFields(r Connection, s InventorySource, c Config) []choice {
 	}
 	switch r.kind() {
 	case "ssh":
-		fields = append(fields, choice{"user", "User: " + r.User}, choice{"key", "Identity file: " + r.IdentityFile}, choice{"jump", "Jump connection ID: " + r.JumpID})
+		fields = append(fields, choice{"user", "User: " + r.User}, choice{"key", "Identity file: " + r.IdentityFile}, choice{"jump", "Jump SSH profile: " + sshReferenceLabel(c, s, r.JumpID)})
 		label := agentChoiceLabel(r.SSHAgent)
 		if r.SSHAgent == "" {
 			label = "Unspecified (system default)"
@@ -65,14 +65,38 @@ func connectionFields(r Connection, s InventorySource, c Config) []choice {
 				}
 			}
 		}
-		fields = append(fields, choice{"jump", "SSH jump connection ID: " + r.JumpID})
+		fields = append(fields, choice{"jump", "SSH jump profile: " + sshReferenceLabel(c, s, r.JumpID)})
 	case "tunnel":
 		fields = append(fields, choice{"tunnel_type", "Tunnel backend: " + r.TunnelType}, choice{"bind", "Local bind: " + r.Bind}, choice{"local_port", fmt.Sprintf("Local port: %d", r.LocalPort)}, choice{"remote_port", fmt.Sprintf("Remote port: %d", r.RemotePort)})
 		if r.TunnelType == "ssh" {
-			fields = append(fields, choice{"ssh_id", "SSH connection ID: " + r.SSHID}, choice{"remote_host", "Remote host: " + r.RemoteHost})
+			target := r.RemoteHost
+			if r.RemoteHostID != "" {
+				target = "Saved host: " + r.RemoteHostID
+			}
+			fields = append(fields, choice{"ssh_id", "SSH profile: " + sshReferenceLabel(c, s, r.SSHID)}, choice{"remote_target", "Remote target: " + target}, choice{"remote_host", "Custom remote address: " + r.RemoteHost})
 		} else {
 			fields = append(fields, choice{"resource", "Resource: " + r.Resource}, choice{"namespace", "Namespace: " + r.Namespace}, choice{"context", "Context: " + r.Context})
 		}
 	}
 	return append(fields, choice{"tags", "Tags: " + strings.Join(r.Tags, ", ")}, choice{"notes", "Notes: " + r.Notes}, choice{"save", "Save connection"})
+}
+
+func sshReferenceLabel(c Config, s InventorySource, id string) string {
+	if id == "" {
+		return "None"
+	}
+	_, profile, err := storedRecord(Host{SourceID: s.ID, ConnectionID: id}, c)
+	if err != nil {
+		return id + " (unavailable)"
+	}
+	hosts, err := sourceInventoryHosts(s)
+	if err != nil {
+		return id + " (unavailable)"
+	}
+	for _, host := range hosts {
+		if host.ID == profile.HostID {
+			return host.Alias + " / " + profile.ProfileName
+		}
+	}
+	return id
 }

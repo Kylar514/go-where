@@ -82,7 +82,7 @@ SQLite is optional. No database is created, imported, or exported at startup; ex
 4. Use Sources to choose **All sources**, **SSH config**, or a named local source. Same aliases in different sources remain separate records; marks and focus use source/connection IDs. Host columns show **Host / Hostname or IP / Source / Tags / Notes**. Narrow lists hide Notes first, then Tags; Details retains the full values, even when resolved SSH settings have an error. SSH-config comments appear as Notes, with `SSH config` as their Source. Tunnels retain their own Name/Status columns.
 5. Press Enter to connect using the existing tmux/terminal destinations. Managed SSH connections use a private temporary config snapshot and **do not read personal or system SSH configuration**. Each hop has its own user/key; snapshot cleanup happens when SSH exits. Standard host-key verification, agent support, OpenSSH default identities and interactive authentication remain in effect. Blank user uses the OS username. Explicit key paths must be absolute or start with `~/`.
 
-Database SSH, RDP and tunnel records appear in their respective modes. SCP/rsync remain actions on SSH hosts, not connection types; their database integration is still deferred. Remote API sources, SSH-config import/export, bulk profiles and tag rules are deferred. Existing file-based modes remain available. Databases use **schema version 5**. Version-1 records are upgraded as SSH with IDs, settings, tags and references preserved; later versions advance the marker without rewriting records. Versions 3–5 prevent older binaries from silently ignoring agent or SSH compatibility settings, including host-key and public-key signature additions in v5. Unknown versions are rejected. Back up databases/settings before upgrading if rollback to an older binary matters. Do not manually edit tables. Keep databases on a local filesystem; network-shared SQLite files are not the future API-server design.
+Database SSH, RDP and tunnel records appear in their respective modes. SCP/rsync remain actions on SSH hosts, not connection types; their database integration is still deferred. Remote API sources, SSH-config import/export, bulk profiles and tag rules are deferred. Existing file-based modes remain available. Databases use **schema version 6**, with shared hosts and named SSH/RDP profiles; see **Shared hosts and connection profiles** below for migration and editing. Unknown versions are rejected. Back up databases/settings before upgrading if rollback to an older binary matters. Do not manually edit tables. Keep databases on a local filesystem; network-shared SQLite files are not the future API-server design.
 
 ### Type-specific fields
 
@@ -275,6 +275,42 @@ GO_WHERE_TEST_CONFIG=/path/to/disposable/config go test -run TestTransferEndpoin
 The test creates its own temporary source/destination directories and checks SCP, legacy SCP, rsync dry-run safety, directory contents, and uploads/downloads. It can exercise ProxyJump when configured in the fixture. `GO_WHERE_TEST_SSH` optionally selects an extracted test SSH client for SCP. Do not point this test at production hosts.
 
 ## Settings
+
+### Shared hosts and connection profiles (inventory v6)
+
+Database inventory is host-centric: **Ctrl+N** adds a host with one shared name,
+address, tags and notes. **Ctrl+E** opens its host editor. Add any number of named
+SSH and RDP profiles inside that host; each protocol has exactly one default
+when configured. Profile names use letters, digits, dots, underscores or hyphens.
+Hosts without profiles remain visible in SSH mode for editing but cannot launch.
+
+- SSH profiles keep independent ports, usernames, identities, agents,
+  compatibility settings and jump references.
+- RDP profiles keep independent ports, custom login/domain or named local account,
+  and an optional SSH jump. Passwords and password commands stay out of inventory.
+- Enter uses the default profile. **Connect as** (button or **Alt+P**) selects
+  a profile for that launch without changing defaults. The existing RDP account
+  override remains available independently.
+- Jumps and SSH tunnels reference a specific SSH profile ID, not whichever
+  profile is currently default. Changing defaults never repoints saved routes.
+- The host's **Tunnels** menu lists its saved SSH forwards. Tunnel edits save
+  separately with explicit confirmation. Choose a saved host as the remote target
+  to share its address, or use a custom remote address; targets are reached from
+  the SSH host. Kubernetes tunnels remain standalone in the Tunnels tab.
+- **Local host address override** in the host editor saves under
+  `host_overrides.SOURCE_ID.HOST_ID.address`, applying across profiles and saved-host
+  tunnel targets. Existing per-profile address overrides take precedence. Other
+  SSH local overrides remain keyed by profile/connection ID.
+
+Opening a v1–v5 database transactionally migrates SSH/RDP records to individual
+hosts with a **Default** profile, preserving connection IDs, settings, local
+override keys, tunnel definitions and jump references. Same-address records are
+**never merged automatically**. Back up databases and settings before using this
+build: schema v6 is rejected by older builds. There is no combine-host UI yet;
+add new SSH/RDP profiles to an existing host to share its address going forward.
+The old Type editor remains for standalone tunnels; normal SSH/RDP editing uses
+the host editor. Managed SCP/rsync execution, export and configurable hotkeys are
+still deferred.
 
 **Ctrl+S** or **Settings** opens a draft-based settings menu: **General** (startup mode), **SSH agents**, **Connection settings & overrides** (SSH agents), and **Edit raw settings**. Save validates and atomically replaces the file; Cancel writes nothing. Raw editing explicitly discards an unsaved draft. Saved-account management, other preferences forms and configurable keybindings are deferred.
 

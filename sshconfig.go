@@ -10,19 +10,21 @@ import (
 )
 
 type Host struct {
-	Type         string
-	Tags         []string
-	SourceID     string
-	SourceName   string
-	ConnectionID string
-	Alias        string
-	Hostname     string
-	JumpHost     string
-	Comment      string
-	Notes        []string
-	File         string
-	Line         int
-	Block        string
+	InventoryHostID string
+	ProfileName     string
+	Type            string
+	Tags            []string
+	SourceID        string
+	SourceName      string
+	ConnectionID    string
+	Alias           string
+	Hostname        string
+	JumpHost        string
+	Comment         string
+	Notes           []string
+	File            string
+	Line            int
+	Block           string
 }
 
 type hostBlock struct {

@@ -10,8 +10,9 @@ import (
 )
 
 type Config struct {
-	StartupMode      string                     `json:"startup_mode,omitempty"`
-	SSHAgents        map[string]SSHAgentProfile `json:"ssh_agents,omitempty"`
+	HostOverrides    map[string]map[string]HostOverride `json:"host_overrides,omitempty"`
+	StartupMode      string                             `json:"startup_mode,omitempty"`
+	SSHAgents        map[string]SSHAgentProfile         `json:"ssh_agents,omitempty"`
 	activeRDPAccount RDPAccount
 	Sources          []InventorySource                        `json:"sources,omitempty"`
 	Variables        map[string]string                        `json:"variables,omitempty"`
@@ -75,6 +76,13 @@ func decodeConfig(data []byte) (Config, error) {
 }
 
 func (c Config) validate() error {
+	for _, hosts := range c.HostOverrides {
+		for _, o := range hosts {
+			if o.Address != nil && (*o.Address == "" || clean(*o.Address) != *o.Address) {
+				return fmt.Errorf("invalid host address override")
+			}
+		}
+	}
 	if c.StartupMode != "" && !validMode(c.StartupMode) {
 		return fmt.Errorf("invalid startup_mode %q", c.StartupMode)
 	}

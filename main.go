@@ -232,7 +232,12 @@ func app(args []string) error {
 			continue
 		case "new-connection":
 			previousFocus := state.Focus
-			if err = editConnection(c, &state, nil); err != nil {
+			if state.Mode == "tunnels" {
+				err = editConnection(c, &state, nil)
+			} else {
+				err = editInventoryHost(c, &state, nil)
+			}
+			if err != nil {
 				if err = notice(err.Error()); err != nil {
 					return err
 				}
@@ -279,7 +284,12 @@ func app(args []string) error {
 			}
 			h := selected[0]
 			if h.SourceID != "" {
-				if err = editConnection(c, &state, &h); err != nil {
+				if h.Type == "tunnel" {
+					err = editConnection(c, &state, &h)
+				} else {
+					err = editInventoryHost(c, &state, &h)
+				}
+				if err != nil {
 					if err = notice(err.Error()); err != nil {
 						return err
 					}
@@ -293,6 +303,25 @@ func app(args []string) error {
 		}
 		if len(selected) == 0 {
 			continue
+		}
+		if selected[0].Type == "host" {
+			if err = notice("Configure an SSH or RDP profile first with Ctrl+E."); err != nil {
+				return err
+			}
+			continue
+		}
+		if key == "connect-as" {
+			var back bool
+			selected, back, err = chooseHostProfiles(c, selected)
+			if err != nil {
+				if err = notice(err.Error()); err != nil {
+					return err
+				}
+				continue
+			}
+			if back {
+				continue
+			}
 		}
 		target := destination(c.Destination, o, c)
 		switch key {

@@ -212,7 +212,7 @@ func TestSignatureEditorPersistenceOverridesAndHops(t *testing.T) {
 	}
 }
 
-func TestSignatureSchemaMarkerPreservesRecords(t *testing.T) {
+func TestSignatureMigrationPreservesSettings(t *testing.T) {
 	s := testInventory(t, "Marker")
 	db, err := openInventory(s)
 	if err != nil {
@@ -220,6 +220,9 @@ func TestSignatureSchemaMarkerPreservesRecords(t *testing.T) {
 	}
 	const data = `{"id":"server","alias":"server","address":"192.0.2.1","port":22,"notes":"unchanged"}`
 	if _, err = db.Exec("INSERT INTO connections(id,alias,data) VALUES('server','server',?)", data); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec("DROP TABLE hosts"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = db.Exec("PRAGMA user_version=4"); err != nil {
@@ -233,11 +236,18 @@ func TestSignatureSchemaMarkerPreservesRecords(t *testing.T) {
 	defer db.Close()
 	var version int
 	var got string
-	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 5 {
+	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 6 {
 		t.Fatal("marker not advanced", version, err)
 	}
-	if err = db.QueryRow("SELECT data FROM connections").Scan(&got); err != nil || got != data {
-		t.Fatal("records rewritten", got, err)
+	if err = db.QueryRow("SELECT data FROM connections").Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	var profile Connection
+	if err = json.Unmarshal([]byte(got), &profile); err != nil || profile.HostID != "server" || profile.ID != "server" || !profile.Default {
+		t.Fatal("profile migration", got, err)
+	}
+	if err = db.QueryRow("SELECT data FROM hosts").Scan(&got); err != nil || !strings.Contains(got, `"notes":"unchanged"`) || !strings.Contains(got, `"address":"192.0.2.1"`) {
+		t.Fatal("host settings lost", got, err)
 	}
 }
 

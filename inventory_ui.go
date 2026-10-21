@@ -141,6 +141,10 @@ func writableSource(c Config, preferred string) (InventorySource, bool, error) {
 }
 
 func editConnection(c Config, state *PickerState, h *Host) error {
+	return editConnectionDraft(c, state, h, nil)
+}
+
+func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connection) error {
 	preferred := state.Source
 	if h != nil {
 		preferred = h.SourceID
@@ -154,6 +158,9 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 	}
 	var err error
 	r := Connection{ID: inventoryID(), Type: "ssh", Port: 22}
+	if h == nil && state.Mode == "tunnels" {
+		r = connectionWithType(r, "tunnel")
+	}
 	existing := h != nil
 	if existing {
 		records, e := sourceConnections(s)
@@ -173,8 +180,24 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 		}
 	}
 	originalKind := r.kind()
+	if profile != nil {
+		r = *profile
+		originalKind = r.kind()
+		existing = false
+	}
 	for {
 		options := connectionFields(r, s, c)
+		if profile != nil {
+			var fields []choice
+			for _, field := range options {
+				switch field.ID {
+				case "type", "source", "alias", "address", "tags", "notes", "local_agent", "local_compatibility":
+					continue
+				}
+				fields = append(fields, field)
+			}
+			options = fields
+		}
 		if existing {
 			options = append(options, choice{"duplicate", "Duplicate as new connection"}, choice{"delete", "Delete connection…"})
 		}
@@ -222,6 +245,28 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 			continue
 		case "account_info":
 			continue
+		case "remote_target":
+			hosts, e := sourceInventoryHosts(s)
+			if e != nil {
+				return e
+			}
+			choices := []choice{{"custom", "Custom address…"}}
+			for _, host := range hosts {
+				choices = append(choices, choice{host.ID, host.Alias + " — " + host.Address})
+			}
+			v, b, e := choose("Tunnel remote target", choices, "Saved hosts share their address and local host-address override. The target is reached from the SSH host.")
+			if e != nil {
+				return e
+			}
+			if b {
+				continue
+			}
+			if v == "custom" {
+				r.RemoteHostID = ""
+			} else {
+				r.RemoteHostID = v
+			}
+			continue
 		case "type":
 			kind, b, e := choose("Connection type", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnel", "Tunnel"}}, "")
 			if e != nil {
@@ -261,6 +306,7 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 					s = selected
 					r.JumpID = ""
 					r.SSHID = ""
+					r.RemoteHostID = ""
 				}
 			}
 			continue
@@ -278,6 +324,7 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 					r.TunnelType = v
 					r.SSHID = ""
 					r.RemoteHost = ""
+					r.RemoteHostID = ""
 					r.Resource = ""
 					r.Namespace = ""
 					r.Context = ""
@@ -301,6 +348,10 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 			}
 			continue
 		case "save":
+			if profile != nil {
+				*profile = r
+				return nil
+			}
 			if existing && h != nil && originalKind == "tunnel" {
 				if e = ensureInventoryTunnelStopped(*h); e != nil {
 					if e = notice(e.Error()); e != nil {
@@ -325,6 +376,7 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 			continue
 		case "duplicate":
 			r.ID = inventoryID()
+			r.HostID = ""
 			r.Alias += "-copy"
 			existing = false
 			continue
@@ -347,17 +399,40 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 			if e != nil {
 				return e
 			}
+			hosts, e := sourceInventoryHosts(s)
+			if e != nil {
+				return e
+			}
+			hostNames := map[string]string{}
+			for _, host := range hosts {
+				hostNames[host.ID] = host.Alias
+			}
 			choices := []choice{{"", "None (direct)"}}
+			if id == "ssh_id" {
+				choices = nil
+			}
+			choices = append(choices, choice{"new-host", "Create new host with SSH…"})
 			for _, j := range records {
 				if j.ID != r.ID && j.kind() == "ssh" {
-					choices = append(choices, choice{j.ID, j.Alias + " — " + j.Address})
+					choices = append(choices, choice{j.ID, hostNames[j.HostID] + " / " + j.ProfileName + " — " + j.Address})
 				}
 			}
-			v, b, e := choose("Jump host in "+s.Name, choices, "")
+			title := "Jump SSH profile in " + s.Name
+			if id == "ssh_id" {
+				title = "Tunnel SSH profile in " + s.Name
+			}
+			v, b, e := choose(title, choices, "References stay pinned to this profile, even if the host's default changes.")
 			if e != nil {
 				return e
 			}
 			if !b {
+				if v == "new-host" {
+					next := PickerState{Source: s.ID, Mode: "ssh", ConfigPath: state.ConfigPath}
+					if e = editInventoryHost(c, &next, nil); e != nil {
+						return e
+					}
+					continue
+				}
 				if id == "ssh_id" {
 					r.SSHID = v
 				} else {
@@ -426,6 +501,7 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 			r.Bind = value
 		case "remote_host":
 			r.RemoteHost = value
+			r.RemoteHostID = ""
 		case "resource":
 			r.Resource = value
 		case "namespace":

@@ -33,6 +33,13 @@ func chooseAgent(c Config, override bool) (string, bool, error) {
 }
 
 func cloneAgentSettings(c Config) Config {
+	if c.HostOverrides != nil {
+		hosts := make(map[string]map[string]HostOverride, len(c.HostOverrides))
+		for s, overrides := range c.HostOverrides {
+			hosts[s] = maps.Clone(overrides)
+		}
+		c.HostOverrides = hosts
+	}
 	c.SSHAgents = maps.Clone(c.SSHAgents)
 	if c.Overrides != nil {
 		bySource := make(map[string]map[string]ConnectionOverride, len(c.Overrides))

@@ -23,6 +23,9 @@ type InventorySource struct {
 }
 
 type Connection struct {
+	HostID                 string   `json:"host_id,omitempty"`
+	ProfileName            string   `json:"profile_name,omitempty"`
+	Default                bool     `json:"default,omitempty"`
 	ExtraHostKeyAlgorithms []string `json:"extra_host_key_algorithms,omitempty"`
 	ExtraPubkeyAlgorithms  []string `json:"extra_pubkey_algorithms,omitempty"`
 	IdentitiesOnly         *bool    `json:"identities_only,omitempty"`
@@ -35,6 +38,7 @@ type Connection struct {
 	Bind                   string   `json:"local_bind,omitempty"`
 	LocalPort              int      `json:"local_port,omitempty"`
 	RemoteHost             string   `json:"remote_host,omitempty"`
+	RemoteHostID           string   `json:"remote_host_id,omitempty"`
 	RemotePort             int      `json:"remote_port,omitempty"`
 	SSHID                  string   `json:"ssh_id,omitempty"`
 	Resource               string   `json:"resource,omitempty"`
@@ -42,7 +46,7 @@ type Connection struct {
 	Context                string   `json:"context,omitempty"`
 	ID                     string   `json:"id"`
 	Alias                  string   `json:"alias"`
-	Address                string   `json:"address"`
+	Address                string   `json:"address,omitempty"`
 	Port                   int      `json:"port"`
 	User                   string   `json:"user,omitempty"`
 	IdentityFile           string   `json:"identity_file,omitempty"`
@@ -107,8 +111,8 @@ func openInventory(s InventorySource) (*sql.DB, error) {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version < 1 || version > 5 {
-		return fail(fmt.Errorf("unsupported inventory schema %d (expected 1 through 5)", version))
+	if version < 1 || version > 6 {
+		return fail(fmt.Errorf("unsupported inventory schema %d (expected 1 through 6)", version))
 	}
 	var id string
 	if err = db.QueryRow("SELECT id FROM source").Scan(&id); err != nil {
@@ -117,15 +121,8 @@ func openInventory(s InventorySource) (*sql.DB, error) {
 	if id != s.ID {
 		return fail(fmt.Errorf("database identity changed; expected %s, found %s", s.ID, id))
 	}
-	if version == 1 {
-		if err = migrateInventoryV2(db); err != nil {
-			return fail(err)
-		}
-	}
-	if version < 5 {
-		// Older clients must not silently ignore agent/identity restrictions.
-		// No connection data or IDs need to be rewritten for this marker.
-		if _, err = db.Exec("PRAGMA user_version=5"); err != nil {
+	if version < 6 {
+		if err = migrateInventoryHosts(db, version); err != nil {
 			return fail(err)
 		}
 	}
@@ -198,7 +195,8 @@ func createInventory(name, path string) (InventorySource, error) {
 	for _, stmt := range []string{
 		"CREATE TABLE source (id TEXT PRIMARY KEY NOT NULL)",
 		"CREATE TABLE connections (id TEXT PRIMARY KEY NOT NULL, alias TEXT UNIQUE NOT NULL, data TEXT NOT NULL)",
-		"PRAGMA user_version=5",
+		hostTableSQL,
+		"PRAGMA user_version=6",
 	} {
 		if _, err = tx.Exec(stmt); err != nil {
 			return s, err
@@ -244,7 +242,14 @@ func sourceConnections(s InventorySource) ([]Connection, error) {
 		return nil, err
 	}
 	defer db.Close()
-	return readConnections(db)
+	records, err := readHostConnections(db)
+	if err != nil {
+		return nil, err
+	}
+	if err = validateHostProfiles(db, records); err != nil {
+		return nil, err
+	}
+	return records, nil
 }
 
 func validateConnections(records []Connection) error {
@@ -277,7 +282,7 @@ func validateConnections(records []Connection) error {
 			if c.TunnelType != "ssh" && c.TunnelType != "kubectl" {
 				return fmt.Errorf("%s: tunnel type must be ssh or kubectl", c.Alias)
 			}
-			if c.TunnelType == "ssh" && (c.SSHID == "" || c.RemoteHost == "") {
+			if c.TunnelType == "ssh" && (c.SSHID == "" || (c.RemoteHost == "" && c.RemoteHostID == "")) {
 				return fmt.Errorf("%s: SSH connection and remote host required", c.Alias)
 			}
 			if c.TunnelType == "kubectl" && c.Resource == "" {
@@ -362,6 +367,15 @@ func changeConnection(s InventorySource, c Connection, remove bool) error {
 	if remove {
 		_, err = tx.Exec("DELETE FROM connections WHERE id=?", c.ID)
 	} else {
+		if c.kind() != "tunnel" {
+			if c.HostID == "" {
+				c.HostID, c.ProfileName, c.Default = c.ID, "Default", true
+				if err = writeInventoryHost(tx, InventoryHost{ID: c.HostID, Alias: c.Alias, Address: c.Address, Tags: c.Tags, Notes: c.Notes}); err != nil {
+					return err
+				}
+			}
+			c.Address, c.Tags, c.Notes = "", nil, ""
+		}
 		data, e := json.Marshal(c)
 		if e != nil {
 			return e
@@ -371,11 +385,14 @@ func changeConnection(s InventorySource, c Connection, remove bool) error {
 	if err != nil {
 		return err
 	}
-	records, err := readConnections(tx)
+	records, err := readHostConnections(tx)
 	if err != nil {
 		return err
 	}
 	if err = validateConnections(records); err != nil {
+		return err
+	}
+	if err = validateHostProfiles(tx, records); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -393,6 +410,14 @@ func findSource(c Config, id string) (InventorySource, error) {
 func inventoryHosts(c Config) ([]Host, error) {
 	var hosts []Host
 	for _, s := range c.Sources {
+		inventory, err := sourceInventoryHosts(s)
+		if err != nil {
+			return nil, err
+		}
+		byID := map[string]InventoryHost{}
+		for _, host := range inventory {
+			byID[host.ID] = host
+		}
 		records, err := sourceConnections(s)
 		if err != nil {
 			return nil, err
@@ -400,8 +425,22 @@ func inventoryHosts(c Config) ([]Host, error) {
 		if err = validateConnections(records); err != nil {
 			return nil, fmt.Errorf("%s: %w", s.Name, err)
 		}
+		configured := map[string]bool{}
 		for _, r := range records {
-			hosts = append(hosts, Host{Alias: r.Alias, Hostname: r.Address, Comment: r.Notes, Tags: r.Tags, SourceID: s.ID, SourceName: s.Name, ConnectionID: r.ID, Type: r.kind()})
+			configured[r.HostID] = true
+			if r.kind() != "tunnel" && !r.Default {
+				continue
+			}
+			alias := r.Alias
+			if r.HostID != "" {
+				alias = byID[r.HostID].Alias
+			}
+			hosts = append(hosts, Host{Alias: alias, Hostname: r.Address, Comment: r.Notes, Tags: r.Tags, SourceID: s.ID, SourceName: s.Name, ConnectionID: r.ID, InventoryHostID: r.HostID, ProfileName: r.ProfileName, Type: r.kind()})
+		}
+		for _, host := range inventory {
+			if !configured[host.ID] {
+				hosts = append(hosts, Host{Alias: host.Alias, Hostname: host.Address, Tags: host.Tags, Comment: host.Notes, SourceID: s.ID, SourceName: s.Name, ConnectionID: host.ID, InventoryHostID: host.ID, Type: "host"})
+			}
 		}
 	}
 	return hosts, nil
