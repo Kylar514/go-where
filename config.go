@@ -9,15 +9,18 @@ import (
 )
 
 type Config struct {
-	TunnelsConfig    string    `json:"tunnels_config,omitempty"`
-	Destination      string    `json:"destination"`
-	Fallback         string    `json:"fallback"`
-	Editor           []string  `json:"editor"`
-	EditDestination  string    `json:"edit_destination"`
-	Terminal         []string  `json:"terminal"`
-	FallbackTerminal []string  `json:"fallback_terminal"`
-	FloatingTerminal []string  `json:"floating_terminal"`
-	RDP              RDPConfig `json:"rdp"`
+	Sources          []InventorySource                        `json:"sources,omitempty"`
+	Variables        map[string]string                        `json:"variables,omitempty"`
+	Overrides        map[string]map[string]ConnectionOverride `json:"overrides,omitempty"`
+	TunnelsConfig    string                                   `json:"tunnels_config,omitempty"`
+	Destination      string                                   `json:"destination"`
+	Fallback         string                                   `json:"fallback"`
+	Editor           []string                                 `json:"editor"`
+	EditDestination  string                                   `json:"edit_destination"`
+	Terminal         []string                                 `json:"terminal"`
+	FallbackTerminal []string                                 `json:"fallback_terminal"`
+	FloatingTerminal []string                                 `json:"floating_terminal"`
+	RDP              RDPConfig                                `json:"rdp"`
 }
 
 func defaultConfig() Config {
@@ -56,6 +59,20 @@ func loadConfig(path string) (Config, error) {
 }
 
 func (c Config) validate() error {
+	ids, names, paths := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, s := range c.Sources {
+		if !inventoryName(s.ID) || s.ID == "ssh-config" || s.Name == "" || s.Path == "" || s.Type != "sqlite" {
+			return fmt.Errorf("invalid SQLite source %q", s.Name)
+		}
+		p, err := sourcePath(s)
+		if err != nil {
+			return err
+		}
+		if ids[s.ID] || names[s.Name] || paths[p] {
+			return fmt.Errorf("duplicate source ID, name or path: %s", s.Name)
+		}
+		ids[s.ID], names[s.Name], paths[p] = true, true, true
+	}
 	for _, dest := range []string{c.Destination, c.EditDestination} {
 		switch dest {
 		case "tmux-pane", "tmux-window", "tmux-session", "terminal", "current":

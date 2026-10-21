@@ -117,12 +117,21 @@ func connect(hosts []Host, dest string, o Origin, c Config, sshConfig string) er
 	if strings.HasPrefix(dest, "tmux-") && o.Pane == "" {
 		return fmt.Errorf("%s requires tmux; use Enter for your configured fallback or Ctrl+Alt+T", dest)
 	}
-	ssh := func(h Host) []string {
-		if sshConfig != "" {
-			return []string{"ssh", "-F", sshConfig, "--", h.Alias}
+	commands := map[string][]string{}
+	for _, h := range hosts {
+		argv := []string{"ssh", "--", h.Alias}
+		if h.SourceID != "" {
+			var err error
+			argv, err = managedSSHCommand(h, c)
+			if err != nil {
+				return err
+			}
+		} else if sshConfig != "" {
+			argv = []string{"ssh", "-F", sshConfig, "--", h.Alias}
 		}
-		return []string{"ssh", "--", h.Alias}
+		commands[hostIdentity(h)] = argv
 	}
+	ssh := func(h Host) []string { return commands[hostIdentity(h)] }
 	if dest == "current" && len(hosts) > 1 {
 		return fmt.Errorf("current destination accepts one host; choose panes, windows or terminals for multiple hosts")
 	}

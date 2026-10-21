@@ -7,6 +7,7 @@ import (
 )
 
 type PickerState struct {
+	Source         string
 	TunnelsConfig  string
 	ConfigPath     string
 	Account        RDPAccount
@@ -26,6 +27,9 @@ func pickerHelp(mode string) string {
 	return "LAUNCH\n" + launch + `
 
 NAVIGATE & SELECT
+Ctrl+B         Choose / create / attach an inventory source
+Ctrl+N         Create a managed SSH connection
+Ctrl+E         Edit managed connection (or existing SSH block)
 ←/→, Ctrl+H/L  Previous / next mode (wraps around)
 Backspace      Delete search text (terminals sending Ctrl+H switch mode)
 ↑/↓, Ctrl+J/K  Move through hosts

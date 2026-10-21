@@ -362,6 +362,9 @@ func previewTransfers(t Transfer, hosts []Host, sshConfig string) error {
 }
 
 func transferInternal(args []string) error {
+	if len(args) == 2 && args[0] == "__managed-ssh" {
+		return runManagedSSH(args[1])
+	}
 	if len(args) != 2 {
 		return fmt.Errorf("invalid internal transfer arguments")
 	}

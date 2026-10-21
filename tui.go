@@ -81,7 +81,7 @@ func newPickerModel(hosts []Host, query, dest string, o Origin, state PickerStat
 	m.loadTunnels()
 	m.refilter()
 	for i, id := range m.visible {
-		if m.state.Mode != "tunnels" && hosts[id].Alias == state.Focus {
+		if m.state.Mode != "tunnels" && hostIdentity(hosts[id]) == state.Focus {
 			m.cursor = i
 			break
 		}
@@ -120,11 +120,17 @@ func (m *pickerModel) refilter() {
 		}
 	} else {
 		for i, h := range m.hosts {
+			if m.state.Source != "" && ((m.state.Source == "ssh-config" && h.SourceID != "") || (m.state.Source != "ssh-config" && h.SourceID != m.state.Source)) {
+				continue
+			}
+			if h.SourceID != "" && m.state.Mode != "ssh" {
+				continue
+			}
 			if m.state.Mode == "rdp" && !h.isRDP(m.config.RDP.Tags) {
 				continue
 			}
 			ids = append(ids, i)
-			labels = append(labels, h.Alias+" "+h.Hostname+" "+h.JumpHost+" "+h.Comment)
+			labels = append(labels, h.Alias+" "+h.Hostname+" "+h.JumpHost+" "+h.Comment+" "+h.SourceName)
 		}
 	}
 	m.visible = nil
@@ -164,7 +170,7 @@ func (m *pickerModel) switchMode(mode string) {
 		if m.state.Mode == "tunnels" {
 			previous = m.tunnels[m.visible[m.cursor]].Name
 		} else {
-			previous = m.hosts[m.visible[m.cursor]].Alias
+			previous = hostIdentity(m.hosts[m.visible[m.cursor]])
 		}
 		m.positions[m.state.Mode] = previous
 	}
@@ -183,7 +189,7 @@ func (m *pickerModel) switchMode(mode string) {
 		if mode == "tunnels" {
 			name = m.tunnels[id].Name
 		} else {
-			name = m.hosts[id].Alias
+			name = hostIdentity(m.hosts[id])
 		}
 		if name == wanted {
 			m.cursor = i
@@ -207,7 +213,13 @@ func (m *pickerModel) selection(highlightOnly bool) []Host {
 	if !highlightOnly {
 		var hosts []Host
 		for _, h := range m.hosts {
-			if m.marked[h.Alias] && (m.state.Mode != "rdp" || h.isRDP(m.config.RDP.Tags)) {
+			if m.state.Source != "" && ((m.state.Source == "ssh-config" && h.SourceID != "") || (m.state.Source != "ssh-config" && h.SourceID != m.state.Source)) {
+				continue
+			}
+			if h.SourceID != "" && m.state.Mode != "ssh" {
+				continue
+			}
+			if m.marked[hostIdentity(h)] && (m.state.Mode != "rdp" || h.isRDP(m.config.RDP.Tags)) {
 				hosts = append(hosts, h)
 			}
 		}
@@ -289,6 +301,8 @@ func (m *pickerModel) action(action string) tea.Cmd {
 		}
 	case "target":
 		return m.finish("target")
+	case "sources":
+		return m.finish("sources")
 	case "connect":
 		return m.finish("enter")
 	case "protocol":
@@ -382,6 +396,10 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch key {
+		case "ctrl+b":
+			return m, m.finish("sources")
+		case "ctrl+n":
+			return m, m.finish("new-connection")
 		case "left", "ctrl+h", "right", "ctrl+l":
 			modes := []string{"ssh", "rdp", "tunnels", m.transferMode}
 			for i, mode := range modes {
@@ -435,7 +453,7 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "tab", "shift+tab":
 			if h, ok := m.activeHost(); ok {
-				m.marked[h.Alias] = !m.marked[h.Alias]
+				m.marked[hostIdentity(h)] = !m.marked[hostIdentity(h)]
 				delta := 1
 				if msg.String() == "shift+tab" {
 					delta = -1
@@ -494,7 +512,7 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.cursor = hit.index
 						if msg.X >= 1 && msg.X <= 3 {
 							if h, ok := m.activeHost(); ok {
-								m.marked[h.Alias] = !m.marked[h.Alias]
+								m.marked[hostIdentity(h)] = !m.marked[hostIdentity(h)]
 							}
 						}
 						m.updatePreview()
@@ -525,6 +543,10 @@ func (m *pickerModel) updatePreview() {
 			}
 		}
 	} else if h, ok := m.activeHost(); ok {
+		if h.SourceID != "" {
+			m.preview.SetContent(ansi.Hardwrap(cleanLines(managedDetails(h, m.config)), max(1, m.preview.Width), true))
+			return
+		}
 		text = fmt.Sprintf("%s\n\nAddress   %s\nJump      %s\nNotes     %s\nSource    %s:%d\n\n", h.Alias, h.Hostname, h.JumpHost, h.Comment, h.File, h.Line)
 		if m.state.Mode == "rdp" {
 			job, err := newRDPJob(m.config.RDP, h, "")
@@ -612,6 +634,15 @@ func (m *pickerModel) View() string {
 		context = strings.ToUpper(m.state.Mode) + " ▾"
 		m.hits = append(m.hits, hitRegion{0, 1, lipgloss.Width(context), "protocol", 0})
 	}
+	if len(m.config.Sources) > 0 {
+		name := "All sources"
+		if m.state.Source == "ssh-config" {
+			name = "SSH config"
+		} else if s, err := findSource(m.config, m.state.Source); err == nil {
+			name = s.Name
+		}
+		context += " │ " + name
+	}
 	lines := []string{tabs.String(), fit(tuiDim.Render(context), width)}
 	listWidth, _ := viewSplit(m.width)
 	var left []string
@@ -642,12 +673,15 @@ func (m *pickerModel) View() string {
 			} else {
 				h := m.hosts[id]
 				mark := "[ ]"
-				if m.marked[h.Alias] {
+				if m.marked[hostIdentity(h)] {
 					mark = "[✓]"
 				}
 				line = fmt.Sprintf(" %s %-20s %s", mark, clean(h.Alias), clean(h.Hostname))
 				if listWidth > 65 {
 					line = fmt.Sprintf(" %s %-20s %-13s  %s", mark, clean(h.Alias), clean(h.Hostname), clean(h.Comment))
+				}
+				if h.SourceID != "" {
+					line = fmt.Sprintf(" %s %-20s %-13s  [%s] %s", mark, clean(h.Alias), clean(h.Hostname), clean(h.SourceName), clean(h.Comment))
 				}
 			}
 			if i == m.cursor {
@@ -678,6 +712,7 @@ func (m *pickerModel) View() string {
 	lines = append(lines, body, strings.Repeat("─", width), m.search.View())
 	var buttons strings.Builder
 	buttonsList := []struct{ label, action string }{{"Connect", "connect"}, {"Target", "target"}, {"Help", "help"}}
+	buttonsList = append(buttonsList, struct{ label, action string }{"Sources", "sources"})
 	if m.state.Mode == "rdp" {
 		buttonsList = append([]struct{ label, action string }{{"Connect", "connect"}, {"Account", "account"}}, buttonsList[1:]...)
 	}
@@ -736,12 +771,12 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 	*state = m.state
 	state.Marked = nil
 	for _, h := range hosts {
-		if m.marked[h.Alias] {
-			state.Marked = append(state.Marked, h.Alias)
+		if m.marked[hostIdentity(h)] {
+			state.Marked = append(state.Marked, hostIdentity(h))
 		}
 	}
 	if h, ok := m.activeHost(); ok {
-		state.Focus = h.Alias
+		state.Focus = hostIdentity(h)
 	}
 	return m.key, m.search.Value(), m.selected, nil
 }

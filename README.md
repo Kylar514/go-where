@@ -71,6 +71,47 @@ Explicit tmux actions require tmux; only the default Enter action uses the confi
 
 Popups have a rounded, terminal-background frame titled `go-where`, capped at 150 columns. The reverse list shows at most 20 entries beside a rounded Details box in a 70/30 split. Search sits below the list, with one shortcut footer below the buttons. Ctrl+H switches tabs; terminals that encode Backspace as Ctrl+H must send DEL instead to delete search text.
 
+## Local SQLite inventory (first milestone)
+
+SQLite is optional. No database is created, imported, or exported at startup; existing SSH-config connections and Diglet tunnels keep their existing behavior.
+
+1. Press **Ctrl+B** or click **Sources**, then **Create local SQLite source**. Enter a display name and database file path, and confirm creation. Existing files are never overwritten. Use **Add existing SQLite source** to attach a database created by go-where (not an arbitrary SQLite file).
+2. Press **Ctrl+N** to create an SSH connection. When viewing All sources or SSH config, choose the destination SQLite source first. Fill in alias, IP/DNS address, port, optional user/key, tags and notes. Choose an existing same-source connection as the jump host, then **Save connection**. Nothing is saved until Save succeeds.
+3. Press **Ctrl+E** on a managed record to edit, duplicate, or delete it. Deleting a referenced jump is blocked. A duplicate gets a new stable ID. Esc discards unsaved edits.
+4. Use Sources to choose **All sources**, **SSH config**, or a named local source. Same aliases in different sources remain separate records; marks and focus use source/connection IDs. Managed rows carry source labels, and Details shows resolved SSH settings or missing-variable errors.
+5. Press Enter to connect using the existing tmux/terminal destinations. Managed SSH connections use a private temporary config snapshot and **do not read personal or system SSH configuration**. Each hop has its own user/key; snapshot cleanup happens when SSH exits. Standard host-key verification, agent support, OpenSSH default identities and interactive authentication remain in effect. Blank user uses the OS username. Explicit key paths must be absolute or start with `~/`.
+
+Managed records currently appear only in **SSH mode**. Managed RDP, transfer and tunnel integration, remote API sources, SSH-config import/export, bulk profiles and tag rules are deferred. Existing file-based modes remain available. Databases use schema version 1; unknown schema versions are rejected rather than modified. Do not manually edit database tables. Keep databases on a local filesystem; sharing a SQLite file over a network share is not the future API-server design.
+
+Source registrations are stored in the local settings file. Creating/attaching a source updates that file atomically (it may reformat JSON and include default settings). A registration failure leaves the database in place so it can be attached after fixing settings. A source whose file is missing or whose identity/schema changed is an error, not an empty source; correct its path or remove its registration in settings. No personal SSH config is changed.
+
+### Variables and per-connection local overrides
+
+User, address and identity-file fields support **`${NAME}`** placeholders. Values come only from the local go-where settings—not the shell environment—and substitution is literal, single-pass, and never executes commands. Missing variables block launch; saving a template before variables are configured is allowed. Per-connection variable overrides win over default variables. Explicit overridden fields replace stored fields before substitution, independently for each hop.
+
+Add these settings alongside your existing settings; use the source and connection IDs shown in settings/Details:
+
+```json
+{
+  "variables": {
+    "ADMIN_USER": "my-admin-account",
+    "SSHKEY": "~/.ssh/company_key"
+  },
+  "overrides": {
+    "SOURCE_ID": {
+      "CONNECTION_ID": {
+        "variables": {"SSHKEY": "~/.ssh/alternate_key"},
+        "user": "another-account"
+      }
+    }
+  }
+}
+```
+
+For that example, store `${ADMIN_USER}` as the connection's user and `${SSHKEY}` as its identity file. Supported explicit override fields: `user`, `identity_file`, `address`, `port`, `jump_id`. An empty `identity_file` clears the stored key; an empty `jump_id` makes the connection direct. Overrides live in local settings, not in the database, so they are not transferred with a copied source file. Variable/profile editing in the TUI is not included yet; Ctrl+S opens local settings.
+
+Database files contain inventory metadata, not stored passwords or key contents. Treat them as private and back them up. New databases and SSH snapshots request owner-only POSIX permissions; Windows uses the containing directory's ACLs, which must be protected appropriately. The pure-Go SQLite driver requires no installed SQLite executable or CGO.
+
 ## Tunnels (Diglet)
 
 The Tunnels mode embeds Diglet's existing tunnel engine as a pinned Go dependency; it does not launch a second Diglet executable or modify that project. It reads `~/.config/diglet/connections.yaml` on Linux (the OS user-config directory on Windows). Override this with `--tunnels-config PATH` or the top-level JSON setting `"tunnels_config": "PATH"`. Existing Diglet YAML remains valid and uses the same ownership registry, so the two tools can recognize their managed tunnels.

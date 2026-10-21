@@ -5,3 +5,7 @@
 /go-ssh
 /dist/
 *.test
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

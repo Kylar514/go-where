@@ -186,6 +186,11 @@ func app(args []string) error {
 		if err != nil && !(os.IsNotExist(err) && !customSSHConfig) {
 			return err
 		}
+		managed, err := inventoryHosts(c)
+		if err != nil {
+			return err
+		}
+		hosts = append(hosts, managed...)
 		state.RDPTags = c.RDP.Tags
 		state.ConfigPath = *config
 		state.RDPDestination = rdpDestination(c, false)
@@ -198,6 +203,24 @@ func app(args []string) error {
 			return err
 		}
 		switch key {
+		case "sources":
+			if err = sourceMenu(*config, c, &state); err != nil {
+				if err = notice(err.Error()); err != nil {
+					return err
+				}
+			}
+			continue
+		case "new-connection":
+			previousFocus := state.Focus
+			if err = editConnection(c, &state, nil); err != nil {
+				if err = notice(err.Error()); err != nil {
+					return err
+				}
+			}
+			if state.Focus != previousFocus {
+				query = ""
+			}
+			continue
 		case "target":
 			chosen, nextOrigin, back, targetErr := chooseTarget(o, c.Destination)
 			err = targetErr
@@ -238,6 +261,14 @@ func app(args []string) error {
 				return fmt.Errorf("editing in a pane requires tmux; use Ctrl+E for a floating editor")
 			}
 			h := selected[0]
+			if h.SourceID != "" {
+				if err = editConnection(c, &state, &h); err != nil {
+					if err = notice(err.Error()); err != nil {
+						return err
+					}
+				}
+				continue
+			}
 			return editFile(h.File, h.Line, "tmux-pane", key == "ctrl-e", o, c)
 		}
 		if len(selected) == 0 {
