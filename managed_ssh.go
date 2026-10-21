@@ -198,11 +198,12 @@ func runManagedSSH(encoded string) error {
 }
 
 func managedDetails(h Host, c Config) string {
+	metadata := "Source: " + h.SourceName + "\nConnection ID: " + h.ConnectionID + "\nTags: " + strings.Join(h.Tags, ", ") + "\nNotes: " + h.Comment + "\n\n"
 	j, err := managedJob(h, c)
 	if err != nil {
-		return "Managed SSH: " + err.Error()
+		return metadata + "Managed SSH: " + err.Error()
 	}
-	return "Source: " + h.SourceName + "\nConnection ID: " + h.ConnectionID + "\n\nResolved SSH settings (personal SSH config is not read):\n\n" + j.Configuration
+	return metadata + "Resolved SSH settings (personal SSH config is not read):\n\n" + j.Configuration
 }
 
 func connectionPort(v string) (int, error) {

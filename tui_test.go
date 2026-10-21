@@ -274,3 +274,33 @@ func TestPopupFrameLayoutAndMouse(t *testing.T) {
 		t.Fatal("tiny frame overflowed")
 	}
 }
+
+func TestHostColumnsResponsiveAndAligned(t *testing.T) {
+	h := Host{Alias: "demo", Hostname: "192.0.2.8", SourceID: "local", SourceName: "Personal", Tags: []string{"homelab", "superfreak"}, Comment: "Test notes"}
+	for _, width := range []int{24, 28, 40, 48, 67, 68, 80, 88, 102, 140} {
+		header := hostColumnLine(nil, width, "")
+		row := hostColumnLine(&h, width, "[ ]")
+		if lipgloss.Width(header) > width || lipgloss.Width(row) > width {
+			t.Fatalf("columns overflow %d", width)
+		}
+		if width >= 48 && !strings.Contains(header, "SOURCE") {
+			t.Fatal("missing source column")
+		}
+		if strings.Contains(header, "NOTES") != (width >= 88) || strings.Contains(header, "TAGS") != (width >= 68) {
+			t.Fatalf("wrong column visibility at %d: %s", width, header)
+		}
+		for _, pair := range [][2]string{{"HOST", "demo"}, {"HOSTNAME / IP", "192.0.2.8"}, {"SOURCE", "Personal"}, {"TAGS", "homelab"}, {"NOTES", "Test notes"}} {
+			if at := strings.Index(header, pair[0]); at >= 0 && strings.Contains(row, pair[1]) && lipgloss.Width(header[:at]) != lipgloss.Width(row[:strings.Index(row, pair[1])]) {
+				t.Fatalf("misaligned %s at width %d:\n%s\n%s", pair[0], width, header, row)
+			}
+		}
+	}
+	legacy := Host{Alias: "legacy", Comment: "From SSH comments"}
+	if row := hostColumnLine(&legacy, 110, "[ ]"); !strings.Contains(row, "SSH config") || !strings.Contains(row, "From SSH comments") {
+		t.Fatalf("legacy mapping lost: %s", row)
+	}
+	h.Alias = strings.Repeat("界", 30)
+	if lipgloss.Width(hostColumnLine(&h, 102, "[✓]")) != 102 {
+		t.Fatal("wide characters broke cell alignment")
+	}
+}

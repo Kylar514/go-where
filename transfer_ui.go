@@ -27,6 +27,8 @@ func pickerHelp(mode string) string {
 	return "LAUNCH\n" + launch + `
 
 NAVIGATE & SELECT
+Search         Host, address, source, tags, notes (fuzzy)
+#tag           Exact tag filter; multiple #tags require all
 Ctrl+B         Choose / create / attach an inventory source
 Ctrl+N         Create a managed SSH connection
 Ctrl+E         Edit managed connection (or existing SSH block)

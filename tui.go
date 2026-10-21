@@ -64,7 +64,7 @@ func newPickerModel(hosts []Host, query, dest string, o Origin, state PickerStat
 	input := textinput.New()
 	input.Prompt = "⌕ Search: "
 	input.PromptStyle = tuiAccent
-	input.Placeholder = "host, address, comments…"
+	input.Placeholder = "host, address, source, tags, notes…"
 	input.SetValue(query)
 	input.Focus()
 	m := &pickerModel{hosts: hosts, state: state, config: c, dest: dest, origin: o, search: input, preview: viewport.New(1, 1), marked: map[string]bool{}, transferMode: "scp", tunnelStatus: map[string]tunnelInfo{}, pending: map[string]bool{}, positions: map[string]string{}}
@@ -113,6 +113,19 @@ func tunnelTick() tea.Cmd {
 func (m *pickerModel) refilter() {
 	var ids []int
 	var labels []string
+	query := m.search.Value()
+	var requiredTags []string
+	if m.state.Mode != "tunnels" {
+		var text []string
+		for _, token := range strings.Fields(query) {
+			if strings.HasPrefix(token, "#") && len(token) > 1 {
+				requiredTags = append(requiredTags, token[1:])
+			} else {
+				text = append(text, token)
+			}
+		}
+		query = strings.Join(text, " ")
+	}
 	if m.state.Mode == "tunnels" {
 		for i, c := range m.tunnels {
 			ids = append(ids, i)
@@ -120,6 +133,23 @@ func (m *pickerModel) refilter() {
 		}
 	} else {
 		for i, h := range m.hosts {
+			matches := true
+			for _, wanted := range requiredTags {
+				found := false
+				for _, tag := range h.Tags {
+					if strings.EqualFold(tag, wanted) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					matches = false
+					break
+				}
+			}
+			if !matches {
+				continue
+			}
 			if m.state.Source != "" && ((m.state.Source == "ssh-config" && h.SourceID != "") || (m.state.Source != "ssh-config" && h.SourceID != m.state.Source)) {
 				continue
 			}
@@ -130,14 +160,14 @@ func (m *pickerModel) refilter() {
 				continue
 			}
 			ids = append(ids, i)
-			labels = append(labels, h.Alias+" "+h.Hostname+" "+h.JumpHost+" "+h.Comment+" "+h.SourceName)
+			labels = append(labels, h.Alias+" "+h.Hostname+" "+h.JumpHost+" "+h.Comment+" "+hostSourceLabel(h)+" "+strings.Join(h.Tags, ", "))
 		}
 	}
 	m.visible = nil
-	if m.search.Value() == "" {
+	if query == "" {
 		m.visible = ids
 	} else {
-		for _, match := range fuzzy.Find(m.search.Value(), labels) {
+		for _, match := range fuzzy.Find(query, labels) {
 			m.visible = append(m.visible, ids[match.Index])
 		}
 	}
@@ -154,6 +184,42 @@ func viewSplit(width int) (listWidth, previewWidth int) {
 		return lw, max(20, total-lw-3)
 	}
 	return total, 0
+}
+
+func hostSourceLabel(h Host) string {
+	if h.SourceID == "" {
+		return "SSH config"
+	}
+	return h.SourceName
+}
+
+// Headings and rows share cell widths; hide Notes, then Tags as space shrinks.
+func hostColumnLine(h *Host, width int, mark string) string {
+	values := []string{"HOST", "HOSTNAME / IP", "SOURCE", "TAGS", "NOTES"}
+	prefix := "     "
+	if h != nil {
+		values = []string{h.Alias, h.Hostname, hostSourceLabel(*h), strings.Join(h.Tags, ", "), h.Comment}
+		prefix = " " + mark + " "
+	}
+	var widths []int
+	switch {
+	case width >= 88:
+		widths = []int{18, 16, 12, 18, width - 77}
+	case width >= 68:
+		widths = []int{18, 16, 12, width - 57}
+	case width >= 48:
+		widths = []int{width - 35, 16, 10}
+	case width >= 30:
+		widths = []int{width - 19, 12}
+	default:
+		widths = []int{max(1, width-5)}
+	}
+	columns := make([]string, len(widths))
+	for i, w := range widths {
+		v := fit(clean(values[i]), w)
+		columns[i] = v + strings.Repeat(" ", max(0, w-lipgloss.Width(v)))
+	}
+	return fit(prefix+strings.Join(columns, "  "), width)
 }
 func (m *pickerModel) scrollToCursor() {
 	if m.cursor < m.offset {
@@ -547,7 +613,7 @@ func (m *pickerModel) updatePreview() {
 			m.preview.SetContent(ansi.Hardwrap(cleanLines(managedDetails(h, m.config)), max(1, m.preview.Width), true))
 			return
 		}
-		text = fmt.Sprintf("%s\n\nAddress   %s\nJump      %s\nNotes     %s\nSource    %s:%d\n\n", h.Alias, h.Hostname, h.JumpHost, h.Comment, h.File, h.Line)
+		text = fmt.Sprintf("%s\n\nAddress   %s\nJump      %s\nTags      %s\nNotes     %s\nSource    %s\nFile      %s:%d\n\n", h.Alias, h.Hostname, h.JumpHost, strings.Join(h.Tags, ", "), h.Comment, hostSourceLabel(h), h.File, h.Line)
 		if m.state.Mode == "rdp" {
 			job, err := newRDPJob(m.config.RDP, h, "")
 			if err != nil {
@@ -649,10 +715,8 @@ func (m *pickerModel) View() string {
 	// Fixed column titles; the list scrolls beneath them.
 	if m.state.Mode == "tunnels" {
 		left = append(left, fit(tuiDim.Render(fmt.Sprintf("  %-20s %s", "NAME", "STATUS")), listWidth))
-	} else if listWidth > 65 {
-		left = append(left, fit(tuiDim.Render(fmt.Sprintf("    %-20s %-13s  %s", "HOST", "HOSTNAME / IP", "COMMENT")), listWidth))
 	} else {
-		left = append(left, fit(tuiDim.Render(fmt.Sprintf("    %-20s %s", "HOST", "HOSTNAME / IP")), listWidth))
+		left = append(left, tuiDim.Render(hostColumnLine(nil, listWidth, "")))
 	}
 	// Rows anchor to the bottom and fill upward (fzf --layout=reverse): the
 	// first result sits on the last slot, older entries stack above it.
@@ -676,13 +740,7 @@ func (m *pickerModel) View() string {
 				if m.marked[hostIdentity(h)] {
 					mark = "[✓]"
 				}
-				line = fmt.Sprintf(" %s %-20s %s", mark, clean(h.Alias), clean(h.Hostname))
-				if listWidth > 65 {
-					line = fmt.Sprintf(" %s %-20s %-13s  %s", mark, clean(h.Alias), clean(h.Hostname), clean(h.Comment))
-				}
-				if h.SourceID != "" {
-					line = fmt.Sprintf(" %s %-20s %-13s  [%s] %s", mark, clean(h.Alias), clean(h.Hostname), clean(h.SourceName), clean(h.Comment))
-				}
+				line = hostColumnLine(&h, listWidth, mark)
 			}
 			if i == m.cursor {
 				line = tuiSelected.Render(fit("›"+strings.TrimPrefix(line, " "), listWidth))

@@ -114,6 +114,42 @@ func TestSQLiteSourcesAndGraph(t *testing.T) {
 	}
 }
 
+func TestInventoryTagsReachPicker(t *testing.T) {
+	s := testInventory(t, "Personal")
+	r := Connection{ID: "tagged", Alias: "demo", Address: "192.0.2.8", Port: 22, User: "${MISSING}", Tags: []string{"homelab", "superfreak"}, Notes: "A test machine"}
+	if err := changeConnection(s, r, false); err != nil {
+		t.Fatal(err)
+	}
+	c := defaultConfig()
+	c.Sources = []InventorySource{s}
+	hosts, err := inventoryHosts(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hosts = append(hosts, Host{Alias: "legacy", Comment: "superfreak but not tagged", Hostname: "192.0.2.9"})
+	m := newPickerModel(hosts, "", "terminal", Origin{}, PickerState{Mode: "ssh"}, c)
+	for _, tc := range []struct {
+		query string
+		count int
+	}{
+		{"homelab", 1}, {"superfreak", 2}, {"#superfreak", 1}, {"#SUPERFREAK", 1},
+		{"#homelab #superfreak", 1}, {"#superfreak demo", 1}, {"#super", 0},
+		{"#superfreak #absent", 0}, {"Personal", 1}, {"SSH config", 1}, {"#superfreak legacy", 0},
+	} {
+		m.search.SetValue(tc.query)
+		m.refilter()
+		if len(m.visible) != tc.count {
+			t.Fatalf("%q: wanted %d, got %v", tc.query, tc.count, m.visible)
+		}
+	}
+	details := managedDetails(hosts[0], c)
+	for _, want := range []string{"Tags: homelab, superfreak", "Notes: A test machine", "MISSING"} {
+		if !strings.Contains(details, want) {
+			t.Fatalf("metadata lost when resolution fails: %s", details)
+		}
+	}
+}
+
 func TestManagedResolutionLaunchAndCleanup(t *testing.T) {
 	s := testInventory(t, "Work")
 	key := filepath.Join(t.TempDir(), "key with spaces")

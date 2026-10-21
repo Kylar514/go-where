@@ -277,7 +277,7 @@ func inventoryHosts(c Config) ([]Host, error) {
 			return nil, fmt.Errorf("%s: %w", s.Name, err)
 		}
 		for _, r := range records {
-			hosts = append(hosts, Host{Alias: r.Alias, Hostname: r.Address, Comment: r.Notes, SourceID: s.ID, SourceName: s.Name, ConnectionID: r.ID})
+			hosts = append(hosts, Host{Alias: r.Alias, Hostname: r.Address, Comment: r.Notes, Tags: r.Tags, SourceID: s.ID, SourceName: s.Name, ConnectionID: r.ID})
 		}
 	}
 	return hosts, nil
