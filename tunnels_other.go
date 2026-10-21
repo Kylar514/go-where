@@ -12,3 +12,5 @@ func tunnelStatuses([]config.Connection) (map[string]tunnelInfo, error) {
 }
 func toggleManagedTunnel(config.Connection, bool) error { _, err := tunnelStatuses(nil); return err }
 func runTunnelProbe(string, int, int)                   {}
+
+func ensureInventoryTunnelStopped(Host) error { return nil }

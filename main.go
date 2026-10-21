@@ -257,9 +257,6 @@ func app(args []string) error {
 			if len(selected) == 0 {
 				continue
 			}
-			if key == "ctrl-alt-e" && o.Pane == "" {
-				return fmt.Errorf("editing in a pane requires tmux; use Ctrl+E for a floating editor")
-			}
 			h := selected[0]
 			if h.SourceID != "" {
 				if err = editConnection(c, &state, &h); err != nil {
@@ -268,6 +265,9 @@ func app(args []string) error {
 					}
 				}
 				continue
+			}
+			if key == "ctrl-alt-e" && o.Pane == "" {
+				return fmt.Errorf("editing in a pane requires tmux; use Ctrl+E for a floating editor")
 			}
 			return editFile(h.File, h.Line, "tmux-pane", key == "ctrl-e", o, c)
 		}
@@ -290,6 +290,7 @@ func app(args []string) error {
 			connectionConfig = *sshConfig
 		}
 		if state.Mode == "rdp" {
+			c.activeRDPAccount = state.Account
 			c.RDP = c.RDP.withAccount(state.Account)
 			err = launchRDP(selected, o, c, connectionConfig, exe, state.Debug)
 		} else if state.Mode != "ssh" {

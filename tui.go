@@ -54,6 +54,8 @@ type pickerModel struct {
 	positions                     map[string]string
 	selected                      []Host
 	tunnels                       []digletconfig.Connection
+	tunnelHosts                   map[string]Host
+	tunnelErrors                  map[string]error
 	tunnelPath                    string
 	tunnelLoadErr                 error
 	tunnelStatus                  map[string]tunnelInfo
@@ -81,7 +83,15 @@ func newPickerModel(hosts []Host, query, dest string, o Origin, state PickerStat
 	m.loadTunnels()
 	m.refilter()
 	for i, id := range m.visible {
-		if m.state.Mode != "tunnels" && hostIdentity(hosts[id]) == state.Focus {
+		identity := ""
+		if m.state.Mode == "tunnels" {
+			if h, ok := m.tunnelHosts[m.tunnels[id].Name]; ok {
+				identity = hostIdentity(h)
+			}
+		} else {
+			identity = hostIdentity(hosts[id])
+		}
+		if identity != "" && identity == state.Focus {
 			m.cursor = i
 			break
 		}
@@ -91,6 +101,8 @@ func newPickerModel(hosts []Host, query, dest string, o Origin, state PickerStat
 }
 
 func (m *pickerModel) loadTunnels() {
+	m.tunnelHosts = map[string]Host{}
+	m.tunnelErrors = map[string]error{}
 	m.tunnelPath = m.config.TunnelsConfig
 	if m.tunnelPath == "" {
 		m.tunnelPath = digletconfig.DefaultConfigPath()
@@ -103,6 +115,23 @@ func (m *pickerModel) loadTunnels() {
 	if err == nil {
 		m.tunnels = cfg.Connections
 	}
+	for _, h := range m.hosts {
+		if h.SourceID != "" && h.Type == "tunnel" {
+			conn, err := inventoryTunnel(h, m.config)
+			m.tunnels = append(m.tunnels, conn)
+			m.tunnelHosts[conn.Name] = h
+			if err != nil {
+				m.tunnelErrors[conn.Name] = err
+			}
+		}
+	}
+}
+
+func (m *pickerModel) tunnelDisplayName(c digletconfig.Connection) string {
+	if h, ok := m.tunnelHosts[c.Name]; ok {
+		return h.Alias + " [" + h.SourceName + "]"
+	}
+	return c.Name
 }
 
 func (m *pickerModel) Init() tea.Cmd { return tea.Batch(textinput.Blink, tunnelTick()) }
@@ -115,45 +144,43 @@ func (m *pickerModel) refilter() {
 	var labels []string
 	query := m.search.Value()
 	var requiredTags []string
-	if m.state.Mode != "tunnels" {
-		var text []string
-		for _, token := range strings.Fields(query) {
-			if strings.HasPrefix(token, "#") && len(token) > 1 {
-				requiredTags = append(requiredTags, token[1:])
-			} else {
-				text = append(text, token)
-			}
+	var text []string
+	for _, token := range strings.Fields(query) {
+		if strings.HasPrefix(token, "#") && len(token) > 1 {
+			requiredTags = append(requiredTags, token[1:])
+		} else {
+			text = append(text, token)
 		}
-		query = strings.Join(text, " ")
 	}
+	query = strings.Join(text, " ")
 	if m.state.Mode == "tunnels" {
 		for i, c := range m.tunnels {
+			if h, ok := m.tunnelHosts[c.Name]; ok {
+				if !matchesTags(h.Tags, requiredTags) {
+					continue
+				}
+				if m.state.Source == "ssh-config" || (m.state.Source != "" && m.state.Source != h.SourceID) {
+					continue
+				}
+			} else if len(requiredTags) > 0 || m.state.Source != "" && m.state.Source != "ssh-config" {
+				continue
+			}
 			ids = append(ids, i)
-			labels = append(labels, c.Name+" "+c.TunnelType+" "+c.SSHHost+" "+c.Resource+" "+c.Namespace)
+			if h, ok := m.tunnelHosts[c.Name]; ok {
+				labels = append(labels, m.tunnelDisplayName(c)+" "+h.Comment+" "+strings.Join(h.Tags, ", "))
+			} else {
+				labels = append(labels, c.Name+" "+c.TunnelType+" "+c.SSHHost+" "+c.Resource+" "+c.Namespace)
+			}
 		}
 	} else {
 		for i, h := range m.hosts {
-			matches := true
-			for _, wanted := range requiredTags {
-				found := false
-				for _, tag := range h.Tags {
-					if strings.EqualFold(tag, wanted) {
-						found = true
-						break
-					}
-				}
-				if !found {
-					matches = false
-					break
-				}
-			}
-			if !matches {
+			if !matchesTags(h.Tags, requiredTags) {
 				continue
 			}
 			if m.state.Source != "" && ((m.state.Source == "ssh-config" && h.SourceID != "") || (m.state.Source != "ssh-config" && h.SourceID != m.state.Source)) {
 				continue
 			}
-			if h.SourceID != "" && m.state.Mode != "ssh" {
+			if h.SourceID != "" && managedHostMode(h) != m.state.Mode {
 				continue
 			}
 			if m.state.Mode == "rdp" && !h.isRDP(m.config.RDP.Tags) {
@@ -173,6 +200,22 @@ func (m *pickerModel) refilter() {
 	}
 	m.cursor = min(max(0, m.cursor), max(0, len(m.visible)-1))
 	m.scrollToCursor()
+}
+
+func matchesTags(tags, required []string) bool {
+	for _, wanted := range required {
+		found := false
+		for _, tag := range tags {
+			if strings.EqualFold(tag, wanted) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 func (m *pickerModel) rows() int { return max(1, min(20, m.height-8)) }
 
@@ -282,7 +325,7 @@ func (m *pickerModel) selection(highlightOnly bool) []Host {
 			if m.state.Source != "" && ((m.state.Source == "ssh-config" && h.SourceID != "") || (m.state.Source != "ssh-config" && h.SourceID != m.state.Source)) {
 				continue
 			}
-			if h.SourceID != "" && m.state.Mode != "ssh" {
+			if h.SourceID != "" && managedHostMode(h) != m.state.Mode {
 				continue
 			}
 			if m.marked[hostIdentity(h)] && (m.state.Mode != "rdp" || h.isRDP(m.config.RDP.Tags)) {
@@ -300,6 +343,17 @@ func (m *pickerModel) selection(highlightOnly bool) []Host {
 	return []Host{h}
 }
 func (m *pickerModel) finish(key string) tea.Cmd {
+	if m.state.Mode == "tunnels" && (key == "ctrl-e" || key == "ctrl-alt-e") {
+		if len(m.visible) > 0 {
+			if h, ok := m.tunnelHosts[m.tunnels[m.visible[m.cursor]].Name]; ok {
+				m.selected = []Host{h}
+				m.key = "ctrl-e"
+				return tea.Quit
+			}
+		}
+		m.key = "tunnel-edit"
+		return tea.Quit
+	}
 	if key == "enter" && m.state.Mode == "tunnels" {
 		return m.toggleTunnel()
 	}
@@ -332,7 +386,12 @@ func (m *pickerModel) accountChoices() []choice {
 			label = account.Name
 			r = r.withAccount(account)
 		}
-		job, err := newRDPJob(r, h, "")
+		previewConfig := m.config
+		previewConfig.RDP = r
+		if i > 0 {
+			previewConfig.activeRDPAccount = r.Accounts[i-1]
+		}
+		job, err := hostRDPJob(previewConfig, h, "")
 		if err == nil {
 			login := job.User
 			if job.Domain != "" {
@@ -356,7 +415,7 @@ func (m *pickerModel) action(action string) tea.Cmd {
 	case "help":
 		text := pickerHelp(m.state.Mode)
 		if m.state.Mode == "tunnels" {
-			text = "TUNNELS\nEnter / Toggle  Start or stop the highlighted tunnel\nCtrl+E          Edit Diglet connections.yaml\nCtrl+R          Reload config\nTunnels remain running when this TUI closes.\nOnly Diglet-owned processes can be stopped.\n"
+			text = "TUNNELS\nEnter / Toggle  Start or stop the highlighted tunnel\nCtrl+N          New connection (choose Type in the editor)\nCtrl+E          Edit database tunnel, or legacy connections.yaml\nCtrl+B          Choose inventory source\nCtrl+R          Reload config\nTunnels remain running when this TUI closes.\nOnly owned processes can be stopped.\n"
 		}
 		m.openDialog("help", "Keyboard & mouse", []choice{{"back", "Return"}}, text)
 	case "mode":
@@ -381,6 +440,11 @@ func (m *pickerModel) toggleTunnel() tea.Cmd {
 		return nil
 	}
 	c := m.tunnels[m.visible[m.cursor]]
+	if err := m.tunnelErrors[c.Name]; err != nil {
+		m.status = err.Error()
+		m.statusError = true
+		return nil
+	}
 	if m.pending[c.Name] {
 		return nil
 	}
@@ -420,7 +484,11 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = msg.err.Error()
 			m.statusError = true
 		} else {
-			m.status = msg.name + ": tunnel updated"
+			name := msg.name
+			if h, ok := m.tunnelHosts[msg.name]; ok {
+				name = h.Alias
+			}
+			m.status = name + ": tunnel updated"
 			m.statusError = false
 		}
 		return m, nil
@@ -527,9 +595,6 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = max(0, min(len(m.visible)-1, m.cursor+delta))
 			}
 		case "ctrl+e":
-			if m.state.Mode == "tunnels" {
-				return m, m.finish("tunnel-edit")
-			}
 			return m, m.finish("ctrl-e")
 		case "enter", "ctrl+r", "ctrl+s", "ctrl+alt+p", "ctrl+alt+w", "ctrl+alt+n", "ctrl+alt+t", "ctrl+alt+s", "ctrl+alt+e":
 			return m, m.finish(strings.ReplaceAll(key, "+", "-"))
@@ -601,6 +666,14 @@ func (m *pickerModel) updatePreview() {
 	if m.state.Mode == "tunnels" {
 		if len(m.visible) > 0 {
 			c := m.tunnels[m.visible[m.cursor]]
+			if h, ok := m.tunnelHosts[c.Name]; ok {
+				text = managedDetails(h, m.config) + "\n\n" + m.tunnelLabel(c.Name)
+				if err := m.tunnelErrors[c.Name]; err != nil {
+					text += "\n" + err.Error()
+				}
+				m.preview.SetContent(ansi.Hardwrap(cleanLines(text), max(1, m.preview.Width), true))
+				return
+			}
 			text = fmt.Sprintf("%s\n\nType       %s\nLocal      127.0.0.1:%d\nRemote     %d\nSSH host   %s\nResource   %s\nNamespace  %s\n\n%s\n\n%s", c.Name, c.TunnelType, c.LocalPort, c.RemotePort, c.SSHHost, c.Resource, c.Namespace, m.tunnelLabel(c.Name), tunnelCommandPreview(c))
 		} else {
 			text = "No tunnels configured.\n\nCtrl+E creates/edits your Diglet connections file.\n\n" + m.tunnelPath
@@ -714,7 +787,7 @@ func (m *pickerModel) View() string {
 	var left []string
 	// Fixed column titles; the list scrolls beneath them.
 	if m.state.Mode == "tunnels" {
-		left = append(left, fit(tuiDim.Render(fmt.Sprintf("  %-20s %s", "NAME", "STATUS")), listWidth))
+		left = append(left, fit(tuiDim.Render(fmt.Sprintf("  %-32s %s", "NAME / SOURCE", "STATUS")), listWidth))
 	} else {
 		left = append(left, tuiDim.Render(hostColumnLine(nil, listWidth, "")))
 	}
@@ -733,7 +806,7 @@ func (m *pickerModel) View() string {
 			id := m.visible[i]
 			if m.state.Mode == "tunnels" {
 				c := m.tunnels[id]
-				line = fmt.Sprintf("  %-20s %s", clean(c.Name), m.tunnelLabel(c.Name))
+				line = fmt.Sprintf("  %-32s %s", fit(clean(m.tunnelDisplayName(c)), 32), m.tunnelLabel(c.Name))
 			} else {
 				h := m.hosts[id]
 				mark := "[ ]"

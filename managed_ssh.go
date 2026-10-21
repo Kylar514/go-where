@@ -60,26 +60,52 @@ func resolvedConnection(c Config, s InventorySource, r Connection) (Connection, 
 	for k, v := range o.Variables {
 		vars[k] = v
 	}
-	for _, field := range []*string{&r.Address, &r.User, &r.IdentityFile} {
+	fields := []*string{&r.Address, &r.User, &r.IdentityFile}
+	resolveDomain := r.kind() == "rdp"
+	if r.kind() == "rdp" {
+		a, err := connectionAccount(c, r)
+		if err != nil {
+			return r, err
+		}
+		fields = []*string{&r.Address}
+		if a.User == "" {
+			fields = append(fields, &r.User)
+		}
+		resolveDomain = a.Domain == nil
+	}
+	if r.kind() == "tunnel" {
+		fields = []*string{&r.Bind}
+		if r.TunnelType == "ssh" {
+			fields = append(fields, &r.RemoteHost)
+		} else {
+			fields = append(fields, &r.Resource, &r.Namespace, &r.Context)
+		}
+	}
+	if resolveDomain && r.Domain != nil {
+		domain := *r.Domain
+		r.Domain = &domain
+		fields = append(fields, r.Domain)
+	}
+	for _, field := range fields {
 		v, err := resolveValue(*field, vars)
 		if err != nil {
 			return r, fmt.Errorf("%s / %s: %w", s.Name, r.Alias, err)
 		}
 		*field = v
 	}
-	if r.Port < 1 || r.Port > 65535 {
+	if r.kind() != "tunnel" && (r.Port < 1 || r.Port > 65535) {
 		return r, fmt.Errorf("%s: invalid port", r.Alias)
 	}
-	if !regexp.MustCompile(`^[A-Za-z0-9_.:-]+$`).MatchString(r.Address) {
+	if r.kind() != "tunnel" && !regexp.MustCompile(`^[A-Za-z0-9_.:-]+$`).MatchString(r.Address) {
 		return r, fmt.Errorf("%s: address must be an IP or DNS name", r.Alias)
 	}
-	if r.User != "" && (!regexp.MustCompile(`^[A-Za-z0-9_.@\\-]+$`).MatchString(r.User) || strings.HasPrefix(r.User, "-")) {
+	if r.kind() == "ssh" && r.User != "" && (!regexp.MustCompile(`^[A-Za-z0-9_.@\\-]+$`).MatchString(r.User) || strings.HasPrefix(r.User, "-")) {
 		return r, fmt.Errorf("%s: invalid SSH username", r.Alias)
 	}
-	if r.Address == "" {
+	if r.kind() != "tunnel" && r.Address == "" {
 		return r, fmt.Errorf("%s: address required", r.Alias)
 	}
-	if r.IdentityFile != "" {
+	if r.kind() == "ssh" && r.IdentityFile != "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return r, err
@@ -122,6 +148,9 @@ func managedJob(h Host, c Config) (managedSSHJob, error) {
 		r, ok := byID[id]
 		if !ok {
 			return managedSSHJob{}, fmt.Errorf("%s: connection/jump %s no longer exists", h.Alias, id)
+		}
+		if r.kind() != "ssh" {
+			return managedSSHJob{}, fmt.Errorf("%s: jump must reference an SSH connection", r.Alias)
 		}
 		r, err = resolvedConnection(c, s, r)
 		if err != nil {
@@ -179,15 +208,11 @@ func runManagedSSH(encoded string) error {
 	if j.Target != "gw-0" || j.Configuration == "" {
 		return fmt.Errorf("invalid managed SSH job")
 	}
-	dir, err := os.MkdirTemp("", "go-where-ssh-")
+	path, cleanup, err := sshSnapshot(j.Configuration)
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(dir)
-	path := filepath.Join(dir, "config")
-	if err = os.WriteFile(path, []byte(j.Configuration), 0600); err != nil {
-		return err
-	}
+	defer cleanup()
 	// Keep the snapshot until SSH (including its jump children) exits.
 	// As in the transfer runner, let SSH receive terminal Ctrl+C while the
 	// waiting parent survives to clean up its snapshot.
@@ -197,8 +222,61 @@ func runManagedSSH(encoded string) error {
 	return run([]string{"ssh", "-F", path, "--", j.Target})
 }
 
+func sshSnapshot(configuration string) (string, func(), error) {
+	dir, err := os.MkdirTemp("", "go-where-ssh-")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	path := filepath.Join(dir, "config")
+	if err = os.WriteFile(path, []byte(configuration), 0600); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return path, cleanup, nil
+}
+
+func selectedRecord(h Host, c Config) (InventorySource, Connection, error) {
+	s, err := findSource(c, h.SourceID)
+	if err != nil {
+		return s, Connection{}, err
+	}
+	records, err := sourceConnections(s)
+	if err != nil {
+		return s, Connection{}, err
+	}
+	for _, r := range records {
+		if r.ID == h.ConnectionID {
+			r, err = resolvedConnection(c, s, r)
+			return s, r, err
+		}
+	}
+	return s, Connection{}, fmt.Errorf("connection no longer exists")
+}
+
 func managedDetails(h Host, c Config) string {
 	metadata := "Source: " + h.SourceName + "\nConnection ID: " + h.ConnectionID + "\nTags: " + strings.Join(h.Tags, ", ") + "\nNotes: " + h.Comment + "\n\n"
+	if h.Type == "rdp" {
+		j, err := hostRDPJob(c, h, "")
+		if err != nil {
+			return metadata + err.Error()
+		}
+		return metadata + fmt.Sprintf("RDP\nAddress: %s:%d\nUser: %s\nDomain: %s\nTitle: %s\nSSH jump: %s\n", j.Host, j.Port, j.User, j.Domain, j.Title, j.Jump)
+	}
+	if h.Type == "tunnel" {
+		_, r, err := selectedRecord(h, c)
+		if err != nil {
+			return metadata + err.Error()
+		}
+		conn, err := inventoryTunnel(h, c)
+		if err != nil {
+			return metadata + err.Error()
+		}
+		data, _ := base64.RawURLEncoding.DecodeString(conn.Resource)
+		var spec inventoryTunnelSpec
+		_ = json.Unmarshal(data, &spec)
+		return metadata + fmt.Sprintf("%s tunnel\nLocal: %s:%d\nRemote: %s:%d\nResource: %s\nNamespace: %s\nContext: %s\n\n%s", r.TunnelType, r.Bind, r.LocalPort, r.RemoteHost, r.RemotePort, r.Resource, r.Namespace, r.Context, shellCommand(spec.Argv))
+	}
 	j, err := managedJob(h, c)
 	if err != nil {
 		return metadata + "Managed SSH: " + err.Error()

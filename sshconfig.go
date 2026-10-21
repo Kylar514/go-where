@@ -10,6 +10,7 @@ import (
 )
 
 type Host struct {
+	Type         string
 	Tags         []string
 	SourceID     string
 	SourceName   string

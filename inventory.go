@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -22,6 +23,18 @@ type InventorySource struct {
 }
 
 type Connection struct {
+	Type         string   `json:"type,omitempty"`
+	Domain       *string  `json:"domain,omitempty"`
+	Account      string   `json:"account,omitempty"`
+	TunnelType   string   `json:"tunnel_type,omitempty"`
+	Bind         string   `json:"local_bind,omitempty"`
+	LocalPort    int      `json:"local_port,omitempty"`
+	RemoteHost   string   `json:"remote_host,omitempty"`
+	RemotePort   int      `json:"remote_port,omitempty"`
+	SSHID        string   `json:"ssh_id,omitempty"`
+	Resource     string   `json:"resource,omitempty"`
+	Namespace    string   `json:"namespace,omitempty"`
+	Context      string   `json:"context,omitempty"`
 	ID           string   `json:"id"`
 	Alias        string   `json:"alias"`
 	Address      string   `json:"address"`
@@ -31,6 +44,13 @@ type Connection struct {
 	JumpID       string   `json:"jump_id,omitempty"`
 	Tags         []string `json:"tags,omitempty"`
 	Notes        string   `json:"notes,omitempty"`
+}
+
+func (r Connection) kind() string {
+	if r.Type == "" {
+		return "ssh"
+	}
+	return r.Type
 }
 
 type ConnectionOverride struct {
@@ -77,8 +97,8 @@ func openInventory(s InventorySource) (*sql.DB, error) {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version != 1 {
-		return fail(fmt.Errorf("unsupported inventory schema %d (expected 1)", version))
+	if version != 1 && version != 2 {
+		return fail(fmt.Errorf("unsupported inventory schema %d (expected 1 or 2)", version))
 	}
 	var id string
 	if err = db.QueryRow("SELECT id FROM source").Scan(&id); err != nil {
@@ -87,7 +107,44 @@ func openInventory(s InventorySource) (*sql.DB, error) {
 	if id != s.ID {
 		return fail(fmt.Errorf("database identity changed; expected %s, found %s", s.ID, id))
 	}
+	if version == 1 {
+		if err = migrateInventoryV2(db); err != nil {
+			return fail(err)
+		}
+	}
 	return db, nil
+}
+
+func migrateInventoryV2(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	records, err := readConnections(tx)
+	if err != nil {
+		return err
+	}
+	if err = validateConnections(records); err != nil {
+		return err
+	}
+	for _, r := range records {
+		if r.kind() != "ssh" {
+			return fmt.Errorf("schema 1 contains a non-SSH record; refusing migration")
+		}
+		r.Type = "ssh"
+		data, err := json.Marshal(r)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec("UPDATE connections SET data=? WHERE id=?", string(data), r.ID); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec("PRAGMA user_version=2"); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func createInventory(name, path string) (InventorySource, error) {
@@ -124,7 +181,7 @@ func createInventory(name, path string) (InventorySource, error) {
 	for _, stmt := range []string{
 		"CREATE TABLE source (id TEXT PRIMARY KEY NOT NULL)",
 		"CREATE TABLE connections (id TEXT PRIMARY KEY NOT NULL, alias TEXT UNIQUE NOT NULL, data TEXT NOT NULL)",
-		"PRAGMA user_version=1",
+		"PRAGMA user_version=2",
 	} {
 		if _, err = tx.Exec(stmt); err != nil {
 			return s, err
@@ -177,8 +234,35 @@ func validateConnections(records []Connection) error {
 	byID := map[string]Connection{}
 	aliases := map[string]bool{}
 	for _, c := range records {
-		if !inventoryName(c.ID) || !inventoryName(c.Alias) || c.Address == "" || c.Port < 1 || c.Port > 65535 {
+		if !inventoryName(c.ID) || !inventoryName(c.Alias) {
 			return fmt.Errorf("%s: ID, valid alias, address and port (1–65535) required", c.Alias)
+		}
+		switch c.kind() {
+		case "ssh", "rdp":
+			if c.Address == "" || c.Port < 1 || c.Port > 65535 {
+				return fmt.Errorf("%s: address and valid port required", c.Alias)
+			}
+		case "tunnel":
+			if c.LocalPort < 1 || c.LocalPort > 65535 || c.RemotePort < 1 || c.RemotePort > 65535 {
+				return fmt.Errorf("%s: valid local and remote ports required", c.Alias)
+			}
+			if c.TunnelType != "ssh" && c.TunnelType != "kubectl" {
+				return fmt.Errorf("%s: tunnel type must be ssh or kubectl", c.Alias)
+			}
+			if c.TunnelType == "ssh" && (c.SSHID == "" || c.RemoteHost == "") {
+				return fmt.Errorf("%s: SSH connection and remote host required", c.Alias)
+			}
+			if c.TunnelType == "kubectl" && c.Resource == "" {
+				return fmt.Errorf("%s: Kubernetes resource required", c.Alias)
+			}
+			if c.Bind != "" && !strings.Contains(c.Bind, "${") {
+				ip := net.ParseIP(c.Bind)
+				if ip == nil || !ip.IsLoopback() {
+					return fmt.Errorf("%s: bind must be a loopback IP", c.Alias)
+				}
+			}
+		default:
+			return fmt.Errorf("%s: unknown connection type %s", c.Alias, c.Type)
 		}
 		if _, ok := byID[c.ID]; ok {
 			return fmt.Errorf("duplicate connection ID %s", c.ID)
@@ -186,8 +270,12 @@ func validateConnections(records []Connection) error {
 		if aliases[c.Alias] {
 			return fmt.Errorf("duplicate alias %s", c.Alias)
 		}
-		for _, v := range []string{c.Address, c.User, c.IdentityFile, c.Notes, strings.Join(c.Tags, "")} {
-			if strings.ContainsAny(v, "\x00\r\n") {
+		domain := ""
+		if c.Domain != nil {
+			domain = *c.Domain
+		}
+		for _, v := range []string{c.Address, c.User, c.IdentityFile, c.Notes, strings.Join(c.Tags, ""), domain, c.Account, c.Bind, c.RemoteHost, c.Resource, c.Namespace, c.Context} {
+			if clean(v) != v {
 				return fmt.Errorf("%s: multiline/control values are not supported", c.Alias)
 			}
 		}
@@ -195,6 +283,14 @@ func validateConnections(records []Connection) error {
 		aliases[c.Alias] = true
 	}
 	for _, c := range records {
+		for _, ref := range []string{c.JumpID, c.SSHID} {
+			if ref != "" {
+				r, ok := byID[ref]
+				if !ok || r.kind() != "ssh" {
+					return fmt.Errorf("%s: referenced connection must be an existing SSH record", c.Alias)
+				}
+			}
+		}
 		seen := map[string]bool{}
 		for id := c.ID; id != ""; {
 			if seen[id] {
@@ -277,7 +373,7 @@ func inventoryHosts(c Config) ([]Host, error) {
 			return nil, fmt.Errorf("%s: %w", s.Name, err)
 		}
 		for _, r := range records {
-			hosts = append(hosts, Host{Alias: r.Alias, Hostname: r.Address, Comment: r.Notes, Tags: r.Tags, SourceID: s.ID, SourceName: s.Name, ConnectionID: r.ID})
+			hosts = append(hosts, Host{Alias: r.Alias, Hostname: r.Address, Comment: r.Notes, Tags: r.Tags, SourceID: s.ID, SourceName: s.Name, ConnectionID: r.ID, Type: r.kind()})
 		}
 	}
 	return hosts, nil
@@ -288,4 +384,15 @@ func hostIdentity(h Host) string {
 		return h.SourceID + ":" + h.ConnectionID
 	}
 	return h.Alias // Preserve existing SSH-config picker state.
+}
+
+func managedHostMode(h Host) string {
+	switch h.Type {
+	case "rdp":
+		return "rdp"
+	case "tunnel":
+		return "tunnels"
+	default:
+		return "ssh"
+	}
 }

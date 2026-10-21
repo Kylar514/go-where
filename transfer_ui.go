@@ -30,7 +30,7 @@ NAVIGATE & SELECT
 Search         Host, address, source, tags, notes (fuzzy)
 #tag           Exact tag filter; multiple #tags require all
 Ctrl+B         Choose / create / attach an inventory source
-Ctrl+N         Create a managed SSH connection
+Ctrl+N         New connection (Type field: SSH / RDP / Tunnel)
 Ctrl+E         Edit managed connection (or existing SSH block)
 ←/→, Ctrl+H/L  Previous / next mode (wraps around)
 Backspace      Delete search text (terminals sending Ctrl+H switch mode)
@@ -42,7 +42,7 @@ Shift+↑/↓      Scroll preview
 
 EDIT
 Ctrl+S         Settings in a floating terminal
-Ctrl+E         Highlighted host config in a floating terminal
+Ctrl+E         Database connection form / legacy host config editor
 Ctrl+Alt+S     Settings in a tmux pane
 Ctrl+Alt+E     Highlighted host config in a tmux pane
 

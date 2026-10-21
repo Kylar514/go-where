@@ -9,6 +9,7 @@ import (
 )
 
 type Config struct {
+	activeRDPAccount RDPAccount
 	Sources          []InventorySource                        `json:"sources,omitempty"`
 	Variables        map[string]string                        `json:"variables,omitempty"`
 	Overrides        map[string]map[string]ConnectionOverride `json:"overrides,omitempty"`

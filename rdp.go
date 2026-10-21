@@ -152,6 +152,9 @@ func (r RDPConfig) withAccount(account RDPAccount) RDPConfig {
 
 // A host is an RDP target when a comment on its block is exactly a tag.
 func (h Host) isRDP(tags []string) bool {
+	if h.SourceID != "" {
+		return h.Type == "rdp"
+	}
 	for _, note := range h.Notes {
 		for _, tag := range tags {
 			if strings.EqualFold(strings.TrimSpace(note), tag) {
@@ -245,6 +248,7 @@ type rdpJob struct {
 	Port            int
 	Jump            string
 	SSHConfig       string
+	SSHSnapshot     string
 	Tunnel          string
 	Client          []string
 	ClientArgs      []string
@@ -489,6 +493,14 @@ func sessionEnded(code int) bool {
 }
 
 func runRDPSession(j rdpJob) error {
+	if j.SSHSnapshot != "" {
+		path, cleanup, err := sshSnapshot(j.SSHSnapshot)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		j.SSHConfig = path
+	}
 	if runtime.GOOS == "windows" && len(j.PasswordCommand) > 0 {
 		return fmt.Errorf("password_command pipe transport is not yet supported on Windows; use a FreeRDP client prompt")
 	}
@@ -611,7 +623,7 @@ func launchRDP(hosts []Host, o Origin, c Config, sshConfig, exe string, debug bo
 		if !h.isRDP(c.RDP.Tags) {
 			return fmt.Errorf("%s is not tagged for RDP (add a '# Windows' comment to its Host block)", h.Alias)
 		}
-		job, err := newRDPJob(c.RDP, h, sshConfig)
+		job, err := hostRDPJob(c, h, sshConfig)
 		if err != nil {
 			return err // Validate every job before launching any of them.
 		}

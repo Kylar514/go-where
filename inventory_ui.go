@@ -96,7 +96,7 @@ func sourceMenu(settings string, c Config, state *PickerState) error {
 		options = append(options, choice{s.ID, s.Name + " — SQLite: " + s.Path})
 	}
 	options = append(options, choice{"create", "Create local SQLite source…"}, choice{"attach", "Add existing SQLite source…"})
-	id, back, err := choose("Sources", options, "SQLite sources are independent of your personal SSH config. No database is created until you explicitly confirm. Managed records support SSH only in this milestone; Diglet tunnels remain a separate view.")
+	id, back, err := choose("Sources", options, "SQLite sources hold SSH, RDP and tunnel connections independently of personal files. No database is created until you explicitly confirm. Legacy file-backed connections retain their file editors.")
 	if err != nil || back {
 		return err
 	}
@@ -179,11 +179,15 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 	if h != nil {
 		preferred = h.SourceID
 	}
-	s, back, err := writableSource(c, preferred)
-	if err != nil || back {
-		return err
+	if len(c.Sources) == 0 {
+		return fmt.Errorf("create a SQLite source first with Ctrl+B")
 	}
-	r := Connection{ID: inventoryID(), Port: 22}
+	s := c.Sources[0]
+	if candidate, e := findSource(c, preferred); e == nil {
+		s = candidate
+	}
+	var err error
+	r := Connection{ID: inventoryID(), Type: "ssh", Port: 22}
 	existing := h != nil
 	if existing {
 		records, e := sourceConnections(s)
@@ -202,24 +206,112 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 			return fmt.Errorf("connection no longer exists")
 		}
 	}
+	originalKind := r.kind()
 	for {
-		options := []choice{
-			{"alias", "Alias: " + r.Alias}, {"address", "Address: " + r.Address}, {"port", fmt.Sprintf("Port: %d", r.Port)},
-			{"user", "User: " + r.User}, {"key", "Identity file: " + r.IdentityFile}, {"jump", "Jump connection ID: " + r.JumpID},
-			{"tags", "Tags: " + strings.Join(r.Tags, ", ")}, {"notes", "Notes: " + r.Notes}, {"save", "Save connection"},
-		}
+		options := connectionFields(r, s, c)
 		if existing {
 			options = append(options, choice{"duplicate", "Duplicate as new connection"}, choice{"delete", "Delete connection…"})
 		}
-		id, back, e := choose("SSH connection — "+s.Name, options, "User, address and key may contain ${NAME} variables from local settings. Blank user/key uses OpenSSH's local user/agent/default keys, not SSH config. Jump hosts must belong to this source. Esc discards unsaved edits.")
+		id, back, e := choose("Connection — "+s.Name, options, "Type changes fields in this editor. ${NAME} variables are local settings; no passwords are stored here. SSH references stay within this source. RDP uses local client/account preferences. Tunnel binds are loopback-only. Esc discards unsaved edits.")
 		if e != nil || back {
 			return e
 		}
 		switch id {
+		case "account_info":
+			continue
+		case "type":
+			kind, b, e := choose("Connection type", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnel", "Tunnel"}}, "")
+			if e != nil {
+				return e
+			}
+			if b || kind == r.kind() {
+				continue
+			}
+			_, b, e = choose("Change type?", []choice{{"change", "Change to " + kind}}, "Type-specific fields will be reset. Name, tags and notes are retained; SSH/RDP address, user and jump are retained when compatible. No change is stored until Save.")
+			if e != nil {
+				return e
+			}
+			if !b {
+				r = connectionWithType(r, kind)
+			}
+			continue
+		case "source":
+			if existing {
+				if e = notice("An existing connection stays in its source. Duplicate first to choose a different source."); e != nil {
+					return e
+				}
+				continue
+			}
+			selected, b, e := writableSource(c, "")
+			if e != nil {
+				return e
+			}
+			if b {
+				continue
+			}
+			if selected.ID != s.ID {
+				_, b, e = choose("Change source?", []choice{{"change", "Change source"}}, "Jump/SSH connection references will be cleared. Nothing is saved until Save.")
+				if e != nil {
+					return e
+				}
+				if !b {
+					s = selected
+					r.JumpID = ""
+					r.SSHID = ""
+				}
+			}
+			continue
+		case "tunnel_type":
+			v, b, e := choose("Tunnel backend", []choice{{"ssh", "SSH"}, {"kubectl", "kubectl"}}, "")
+			if e != nil {
+				return e
+			}
+			if !b && v != r.TunnelType {
+				_, b, e = choose("Change tunnel backend?", []choice{{"change", "Change backend"}}, "SSH host/remote target and Kubernetes resource/context fields will be reset. Bind and ports are retained.")
+				if e != nil {
+					return e
+				}
+				if !b {
+					r.TunnelType = v
+					r.SSHID = ""
+					r.RemoteHost = ""
+					r.Resource = ""
+					r.Namespace = ""
+					r.Context = ""
+					if v == "ssh" {
+						r.RemoteHost = "localhost"
+					}
+				}
+			}
+			continue
+		case "account":
+			choices := []choice{{"", "Custom — enter username/domain; client prompts for password"}}
+			for _, a := range c.RDP.Accounts {
+				choices = append(choices, choice{a.Name, a.Name})
+			}
+			v, b, e := choose("RDP account", choices, "Saved accounts are local profiles. Custom values are retained when switching, but only the selected mode is used. A saved account without a domain uses the editable connection domain.")
+			if e != nil {
+				return e
+			}
+			if !b {
+				r.Account = v
+			}
+			continue
 		case "save":
+			if existing && h != nil && originalKind == "tunnel" {
+				if e = ensureInventoryTunnelStopped(*h); e != nil {
+					if e = notice(e.Error()); e != nil {
+						return e
+					}
+					continue
+				}
+			}
 			err = changeConnection(s, r, false)
 			if err == nil {
-				state.Mode = "ssh"
+				state.Mode = r.kind()
+				if state.Mode == "tunnel" {
+					state.Mode = "tunnels"
+				}
 				state.Source = s.ID
 				state.Focus = s.ID + ":" + r.ID
 				return nil
@@ -241,15 +333,20 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 			if back {
 				continue
 			}
+			if h != nil && originalKind == "tunnel" {
+				if e = ensureInventoryTunnelStopped(*h); e != nil {
+					return e
+				}
+			}
 			return changeConnection(s, r, true)
-		case "jump":
+		case "jump", "ssh_id":
 			records, e := sourceConnections(s)
 			if e != nil {
 				return e
 			}
 			choices := []choice{{"", "None (direct)"}}
 			for _, j := range records {
-				if j.ID != r.ID {
+				if j.ID != r.ID && j.kind() == "ssh" {
 					choices = append(choices, choice{j.ID, j.Alias + " — " + j.Address})
 				}
 			}
@@ -258,7 +355,11 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 				return e
 			}
 			if !b {
-				r.JumpID = v
+				if id == "ssh_id" {
+					r.SSHID = v
+				} else {
+					r.JumpID = v
+				}
 			}
 			continue
 		}
@@ -269,15 +370,34 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 		case "address":
 			label, value = "Address / DNS name", r.Address
 		case "port":
-			label, value = "SSH port", fmt.Sprint(r.Port)
+			label, value = "Port", fmt.Sprint(r.Port)
 		case "user":
-			label, value = "SSH user (optional, supports ${NAME})", r.User
+			label, value = "Username (optional, supports ${NAME})", r.User
 		case "key":
 			label, value = "Identity file (optional, supports ${NAME})", r.IdentityFile
 		case "tags":
 			label, value = "Tags (comma-separated)", strings.Join(r.Tags, ", ")
 		case "notes":
 			label, value = "Notes", r.Notes
+		case "domain":
+			label = "RDP domain (empty = no domain)"
+			if r.Domain != nil {
+				value = *r.Domain
+			}
+		case "bind":
+			label, value = "Loopback bind address", r.Bind
+		case "local_port":
+			label, value = "Local port", fmt.Sprint(r.LocalPort)
+		case "remote_host":
+			label, value = "Remote host (as reached by SSH host)", r.RemoteHost
+		case "remote_port":
+			label, value = "Remote port", fmt.Sprint(r.RemotePort)
+		case "resource":
+			label, value = "Kubernetes resource (e.g. service/web)", r.Resource
+		case "namespace":
+			label, value = "Kubernetes namespace", r.Namespace
+		case "context":
+			label, value = "Kubernetes context", r.Context
 		}
 		value, back, e = inventoryPrompt(label, value)
 		if e != nil {
@@ -297,14 +417,33 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 			r.IdentityFile = value
 		case "notes":
 			r.Notes = value
-		case "port":
+		case "domain":
+			r.Domain = &value
+		case "bind":
+			r.Bind = value
+		case "remote_host":
+			r.RemoteHost = value
+		case "resource":
+			r.Resource = value
+		case "namespace":
+			r.Namespace = value
+		case "context":
+			r.Context = value
+		case "port", "local_port", "remote_port":
 			p, e := connectionPort(value)
 			if e != nil {
 				if e = notice(e.Error()); e != nil {
 					return e
 				}
 			} else {
-				r.Port = p
+				switch id {
+				case "local_port":
+					r.LocalPort = p
+				case "remote_port":
+					r.RemotePort = p
+				default:
+					r.Port = p
+				}
 			}
 		case "tags":
 			r.Tags = nil
