@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/kylar514/diglet v0.0.0-20260811004256-326775186335
 	github.com/sahilm/fuzzy v0.1.2
+	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
 	golang.org/x/sys v0.38.0
 	modernc.org/sqlite v1.46.1
 )

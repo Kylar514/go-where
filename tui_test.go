@@ -60,6 +60,26 @@ func scriptTUI(t *testing.T, steps ...string) *[]string {
 				}
 			}
 			return m, fmt.Errorf("invalid scripted choice %q for %s", id, m.title)
+		case *multiDialog:
+			// Comma-separated: toggle:ID..., then exactly one of done, manual, back.
+			seen = append(seen, "multi:"+m.title)
+			for _, token := range strings.Split(step, ",") {
+				switch {
+				case token == "back":
+					m.back = true
+					return m, nil
+				case token == "done" || token == "manual":
+					m.action = token
+					return m, nil
+				case strings.HasPrefix(token, "toggle:"):
+					if !m.toggleID(strings.TrimPrefix(token, "toggle:")) {
+						return m, fmt.Errorf("scripted toggle of unknown item %q in %s", token, m.title)
+					}
+				default:
+					return m, fmt.Errorf("invalid scripted multi-select token %q", token)
+				}
+			}
+			return m, fmt.Errorf("scripted multi-select %s needs done, manual or back", m.title)
 		case *pathModel:
 			seen = append(seen, "path:"+m.input.Value())
 			parts := strings.SplitN(strings.TrimSuffix(step, "\n"), "\n", 2)

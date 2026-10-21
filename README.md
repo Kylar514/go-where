@@ -54,7 +54,7 @@ Rows show host aliases and addresses; the preview shows jump routes, comments, s
 | Ctrl+Alt+W | New window per host in the originating session |
 | Ctrl+Alt+N | New session, one window per host; switch the originating client |
 | Ctrl+Alt+T | New terminal window per host |
-| Ctrl+S | Settings in a floating editor terminal |
+| Ctrl+S | Settings menu; raw editor is available inside |
 | Ctrl+N | New database connection; change Type inside the editor |
 | Ctrl+E | Edit the highlighted database record in the TUI, or open its legacy source file |
 | Ctrl+Alt+S | Settings in a new tmux pane |
@@ -82,7 +82,7 @@ SQLite is optional. No database is created, imported, or exported at startup; ex
 4. Use Sources to choose **All sources**, **SSH config**, or a named local source. Same aliases in different sources remain separate records; marks and focus use source/connection IDs. Host columns show **Host / Hostname or IP / Source / Tags / Notes**. Narrow lists hide Notes first, then Tags; Details retains the full values, even when resolved SSH settings have an error. SSH-config comments appear as Notes, with `SSH config` as their Source. Tunnels retain their own Name/Status columns.
 5. Press Enter to connect using the existing tmux/terminal destinations. Managed SSH connections use a private temporary config snapshot and **do not read personal or system SSH configuration**. Each hop has its own user/key; snapshot cleanup happens when SSH exits. Standard host-key verification, agent support, OpenSSH default identities and interactive authentication remain in effect. Blank user uses the OS username. Explicit key paths must be absolute or start with `~/`.
 
-Database SSH, RDP and tunnel records appear in their respective modes. SCP/rsync remain actions on SSH hosts, not connection types; their database integration is still deferred. Remote API sources, SSH-config import/export, bulk profiles and tag rules are deferred. Existing file-based modes remain available. Databases use **schema version 2**. Opening a version-1 database transactionally marks existing records as SSH, preserving IDs, settings, tags and jump references. Migration failures roll back; unknown versions are rejected. Older binaries cannot open version 2, so back up databases before upgrading if rollback to an older binary matters. Do not manually edit tables. Keep databases on a local filesystem; network-shared SQLite files are not the future API-server design.
+Database SSH, RDP and tunnel records appear in their respective modes. SCP/rsync remain actions on SSH hosts, not connection types; their database integration is still deferred. Remote API sources, SSH-config import/export, bulk profiles and tag rules are deferred. Existing file-based modes remain available. Databases use **schema version 5**. Version-1 records are upgraded as SSH with IDs, settings, tags and references preserved; later versions advance the marker without rewriting records. Versions 3–5 prevent older binaries from silently ignoring agent or SSH compatibility settings, including host-key and public-key signature additions in v5. Unknown versions are rejected. Back up databases/settings before upgrading if rollback to an older binary matters. Do not manually edit tables. Keep databases on a local filesystem; network-shared SQLite files are not the future API-server design.
 
 ### Type-specific fields
 
@@ -92,7 +92,7 @@ Database SSH, RDP and tunnel records appear in their respective modes. SCP/rsync
 
 Database tunnels reuse Diglet's detached-process, PID-identity, ownership and listener-status engine on Linux/Windows. They outlive the TUI. SSH configuration snapshots are held in the private cache under `go-where/managed-tunnels/` and removed on normal stop; abnormal termination can leave metadata-only snapshots, overwritten on the next start. Status indicates listener/process ownership, not remote website health. Unlike legacy Diglet tunnels, database tunnels use passive listener polling rather than the probe that assumes `127.0.0.1`. **The registry still reserves ports globally: the same local port cannot be used simultaneously on two different bind addresses.** macOS retains the existing explicit unsupported-tunnel-backend message; editing records and RDP/SSH cross-builds are available, but native runtime validation remains necessary.
 
-Source registrations are stored in the local settings file. Creating/attaching a source updates that file atomically (it may reformat JSON and include default settings). A registration failure leaves the database in place so it can be attached after fixing settings. A source whose file is missing or whose identity/schema changed is an error, not an empty source; correct its path or remove its registration in settings. No personal SSH config is changed.
+Source registrations are stored in the local settings file. Creating/attaching a source appends only its registration, preserving JSONC comments and unrelated settings, using the same validated atomic writer as Settings. A registration failure leaves the database in place so it can be attached after fixing settings. A source whose file is missing or whose identity/schema changed is an error, not an empty source; correct its path or remove its registration in settings. No personal SSH config is changed.
 
 ### Searching inventory
 
@@ -121,7 +121,7 @@ Add these settings alongside your existing settings; use the source and connecti
 }
 ```
 
-For that example, store `${ADMIN_USER}` as the connection's user and `${SSHKEY}` as its identity file. Supported explicit override fields: `user`, `identity_file`, `address`, `port`, `jump_id`. An empty `identity_file` clears the stored key; an empty `jump_id` makes the connection direct. Overrides live in local settings, not in the database, so they are not transferred with a copied source file. Variable/profile editing in the TUI is not included yet; Ctrl+S opens local settings.
+For that example, store `${ADMIN_USER}` as the connection's user and `${SSHKEY}` as its identity file. Supported explicit override fields: `user`, `identity_file`, `address`, `port`, `jump_id`, `ssh_agent`, `identities_only`, `extra_kex_algorithms`, `extra_host_key_algorithms`, `extra_pubkey_algorithms`. An empty `identity_file` clears the stored key; an empty `jump_id` makes the connection direct. Overrides live in local settings, not in the database, so they are not transferred with a copied source file. SSH-agent definitions and compatibility overrides have TUI forms; other variables/overrides still use **Settings → Edit raw settings**.
 
 Database files contain inventory metadata, not stored passwords or key contents. Treat them as private and back them up. New databases and SSH snapshots request owner-only POSIX permissions; Windows uses the containing directory's ACLs, which must be protected appropriately. The pure-Go SQLite driver requires no installed SQLite executable or CGO.
 
@@ -276,7 +276,11 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
-`go-where config` creates and opens `$XDG_CONFIG_HOME/go-where/config.json` (normally `~/.config/go-where/config.json`). JSON keeps the executable dependency-free. Missing fields use these defaults:
+**Ctrl+S** or **Settings** opens a draft-based settings menu: **General** (startup mode), **SSH agents**, **Connection settings & overrides** (SSH agents), and **Edit raw settings**. Save validates and atomically replaces the file; Cancel writes nothing. Raw editing explicitly discards an unsaved draft. Saved-account management, other preferences forms and configurable keybindings are deferred.
+
+The existing `config.json` accepts **JSONC** (`//` and `/* … */` comments and trailing commas); no rename is required. `--config path.jsonc` works too. Existing strict JSON remains valid. Reads and targeted edits use HuJSON; comments and unrelated settings are preserved, duplicate object keys are rejected, and stale drafts fail instead of overwriting external edits. Writers serialize with a `.lock` file; after an abnormal termination, remove an abandoned lock only when no settings write is running. Standard JSON-only tools will not understand files once comments are added.
+
+`go-where config` remains a direct raw-editor/recovery command for `$XDG_CONFIG_HOME/go-where/config.json` (normally `~/.config/go-where/config.json`), even when settings are malformed. Ctrl+Alt+S keeps the direct raw tmux-pane editor. Missing fields use these defaults:
 
 ```json
 {
@@ -302,6 +306,75 @@ The test creates its own temporary source/destination directories and checks SCP
     "title_bar": true,
     "destination": "background"
   }
+}
+```
+
+### Startup mode
+
+General → Startup mode sets `startup_mode` to `ssh`, `rdp`, `tunnels`, `scp`, `rsync`, or `legacy-scp`. Unspecified means SSH. An explicit command such as `go-where rdp` always wins. Saving the preference changes the next launch, not the view already open.
+
+### SSH compatibility (legacy servers)
+
+An SSH connection's editor has **SSH compatibility…** with four per-connection settings, stored in the database:
+
+- **Identities only:** Default / Yes / No. Yes emits `IdentitiesOnly yes`, restricting offered keys to the configured identity (the same as the SSH-config entry's `IdentitiesOnly yes`).
+- **Additional key exchanges:** chosen from a searchable checklist, not typed. Emitted as `KexAlgorithms +name,…`, which **adds** to OpenSSH's defaults rather than replacing them.
+
+  The list comes from your own OpenSSH: `ssh -Q kex` (everything it can negotiate) minus the defaults reported by `ssh -G -F none` (already on). What remains is exactly what a `+` can add. SHA-1 exchanges are marked **⚠ weak** and listed after stronger ones. Space, Enter or a click toggles an entry, typing filters, and **Esc discards** every change made in the list. **Done** applies; **Type a name manually…** adds a bare name the list does not offer (prefixes `+`/`-`/`^`, wildcards, spaces and directives are rejected). Checking nothing means no additions.
+
+  Names already stored on a shared record stay in the list even when your OpenSSH lacks them, marked *not supported by this machine's OpenSSH*, so opening the picker never silently drops them. **Launching with such a name fails with a message naming it** (and Details shows the same), rather than OpenSSH's "Bad SSH2 KexAlgorithms". Fix it by unchecking the name or with a local override. If `ssh` cannot be queried (not installed, or it errors), a built-in list of three common legacy exchanges is shown, the check is skipped, and OpenSSH remains the authority at connect time. The capability query runs once per go-where process.
+
+- **Additional host-key algorithms:** the same checklist, emitting `HostKeyAlgorithms +name,…` for server identity verification. Candidates come from `ssh -Q HostKeyAlgorithms` minus the defaults from `ssh -G -F none`.
+- **Additional public-key signature algorithms:** the same checklist, emitting `PubkeyAcceptedAlgorithms +name,…` for user authentication. Candidates come from `ssh -Q PubkeyAcceptedAlgorithms` minus the defaults.
+
+For a legacy RSA server, select the bare name **ssh-rsa** in both new checklists if diagnostics show both exceptions are required. The launcher adds `+` automatically. Do not put `ssh-rsa` in the key-exchange checklist. RSA/SHA-2 signatures are not weak; `ssh-rsa` (including certificates) uses legacy SHA-1 and is marked weak, as is DSA. If OpenSSH cannot be queried, the signature checklists offer only `ssh-rsa` as an unverified fallback plus manual entry. Stored unsupported names remain visible and are rejected at launch when local support is known. Capability results are cached per directive for the process.
+
+Legacy algorithms are weak, so enable only what a specific server requires. All exceptions remain connection-specific; global defaults and host-key verification are unchanged. The agent choice is separate: selecting the legacy agent changes which agent signs, not which algorithms are negotiated.
+
+To override locally, use **Settings → Connection settings & overrides → (host) → SSH compatibility**, or **Local compatibility override…** in the connection editor (this saves local settings separately). Each field can **inherit** the database value or be set locally. For key exchanges, choosing "Choose local additions…" opens the same checklist, starting from the list that currently applies so removing one entry is one click. Checking nothing is an explicit empty local list that disables the database's additions for you; "Inherit" follows the database. Local settings example:
+
+```jsonc
+"overrides": {
+  "SOURCE_ID": {
+    "CONNECTION_ID": {
+      "identities_only": true,
+      "extra_kex_algorithms": ["diffie-hellman-group1-sha1"],
+      "extra_host_key_algorithms": ["ssh-rsa"],
+      "extra_pubkey_algorithms": ["ssh-rsa"]   // [] disables DB additions; omit to inherit
+    }
+  }
+}
+```
+
+Settings apply per hop: the destination and each jump host use their own record's values, including jumps used by RDP and SSH tunnels. Details shows the effective value and whether it came from a local override, the connection, or the system default.
+
+### SSH agents and local agent overrides
+
+1. Settings → SSH agents → Add. Give the profile a name, such as `legacy`, and either an environment variable (`SSH_AUTH_SOCK_LEGACY`) or a literal absolute socket/Windows pipe path. Apply the profile to the draft, then Save Settings.
+2. An SSH connection's **Agent** is an optional database default: unspecified/system default, Disabled, or a named local profile. Only the profile name goes in inventory; endpoints remain local settings.
+3. To override it locally, choose Settings → Connection settings & overrides and select an SSH record. **Inherit** removes the override; **System default** explicitly overrides a database profile with normal OpenSSH behavior; **Disabled** writes `IdentityAgent none`; a named profile uses its resolved endpoint. Save Settings to commit. RDP/tunnel agent choices belong to their referenced SSH records.
+4. Existing SSH connection editors also offer **Local agent override…**, with an explicit, separate local-settings Save. This does not modify the database, and cancelling the connection editor later does not undo that separately confirmed save. Other unsaved connection edits remain in the editor.
+
+Precedence is **local override → database connection default → system default**. Effective selection/origin is shown in the editor and Details. Each destination/jump gets its own `IdentityAgent` in the private SSH snapshot, including jumps used by RDP/tunnels. No agent forwarding or legacy SSH algorithms are enabled. Disabling an agent does not disable key-file or password authentication.
+
+System default emits no custom directive: Linux uses normal OpenSSH/`SSH_AUTH_SOCK`; Windows keeps its OpenSSH client's agent discovery. Named Unix endpoints must exist and be socket files; socket liveness/signing remains the client's responsibility. Named Windows endpoints must be absolute pipe/socket paths supported by the installed OpenSSH client; Windows runtime validation is still required. Missing definitions or unset environment variables fail clearly, never by silently selecting a different agent. Existing SSH-config-backed launches remain governed by their own SSH configuration, not these database overrides.
+
+Environment variables must be inherited by the go-where process. A custom variable may need adding to tmux's `update-environment`/server environment when launching through a binding. Agent changes affect new sessions; stop/restart an existing tunnel to regenerate its snapshot.
+
+Example local settings (merge with existing settings):
+
+```jsonc
+{
+  // Default first view; an explicit CLI mode wins.
+  "startup_mode": "rdp",
+  "ssh_agents": {
+    "legacy": { "socket_env": "SSH_AUTH_SOCK_LEGACY" },
+  },
+  "overrides": {
+    "SOURCE_ID": {
+      "CONNECTION_ID": { "ssh_agent": "legacy" },
+    },
+  },
 }
 ```
 
@@ -354,7 +427,7 @@ hl.window_rule({
 })
 ```
 
-Without an equivalent compositor rule, or if the selected terminal ignores the requested app ID, Ctrl+S/E still open Neovim in a separate terminal, but it may tile instead of float. Physical shortcuts and desktop behavior must be verified on the host, not just in a container.
+Without an equivalent compositor rule, or if the selected terminal ignores the requested app ID, legacy file editing and Settings' raw-editor action still open Neovim in a separate terminal, but it may tile instead of float. Database connection forms and Ctrl+S Settings stay inside the TUI. Physical shortcuts and desktop behavior must be verified on the host, not just in a container.
 
 ## Private examples
 

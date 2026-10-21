@@ -1,14 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/tailscale/hujson"
 )
 
 func inventoryPrompt(label, value string) (string, bool, error) {
@@ -16,54 +16,20 @@ func inventoryPrompt(label, value string) (string, bool, error) {
 }
 
 func registerSource(settings string, s InventorySource) error {
-	if real, err := filepath.EvalSymlinks(settings); err == nil {
-		settings = real
-	}
-	if err := os.MkdirAll(filepath.Dir(settings), 0700); err != nil {
-		return err
-	}
-	// Serialize go-where's registry writes; never replace a config from a stale UI snapshot.
-	lock, err := os.OpenFile(settings+".lock", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if err != nil {
-		return fmt.Errorf("cannot lock settings (another source edit may be running): %w", err)
-	}
-	lock.Close()
-	defer os.Remove(settings + ".lock")
-	original, readErr := os.ReadFile(settings)
-	if readErr != nil && !os.IsNotExist(readErr) {
-		return readErr
-	}
-	c, err := loadConfig(settings)
-	if err != nil {
-		return err
-	}
-	c.Sources = append(c.Sources, s)
-	if err = c.validate(); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(filepath.Dir(settings), ".go-where-settings-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	e := json.NewEncoder(f)
-	e.SetIndent("", "  ")
-	if err = e.Encode(c); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	current, currentErr := os.ReadFile(settings)
-	if (currentErr != nil && !os.IsNotExist(currentErr)) || !bytes.Equal(original, current) {
-		return fmt.Errorf("settings changed during source registration; retry")
-	}
-	return os.Rename(f.Name(), settings)
+	return modifySettings(settings, nil, func(v *hujson.Value, c Config) error {
+		c.Sources = append(c.Sources, s)
+		if err := c.validate(); err != nil {
+			return err
+		}
+		node := v.Find("/sources")
+		if node == nil {
+			return setSetting(v, []string{"sources"}, []InventorySource{s})
+		}
+		if _, ok := node.Value.(*hujson.Array); !ok {
+			return setSetting(v, []string{"sources"}, []InventorySource{s})
+		}
+		return patchSetting(v, "add", "/sources/-", s)
+	})
 }
 
 func attachInventory(name, path string) (InventorySource, error) {
@@ -217,6 +183,43 @@ func editConnection(c Config, state *PickerState, h *Host) error {
 			return e
 		}
 		switch id {
+		case "compatibility":
+			if e = editSSHCompatibility(&r); e != nil {
+				return e
+			}
+			continue
+		case "ssh_agent":
+			v, b, e := chooseAgent(c, false)
+			if e != nil {
+				return e
+			}
+			if !b {
+				r.SSHAgent = v
+			}
+			continue
+		case "agent_info":
+			continue
+		case "local_agent", "local_compatibility":
+			if !existing || originalKind != "ssh" || state.ConfigPath == "" {
+				if e = notice("Save an SSH connection first, then edit its local override."); e != nil {
+					return e
+				}
+				continue
+			}
+			editor := editAgentOverrideDraft
+			if id == "local_compatibility" {
+				editor = editCompatibilityOverrideDraft
+			}
+			if e = editConnectionOverride(state.ConfigPath, *h, editor); e != nil {
+				if e = notice(e.Error()); e != nil {
+					return e
+				}
+			}
+			c, e = loadConfig(state.ConfigPath)
+			if e != nil {
+				return e
+			}
+			continue
 		case "account_info":
 			continue
 		case "type":

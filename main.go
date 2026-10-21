@@ -47,7 +47,7 @@ func app(args []string) error {
 	}
 	fs := flag.NewFlagSet("go-where", flag.ContinueOnError)
 	sshConfig := fs.String("ssh-config", filepath.Join(home, ".ssh", "config"), "SSH config to browse and connect with")
-	config := fs.String("config", settings, "picker settings (JSON)")
+	config := fs.String("config", settings, "settings (JSON with comments / JSONC)")
 	dest := fs.String("destination", "", "override default: tmux-pane, tmux-window, tmux-session, terminal, current")
 	noPopup := fs.Bool("no-popup", false, "run inline instead of opening a tmux popup")
 	popup := fs.Bool("popup", false, "open inside a tmux popup (default: standalone TUI)")
@@ -65,7 +65,9 @@ func app(args []string) error {
 		args = args[1:]
 	}
 	mode := "ssh"
+	explicitMode := false
 	if !editSettings && len(args) > 0 && validMode(args[0]) {
+		explicitMode = true
 		mode, args = args[0], args[1:]
 	}
 	if err := fs.Parse(args); err != nil {
@@ -104,6 +106,9 @@ func app(args []string) error {
 		}
 		// A broken settings file must remain editable using safe defaults.
 		c = defaultConfig()
+	}
+	if !explicitMode && c.StartupMode != "" {
+		mode = c.StartupMode
 	}
 	if *dest != "" {
 		c.Destination = *dest
@@ -203,6 +208,21 @@ func app(args []string) error {
 			return err
 		}
 		switch key {
+		case "settings", "ctrl-s":
+			raw, e := settingsMenu(*config)
+			if e != nil {
+				if e = notice(e.Error()); e != nil {
+					return e
+				}
+				continue
+			}
+			if raw {
+				if err = ensureConfig(*config); err != nil {
+					return err
+				}
+				return editFile(*config, 0, "tmux-pane", true, o, c)
+			}
+			continue
 		case "sources":
 			if err = sourceMenu(*config, c, &state); err != nil {
 				if err = notice(err.Error()); err != nil {
@@ -245,14 +265,14 @@ func app(args []string) error {
 			return editFile(path, 0, c.EditDestination, false, o, c)
 		case "ctrl-r":
 			continue
-		case "ctrl-s", "ctrl-alt-s":
+		case "ctrl-alt-s":
 			if key == "ctrl-alt-s" && o.Pane == "" {
 				return fmt.Errorf("editing in a pane requires tmux; use Ctrl+S for a floating editor")
 			}
 			if err := ensureConfig(*config); err != nil {
 				return err
 			}
-			return editFile(*config, 0, "tmux-pane", key == "ctrl-s", o, c)
+			return editFile(*config, 0, "tmux-pane", false, o, c)
 		case "ctrl-e", "ctrl-alt-e":
 			if len(selected) == 0 {
 				continue

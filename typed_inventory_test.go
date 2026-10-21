@@ -61,7 +61,7 @@ func TestTypedInventoryMigrationAndReferences(t *testing.T) {
 	}
 	var version int
 	db.QueryRow("PRAGMA user_version").Scan(&version)
-	if version != 2 {
+	if version != 5 {
 		t.Fatal("migration did not update version")
 	}
 	db.Exec("PRAGMA user_version=99")

@@ -33,6 +33,13 @@ func connectionFields(r Connection, s InventorySource, c Config) []choice {
 	switch r.kind() {
 	case "ssh":
 		fields = append(fields, choice{"user", "User: " + r.User}, choice{"key", "Identity file: " + r.IdentityFile}, choice{"jump", "Jump connection ID: " + r.JumpID})
+		label := agentChoiceLabel(r.SSHAgent)
+		if r.SSHAgent == "" {
+			label = "Unspecified (system default)"
+		}
+		name, origin := effectiveAgent(c, s.ID, r)
+		fields = append(fields, choice{"ssh_agent", "Agent: " + label}, choice{"local_agent", "Local agent override… (separate settings)"}, choice{"agent_info", "Effective agent: " + agentChoiceLabel(name) + " — " + origin})
+		fields = append(fields, choice{"compatibility", "SSH compatibility… (identities / algorithms)"}, choice{"local_compatibility", "Local compatibility override… (separate settings)"})
 	case "rdp":
 		domain := "(local default)"
 		if r.Domain != nil {

@@ -23,27 +23,32 @@ type InventorySource struct {
 }
 
 type Connection struct {
-	Type         string   `json:"type,omitempty"`
-	Domain       *string  `json:"domain,omitempty"`
-	Account      string   `json:"account,omitempty"`
-	TunnelType   string   `json:"tunnel_type,omitempty"`
-	Bind         string   `json:"local_bind,omitempty"`
-	LocalPort    int      `json:"local_port,omitempty"`
-	RemoteHost   string   `json:"remote_host,omitempty"`
-	RemotePort   int      `json:"remote_port,omitempty"`
-	SSHID        string   `json:"ssh_id,omitempty"`
-	Resource     string   `json:"resource,omitempty"`
-	Namespace    string   `json:"namespace,omitempty"`
-	Context      string   `json:"context,omitempty"`
-	ID           string   `json:"id"`
-	Alias        string   `json:"alias"`
-	Address      string   `json:"address"`
-	Port         int      `json:"port"`
-	User         string   `json:"user,omitempty"`
-	IdentityFile string   `json:"identity_file,omitempty"`
-	JumpID       string   `json:"jump_id,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
-	Notes        string   `json:"notes,omitempty"`
+	ExtraHostKeyAlgorithms []string `json:"extra_host_key_algorithms,omitempty"`
+	ExtraPubkeyAlgorithms  []string `json:"extra_pubkey_algorithms,omitempty"`
+	IdentitiesOnly         *bool    `json:"identities_only,omitempty"`
+	ExtraKexAlgorithms     []string `json:"extra_kex_algorithms,omitempty"`
+	SSHAgent               string   `json:"ssh_agent,omitempty"`
+	Type                   string   `json:"type,omitempty"`
+	Domain                 *string  `json:"domain,omitempty"`
+	Account                string   `json:"account,omitempty"`
+	TunnelType             string   `json:"tunnel_type,omitempty"`
+	Bind                   string   `json:"local_bind,omitempty"`
+	LocalPort              int      `json:"local_port,omitempty"`
+	RemoteHost             string   `json:"remote_host,omitempty"`
+	RemotePort             int      `json:"remote_port,omitempty"`
+	SSHID                  string   `json:"ssh_id,omitempty"`
+	Resource               string   `json:"resource,omitempty"`
+	Namespace              string   `json:"namespace,omitempty"`
+	Context                string   `json:"context,omitempty"`
+	ID                     string   `json:"id"`
+	Alias                  string   `json:"alias"`
+	Address                string   `json:"address"`
+	Port                   int      `json:"port"`
+	User                   string   `json:"user,omitempty"`
+	IdentityFile           string   `json:"identity_file,omitempty"`
+	JumpID                 string   `json:"jump_id,omitempty"`
+	Tags                   []string `json:"tags,omitempty"`
+	Notes                  string   `json:"notes,omitempty"`
 }
 
 func (r Connection) kind() string {
@@ -54,12 +59,17 @@ func (r Connection) kind() string {
 }
 
 type ConnectionOverride struct {
-	Variables    map[string]string `json:"variables,omitempty"`
-	User         *string           `json:"user,omitempty"`
-	IdentityFile *string           `json:"identity_file,omitempty"`
-	Address      *string           `json:"address,omitempty"`
-	Port         *int              `json:"port,omitempty"`
-	JumpID       *string           `json:"jump_id,omitempty"`
+	ExtraHostKeyAlgorithms *[]string         `json:"extra_host_key_algorithms,omitempty"`
+	ExtraPubkeyAlgorithms  *[]string         `json:"extra_pubkey_algorithms,omitempty"`
+	IdentitiesOnly         *bool             `json:"identities_only,omitempty"`
+	ExtraKexAlgorithms     *[]string         `json:"extra_kex_algorithms,omitempty"`
+	SSHAgent               *string           `json:"ssh_agent,omitempty"`
+	Variables              map[string]string `json:"variables,omitempty"`
+	User                   *string           `json:"user,omitempty"`
+	IdentityFile           *string           `json:"identity_file,omitempty"`
+	Address                *string           `json:"address,omitempty"`
+	Port                   *int              `json:"port,omitempty"`
+	JumpID                 *string           `json:"jump_id,omitempty"`
 }
 
 func inventoryID() string {
@@ -97,8 +107,8 @@ func openInventory(s InventorySource) (*sql.DB, error) {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version != 1 && version != 2 {
-		return fail(fmt.Errorf("unsupported inventory schema %d (expected 1 or 2)", version))
+	if version < 1 || version > 5 {
+		return fail(fmt.Errorf("unsupported inventory schema %d (expected 1 through 5)", version))
 	}
 	var id string
 	if err = db.QueryRow("SELECT id FROM source").Scan(&id); err != nil {
@@ -109,6 +119,13 @@ func openInventory(s InventorySource) (*sql.DB, error) {
 	}
 	if version == 1 {
 		if err = migrateInventoryV2(db); err != nil {
+			return fail(err)
+		}
+	}
+	if version < 5 {
+		// Older clients must not silently ignore agent/identity restrictions.
+		// No connection data or IDs need to be rewritten for this marker.
+		if _, err = db.Exec("PRAGMA user_version=5"); err != nil {
 			return fail(err)
 		}
 	}
@@ -181,7 +198,7 @@ func createInventory(name, path string) (InventorySource, error) {
 	for _, stmt := range []string{
 		"CREATE TABLE source (id TEXT PRIMARY KEY NOT NULL)",
 		"CREATE TABLE connections (id TEXT PRIMARY KEY NOT NULL, alias TEXT UNIQUE NOT NULL, data TEXT NOT NULL)",
-		"PRAGMA user_version=2",
+		"PRAGMA user_version=5",
 	} {
 		if _, err = tx.Exec(stmt); err != nil {
 			return s, err
@@ -236,6 +253,17 @@ func validateConnections(records []Connection) error {
 	for _, c := range records {
 		if !inventoryName(c.ID) || !inventoryName(c.Alias) {
 			return fmt.Errorf("%s: ID, valid alias, address and port (1–65535) required", c.Alias)
+		}
+		if !validAgentChoice(c.SSHAgent) {
+			return fmt.Errorf("%s: invalid SSH agent selection", c.Alias)
+		}
+		if err := validateExtraKex(c.ExtraKexAlgorithms); err != nil {
+			return fmt.Errorf("%s: %w", c.Alias, err)
+		}
+		for directive, names := range map[string][]string{"HostKeyAlgorithms": c.ExtraHostKeyAlgorithms, "PubkeyAcceptedAlgorithms": c.ExtraPubkeyAlgorithms} {
+			if err := validateExtraAlgorithms(directive, names); err != nil {
+				return fmt.Errorf("%s: %w", c.Alias, err)
+			}
 		}
 		switch c.kind() {
 		case "ssh", "rdp":

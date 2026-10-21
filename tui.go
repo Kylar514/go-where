@@ -428,6 +428,8 @@ func (m *pickerModel) action(action string) tea.Cmd {
 		return m.finish("target")
 	case "sources":
 		return m.finish("sources")
+	case "settings":
+		return m.finish("settings")
 	case "connect":
 		return m.finish("enter")
 	case "protocol":
@@ -843,12 +845,13 @@ func (m *pickerModel) View() string {
 	lines = append(lines, body, strings.Repeat("─", width), m.search.View())
 	var buttons strings.Builder
 	buttonsList := []struct{ label, action string }{{"Connect", "connect"}, {"Target", "target"}, {"Help", "help"}}
+	buttonsList = append(buttonsList, struct{ label, action string }{"Settings", "settings"})
 	buttonsList = append(buttonsList, struct{ label, action string }{"Sources", "sources"})
 	if m.state.Mode == "rdp" {
 		buttonsList = append([]struct{ label, action string }{{"Connect", "connect"}, {"Account", "account"}}, buttonsList[1:]...)
 	}
 	if m.state.Mode == "tunnels" {
-		buttonsList = []struct{ label, action string }{{"Toggle", "connect"}, {"Help", "help"}}
+		buttonsList = []struct{ label, action string }{{"Toggle", "connect"}, {"Settings", "settings"}, {"Help", "help"}}
 	}
 	for _, b := range buttonsList {
 		x := lipgloss.Width(buttons.String())

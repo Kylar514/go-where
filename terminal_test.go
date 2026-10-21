@@ -139,7 +139,11 @@ if [ "$1" = new-session ]; then printf '$42\n'; fi`)
 		{"ctrl-alt-t", "terminal\nssh\n-F\n" + sshConfig + "\n--\nweb"},
 	} {
 		t.Run(tc.key, func(t *testing.T) {
-			scriptTUI(t, "\n"+tc.key+"\n0\tweb\n")
+			steps := []string{"\n" + tc.key + "\n0\tweb\n"}
+			if tc.key == "ctrl-s" {
+				steps = append(steps, "raw")
+			}
+			scriptTUI(t, steps...)
 			t.Setenv("ACTION", tc.key)
 			writeTestFile(t, log, "")
 			if err := app([]string{"--no-popup", "--origin", encodeOrigin(o), "--config", settings, "--ssh-config", sshConfig}); err != nil {

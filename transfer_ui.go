@@ -41,7 +41,7 @@ Shift+Tab      Mark and move down
 Shift+↑/↓      Scroll preview
 
 EDIT
-Ctrl+S         Settings in a floating terminal
+Ctrl+S         Settings menu (raw editor available inside)
 Ctrl+E         Database connection form / legacy host config editor
 Ctrl+Alt+S     Settings in a tmux pane
 Ctrl+Alt+E     Highlighted host config in a tmux pane

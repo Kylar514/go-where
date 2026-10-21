@@ -172,6 +172,41 @@ func managedJob(h Host, c Config) (managedSSHJob, error) {
 		if r.IdentityFile != "" {
 			fmt.Fprintf(&text, "    IdentityFile %s\n", quote(strings.ReplaceAll(r.IdentityFile, "%", "%%")))
 		}
+		agent, _, err := resolveSSHAgent(c, s.ID, r)
+		if err != nil {
+			return managedSSHJob{}, fmt.Errorf("%s / %s: %w", s.Name, r.Alias, err)
+		}
+		if agent != "" {
+			fmt.Fprintf(&text, "    IdentityAgent %s\n", quote(strings.ReplaceAll(agent, "%", "%%")))
+		}
+		only, kex := effectiveSSHCompatibility(c, s.ID, r)
+		if err := validateExtraKex(kex); err != nil {
+			return managedSSHJob{}, fmt.Errorf("%s: %w", r.Alias, err)
+		}
+		if err := checkKexSupported(kex); err != nil {
+			return managedSSHJob{}, fmt.Errorf("%s: %w", r.Alias, err)
+		}
+		if only != nil {
+			fmt.Fprintf(&text, "    IdentitiesOnly %s\n", identitiesOnlyLabel(only))
+		}
+		if len(kex) > 0 {
+			fmt.Fprintf(&text, "    KexAlgorithms +%s\n", strings.Join(kex, ","))
+		}
+		hostkey, pubkey := effectiveSignatureAlgorithms(c, s.ID, r)
+		for _, addition := range []struct {
+			directive string
+			names     []string
+		}{{"HostKeyAlgorithms", hostkey}, {"PubkeyAcceptedAlgorithms", pubkey}} {
+			if err := validateExtraAlgorithms(addition.directive, addition.names); err != nil {
+				return managedSSHJob{}, fmt.Errorf("%s: %w", r.Alias, err)
+			}
+			if err := checkAlgorithmsSupported(addition.directive, addition.names); err != nil {
+				return managedSSHJob{}, fmt.Errorf("%s: %w", r.Alias, err)
+			}
+			if len(addition.names) > 0 {
+				fmt.Fprintf(&text, "    %s +%s\n", addition.directive, strings.Join(addition.names, ","))
+			}
+		}
 		if i+1 < len(chain) {
 			fmt.Fprintf(&text, "    ProxyJump gw-%d\n", i+1)
 		}
@@ -236,7 +271,7 @@ func sshSnapshot(configuration string) (string, func(), error) {
 	return path, cleanup, nil
 }
 
-func selectedRecord(h Host, c Config) (InventorySource, Connection, error) {
+func storedRecord(h Host, c Config) (InventorySource, Connection, error) {
 	s, err := findSource(c, h.SourceID)
 	if err != nil {
 		return s, Connection{}, err
@@ -247,11 +282,19 @@ func selectedRecord(h Host, c Config) (InventorySource, Connection, error) {
 	}
 	for _, r := range records {
 		if r.ID == h.ConnectionID {
-			r, err = resolvedConnection(c, s, r)
-			return s, r, err
+			return s, r, nil
 		}
 	}
 	return s, Connection{}, fmt.Errorf("connection no longer exists")
+}
+
+func selectedRecord(h Host, c Config) (InventorySource, Connection, error) {
+	s, r, err := storedRecord(h, c)
+	if err != nil {
+		return s, r, err
+	}
+	r, err = resolvedConnection(c, s, r)
+	return s, r, err
 }
 
 func managedDetails(h Host, c Config) string {
@@ -276,6 +319,15 @@ func managedDetails(h Host, c Config) string {
 		var spec inventoryTunnelSpec
 		_ = json.Unmarshal(data, &spec)
 		return metadata + fmt.Sprintf("%s tunnel\nLocal: %s:%d\nRemote: %s:%d\nResource: %s\nNamespace: %s\nContext: %s\n\n%s", r.TunnelType, r.Bind, r.LocalPort, r.RemoteHost, r.RemotePort, r.Resource, r.Namespace, r.Context, shellCommand(spec.Argv))
+	}
+	if s, r, e := selectedRecord(h, c); e == nil {
+		_, description, e := resolveSSHAgent(c, s.ID, r)
+		metadata += "Agent: " + description + "\n"
+		if e != nil {
+			metadata += e.Error() + "\n"
+		}
+		metadata += "\n"
+		metadata += compatibilityDetails(c, s.ID, r) + "\n"
 	}
 	j, err := managedJob(h, c)
 	if err != nil {

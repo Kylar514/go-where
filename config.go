@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,8 @@ import (
 )
 
 type Config struct {
+	StartupMode      string                     `json:"startup_mode,omitempty"`
+	SSHAgents        map[string]SSHAgentProfile `json:"ssh_agents,omitempty"`
 	activeRDPAccount RDPAccount
 	Sources          []InventorySource                        `json:"sources,omitempty"`
 	Variables        map[string]string                        `json:"variables,omitempty"`
@@ -39,27 +42,66 @@ func configPath() (string, error) {
 }
 
 func loadConfig(path string) (Config, error) {
-	c := defaultConfig()
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return c, nil
+		return defaultConfig(), nil
 	}
+	if err != nil {
+		return defaultConfig(), err
+	}
+	c, err := decodeConfig(data)
+	if err != nil {
+		return c, fmt.Errorf("%s: %w", path, err)
+	}
+	return c, nil
+}
+
+func decodeConfig(data []byte) (Config, error) {
+	c := defaultConfig()
+	v, err := parseSettings(data)
 	if err != nil {
 		return c, err
 	}
-	defer f.Close()
-	d := json.NewDecoder(f)
+	v.Standardize()
+	d := json.NewDecoder(bytes.NewReader(v.Pack()))
 	d.DisallowUnknownFields()
 	if err := d.Decode(&c); err != nil {
-		return c, fmt.Errorf("%s: %w", path, err)
+		return c, err
 	}
 	if err := d.Decode(new(any)); err != io.EOF {
-		return c, fmt.Errorf("%s: expected one JSON object", path)
+		return c, fmt.Errorf("expected one JSON object")
 	}
 	return c, c.validate()
 }
 
 func (c Config) validate() error {
+	if c.StartupMode != "" && !validMode(c.StartupMode) {
+		return fmt.Errorf("invalid startup_mode %q", c.StartupMode)
+	}
+	for name, p := range c.SSHAgents {
+		if err := validateAgentProfile(name, p); err != nil {
+			return err
+		}
+	}
+	for _, byID := range c.Overrides {
+		for _, o := range byID {
+			for directive, names := range map[string]*[]string{"HostKeyAlgorithms": o.ExtraHostKeyAlgorithms, "PubkeyAcceptedAlgorithms": o.ExtraPubkeyAlgorithms} {
+				if names != nil {
+					if err := validateExtraAlgorithms(directive, *names); err != nil {
+						return err
+					}
+				}
+			}
+			if o.ExtraKexAlgorithms != nil {
+				if err := validateExtraKex(*o.ExtraKexAlgorithms); err != nil {
+					return err
+				}
+			}
+			if o.SSHAgent != nil && !validAgentChoice(*o.SSHAgent) {
+				return fmt.Errorf("invalid local ssh_agent override")
+			}
+		}
+	}
 	ids, names, paths := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, s := range c.Sources {
 		if !inventoryName(s.ID) || s.ID == "ssh-config" || s.Name == "" || s.Path == "" || s.Type != "sqlite" {
