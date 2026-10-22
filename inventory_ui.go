@@ -71,6 +71,10 @@ func sourceMenu(settings string, c Config, state *PickerState) error {
 		state.Focus = ""
 		return nil
 	}
+	return addInventorySource(settings, c, state, id)
+}
+
+func addInventorySource(settings string, c Config, state *PickerState, id string) error {
 	name, back, err := inventoryPrompt("Source name", "Personal")
 	if err != nil || back {
 		return err
@@ -120,24 +124,51 @@ func sourceMenu(settings string, c Config, state *PickerState) error {
 	return nil
 }
 
-func writableSource(c Config, preferred string) (InventorySource, bool, error) {
+func writableSource(c Config, preferred string, settings ...string) (InventorySource, bool, error) {
 	if preferred != "" && preferred != "ssh-config" {
 		s, err := findSource(c, preferred)
 		return s, false, err
 	}
-	if len(c.Sources) == 0 {
+	path := ""
+	if len(settings) > 0 {
+		path = settings[0]
+	}
+	if len(c.Sources) == 0 && path == "" {
 		return InventorySource{}, false, fmt.Errorf("create a SQLite source first with Ctrl+B → Create local SQLite source")
 	}
-	options := []choice{}
-	for _, s := range c.Sources {
-		options = append(options, choice{s.ID, s.Name})
+	for {
+		options := []choice{}
+		for _, s := range c.Sources {
+			options = append(options, choice{s.ID, s.Name})
+		}
+		if path != "" {
+			options = append(options, choice{"create", "Create new source…"})
+		}
+		id, back, err := choose("Save connection in…", options, "")
+		if err != nil || back {
+			return InventorySource{}, back, err
+		}
+		if id == "create" {
+			state := PickerState{}
+			if err = addInventorySource(path, c, &state, "create"); err != nil {
+				if err = notice(err.Error()); err != nil {
+					return InventorySource{}, false, err
+				}
+				continue
+			}
+			if state.Source == "" {
+				continue
+			}
+			c, err = loadConfig(path)
+			if err != nil {
+				return InventorySource{}, false, err
+			}
+			s, err := findSource(c, state.Source)
+			return s, false, err
+		}
+		s, err := findSource(c, id)
+		return s, false, err
 	}
-	id, back, err := choose("Save connection in…", options, "")
-	if err != nil || back {
-		return InventorySource{}, back, err
-	}
-	s, err := findSource(c, id)
-	return s, false, err
 }
 
 func editConnection(c Config, state *PickerState, h *Host) error {
@@ -297,7 +328,7 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 				}
 				continue
 			}
-			selected, b, e := writableSource(c, "")
+			selected, b, e := writableSource(c, "", state.ConfigPath)
 			if e != nil {
 				return e
 			}

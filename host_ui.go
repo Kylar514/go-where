@@ -11,9 +11,12 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 	if selected != nil {
 		preferred = selected.SourceID
 	}
-	s, back, err := writableSource(c, preferred)
+	s, back, err := writableSource(c, preferred, state.ConfigPath)
 	if err != nil || back {
 		return err
+	}
+	if _, e := findSource(c, s.ID); e != nil {
+		c.Sources = append(c.Sources, s)
 	}
 	h := InventoryHost{ID: inventoryID()}
 	var profiles []Connection

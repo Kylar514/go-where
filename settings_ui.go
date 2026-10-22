@@ -84,7 +84,7 @@ func settingsMenu(path string) (raw bool, err error) {
 			{"overrides", "Connection settings & overrides — SSH agents / compatibility"},
 			{"raw", "Edit raw settings (JSON with comments)"},
 			{"save", "Save settings and return"}, {"cancel", "Cancel changes"},
-		}, "Changes remain a draft until Save. Existing config.json supports JSONC comments and trailing commas; no rename is required. Account management and keybinding configuration are not included yet.")
+		}, "Changes stay in a draft until you save.\n\n• Save applies your changes.\n• Cancel leaves settings unchanged.\n• Raw editing discards the current draft.\n\nJSONC comments and trailing commas are supported.\n\nAccount management and configurable hotkeys are not available yet.")
 		if e != nil || back || id == "cancel" {
 			return false, e
 		}

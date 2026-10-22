@@ -134,7 +134,7 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.query.Width = max(1, msg.Width-ansi.StringWidth(m.query.Prompt)-1)
 		m.preview.Width = max(1, msg.Width-4)
-		content := ansi.Hardwrap(cleanLines(m.text), m.preview.Width, true)
+		content := ansi.Wrap(cleanLines(m.text), m.preview.Width, "")
 		m.preview.Height = min(lipgloss.Height(content), max(1, (msg.Height-8)/2))
 		m.preview.SetContent(content)
 		if m.restorePreview != nil {
@@ -168,7 +168,7 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.tooSmall() {
 			return m, nil
 		}
-		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.height-1 && msg.X < 8 {
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.height-1 && msg.X >= 0 && msg.X < 8 {
 			m.done, m.back = true, true
 			return m, tea.Quit
 		}
@@ -224,7 +224,11 @@ func (m *multiDialog) View() string {
 		return fit("Resize terminal · Esc back", m.width)
 	}
 	w := m.width - 2
-	lines := []string{tuiAccent.Render(fit(m.title+" — Select several", w))}
+	header := m.title
+	if len(menuTrail) > 0 {
+		header = strings.Join(menuTrail, " › ") + " › " + m.title
+	}
+	lines := []string{tuiAccent.Render(fit(header+" — Select several", w))}
 	if m.text != "" {
 		lines = append(lines, m.preview.View(), "")
 	}
@@ -261,9 +265,9 @@ func (m *multiDialog) View() string {
 		}
 		lines = append(lines, row(i, plain, styled))
 	}
-	done := fmt.Sprintf("[ Done — apply %d selected ]", m.checkedCount())
-	manual := "[ Type a name manually… ]"
-	lines = append(lines, row(len(m.filtered), done, tuiAccent.Render(done)), row(len(m.filtered)+1, manual, tuiAccent.Render(manual)))
-	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), fit(tuiAccent.Render("[ Back ]")+"  Ctrl+H/← discard · Ctrl+L/Enter/Space toggle · ↑/↓ move · Ctrl+U/D details", m.width))
+	done := fmt.Sprintf("│ Done — apply %d selected │", m.checkedCount())
+	manual := "│ Type a name manually… │"
+	lines = append(lines, row(len(m.filtered), done, done), row(len(m.filtered)+1, manual, manual))
+	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), fit(compactControl("Back")+"  Ctrl+H/← discard · Ctrl+L/Enter/Space toggle · ↑/↓ move · Ctrl+U/D details", m.width))
 	return strings.Join(lines, "\n")
 }

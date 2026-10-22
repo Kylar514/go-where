@@ -31,6 +31,28 @@ var (
 
 func fit(s string, width int) string { return ansi.Truncate(s, max(0, width), "…") }
 
+func detailsPanel(v viewport.Model) string {
+	pw := v.Width
+	panel := tuiDim.Render("╭─ Details "+strings.Repeat("─", max(0, pw-8))+"╮") + "\n"
+	total := v.TotalLineCount()
+	thumb, start := 0, 0
+	if total > v.Height && v.Height > 0 {
+		thumb = max(1, v.Height*v.Height/total)
+		start = int(v.ScrollPercent() * float64(v.Height-thumb))
+	}
+	for row, line := range strings.Split(v.View(), "\n") {
+		indicator := " "
+		if thumb > 0 {
+			indicator = tuiDim.Render("░")
+			if row >= start && row < start+thumb {
+				indicator = tuiAccent.Render("█")
+			}
+		}
+		panel += tuiDim.Render("│") + " " + lipgloss.NewStyle().Width(pw).Render(line) + indicator + tuiDim.Render("│") + "\n"
+	}
+	return panel + tuiDim.Render("╰"+strings.Repeat("─", pw+2)+"╯")
+}
+
 func cycleCursor(cursor, delta, count int) int {
 	if count <= 0 {
 		return 0
@@ -54,17 +76,20 @@ type menuPosition struct {
 
 var menuPositions map[string]menuPosition
 var menuDepth int
+var menuTrail []string
 
 // Keep navigation only for this menu visit, never across unrelated launches.
 func menuSession() func() {
 	if menuDepth == 0 {
 		menuPositions = map[string]menuPosition{}
+		menuTrail = nil
 	}
 	menuDepth++
 	return func() {
 		menuDepth--
 		if menuDepth == 0 {
 			menuPositions = nil
+			menuTrail = nil
 		}
 	}
 }
@@ -75,6 +100,7 @@ func menuKey(title string) string {
 }
 
 type dialogModel struct {
+	breadcrumb     string
 	singleChoice   bool
 	current        string
 	title          string
@@ -101,6 +127,9 @@ func (m *dialogModel) refilter() {
 	m.filtered = nil
 	if m.query.Value() == "" {
 		for i := range m.options {
+			if m.title == "Settings" && (m.options[i].ID == "save" || m.options[i].ID == "cancel") {
+				continue
+			}
 			m.filtered = append(m.filtered, i)
 		}
 	} else {
@@ -109,6 +138,9 @@ func (m *dialogModel) refilter() {
 			labels[i] = o.Label
 		}
 		for _, match := range fuzzy.Find(m.query.Value(), labels) {
+			if m.title == "Settings" && (m.options[match.Index].ID == "save" || m.options[match.Index].ID == "cancel") {
+				continue
+			}
 			m.filtered = append(m.filtered, match.Index)
 		}
 	}
@@ -121,9 +153,16 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.query.Width = max(1, msg.Width-ansi.StringWidth(m.query.Prompt)-1)
-		m.preview.Width = max(1, msg.Width-4)
-		content := ansi.Hardwrap(cleanLines(m.text), m.preview.Width, true)
+		m.preview.Width = max(1, min(64, msg.Width-4))
+		if msg.Width >= 90 {
+			_, pw := viewSplit(msg.Width)
+			m.preview.Width = pw
+		}
+		content := ansi.Wrap(menuExplanation(m.text), m.preview.Width, "")
 		m.preview.Height = min(lipgloss.Height(content), max(1, (msg.Height-7)/2))
+		if msg.Width >= 90 {
+			m.preview.Height = max(1, min(20, msg.Height-5)-2)
+		}
 		m.preview.SetContent(content)
 		if m.restorePreview != nil {
 			m.preview.SetYOffset(*m.restorePreview)
@@ -134,6 +173,11 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch msg.String() {
+		case "ctrl+s":
+			if m.title == "Settings" {
+				m.result, m.done = "save", true
+				return m, tea.Quit
+			}
 		case "esc", "ctrl+c", "ctrl+h", "left":
 			m.done, m.back = true, true
 			return m, tea.Quit
@@ -161,12 +205,22 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.width < 24 || m.height < 9 {
 			return m, nil
 		}
-		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.height-1 && msg.X < 8 {
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.height-1 && msg.X >= 0 && msg.X < 8 {
 			m.done, m.back = true, true
 			return m, tea.Quit
 		}
+		if m.title == "Settings" && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.height-1 {
+			if msg.X >= 8 && msg.X < 15 {
+				m.result, m.done = "save", true
+				return m, tea.Quit
+			}
+			if msg.X >= 15 && msg.X < 24 {
+				m.result, m.done = "cancel", true
+				return m, tea.Quit
+			}
+		}
 		if msg.Button == tea.MouseButtonWheelUp {
-			if msg.Y >= m.listStart() && msg.Y < m.listStart()+m.optionRows() {
+			if msg.Y >= m.listStart() && msg.Y < m.listStart()+m.optionRows() && m.inList(msg.X) {
 				m.cursor = min(max(0, len(m.filtered)-1), m.cursor+3)
 				return m, nil
 			}
@@ -174,7 +228,7 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.Button == tea.MouseButtonWheelDown {
-			if msg.Y >= m.listStart() && msg.Y < m.listStart()+m.optionRows() {
+			if msg.Y >= m.listStart() && msg.Y < m.listStart()+m.optionRows() && m.inList(msg.X) {
 				m.cursor = max(0, m.cursor-3)
 				return m, nil
 			}
@@ -185,7 +239,7 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			row := msg.Y - m.listStart()
 			offset := max(0, m.cursor-m.optionRows()+1)
 			i := offset + m.optionRows() - 1 - row
-			if row >= 0 && row < m.optionRows() && i < len(m.filtered) {
+			if row >= 0 && row < m.optionRows() && i < len(m.filtered) && m.inList(msg.X) {
 				m.cursor = i
 				m.result = m.options[m.filtered[m.cursor]].ID
 				m.done = true
@@ -202,9 +256,17 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.refilter()
 	return m, cmd
 }
+
+func (m *dialogModel) inList(x int) bool {
+	width := m.width
+	if m.width >= 90 {
+		width, _ = viewSplit(m.width)
+	}
+	return x >= 0 && x < width
+}
 func (m *dialogModel) optionRows() int {
 	rows := m.height - 5
-	if m.text != "" {
+	if m.text != "" && m.width < 90 {
 		rows -= m.preview.Height + 1
 	}
 	return max(1, min(20, rows))
@@ -220,25 +282,37 @@ func (m *dialogModel) View() string {
 	if m.width < 24 || m.height < 9 {
 		return fit("Resize terminal · Esc back", m.width)
 	}
-	kind := "Settings / actions"
+	kind := "Menu"
 	if m.singleChoice {
 		kind = "Choose one"
 	}
-	lines := []string{tuiAccent.Render(fit(m.title+" — "+kind, m.width))}
-	if m.text != "" {
+	header := m.breadcrumb
+	if header == "" {
+		header = m.title
+	}
+	if m.singleChoice {
+		header += " — " + kind
+	}
+	lines := []string{tuiAccent.Render(fit(header, m.width))}
+	if m.text != "" && m.width < 90 {
 		lines = append(lines, m.preview.View(), "")
 	}
 	for lipgloss.Height(strings.Join(lines, "\n")) < m.listStart() {
 		lines = append(lines, "")
 	}
 	offset := max(0, m.cursor-m.optionRows()+1)
+	var rows []string
+	listWidth := m.width - 2
+	if m.width >= 90 {
+		listWidth, _ = viewSplit(m.width)
+	}
 	for row := m.optionRows() - 1; row >= 0; row-- {
 		i := offset + row
 		if i >= len(m.filtered) {
 			if len(m.filtered) == 0 && row == 0 {
-				lines = append(lines, tuiDim.Render("No matches"))
+				rows = append(rows, tuiDim.Render("No matches"))
 			} else {
-				lines = append(lines, "")
+				rows = append(rows, "")
 			}
 			continue
 		}
@@ -255,12 +329,30 @@ func (m *dialogModel) View() string {
 		}
 		label := "  " + value
 		if i == m.cursor {
-			label = tuiSelected.Render(fit("› "+value, m.width-2))
+			label = tuiSelected.Render(fit("› "+value, listWidth))
 		}
-		lines = append(lines, fit(label, m.width-2))
+		rows = append(rows, fit(label, listWidth))
 	}
-	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), fit(tuiAccent.Render("[ Back ]")+"  Ctrl+H/← back · Ctrl+L/Enter select · ↑/↓ move · Ctrl+U/D details", m.width))
+	body := strings.Join(rows, "\n")
+	if m.width >= 90 {
+		panel := detailsPanel(m.preview)
+		body = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(listWidth).Render(body), " ", panel)
+	}
+	lines = append(lines, body)
+	footer := compactControl("Back") + "  Ctrl+H/← back · Ctrl+L/Enter select · ↑/↓ move · Ctrl+U/D details"
+	if m.title == "Settings" {
+		footer = compactControl("Back", "Save", "Cancel") + "  Ctrl+S save · Esc cancel · Ctrl+L/Enter open"
+	}
+	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), fit(footer, m.width))
 	return strings.Join(lines, "\n")
+}
+
+func menuExplanation(text string) string {
+	// Separate prose sentences; preserve explicitly authored lists and paragraphs.
+	if !strings.Contains(text, "\n") {
+		text = strings.ReplaceAll(text, ". ", ".\n\n")
+	}
+	return cleanLines(text)
 }
 
 func cleanLines(s string) string {
@@ -342,9 +434,9 @@ func (m *pathModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
-			if msg.Y == m.height-1 && (msg.X < 18 || msg.X >= 20 && msg.X < 28) {
+			if msg.Y == m.height-1 && msg.X >= 0 && msg.X < 25 {
 				m.done = true
-				m.back = msg.X >= 20
+				m.back = msg.X >= 17
 				return m, tea.Quit
 			}
 			i := msg.Y - 1 + max(0, m.cursor-m.inputRows()+1)
@@ -370,7 +462,11 @@ func (m *pathModel) View() string {
 	if m.width < 24 || m.height < 9 {
 		return fit("Resize terminal · Esc back", m.width)
 	}
-	lines := []string{tuiAccent.Render("Edit value")}
+	header := "Edit value"
+	if len(menuTrail) > 0 {
+		header = strings.Join(menuTrail, " › ") + " › " + m.label
+	}
+	lines := []string{tuiAccent.Render(fit(header, m.width))}
 	rows := m.inputRows()
 	offset := max(0, m.cursor-rows+1)
 	for row := 0; row < rows; row++ {
@@ -390,7 +486,7 @@ func (m *pathModel) View() string {
 	} else {
 		lines = append(lines, "")
 	}
-	lines = append(lines, strings.Repeat("─", m.width), tuiAccent.Render(fit(m.label, m.width)), m.input.View(), fit(tuiAccent.Render("[ Use typed path ]  [ Back ]")+"  Enter accept · Tab complete · Esc back", m.width))
+	lines = append(lines, strings.Repeat("─", m.width), tuiAccent.Render(fit(m.label, m.width)), m.input.View(), fit(compactControl("Use typed path", "Back")+"  Enter accept · Tab complete · Esc back", m.width))
 	return strings.Join(lines, "\n")
 }
 

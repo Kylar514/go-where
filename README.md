@@ -276,6 +276,25 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+Menu headers show a breadcrumb (`Settings › SSH agents › profile`). Wide menus
+use the picker's list/Details split; narrow menus show wrapped guidance above
+the list. Guidance uses short paragraphs and bullets rather than full-width
+run-on text. Settings Save/Cancel live in the bottom connected action bar;
+Ctrl+S saves the draft and Esc backs out without saving.
+
+The picker has six clickable tabs: **SSH, RDP, Tunnels, SCP, Legacy SCP, Rsync**.
+Left/Right or Ctrl+H/L cycle through them; Alt+1 through Alt+6 select directly.
+Connected controls use tight shared borders without inner padding or background
+fills. Tabs occupy two rows, with bold accent text and a missing underline for
+the active tab. Actions occupy one row; submenu Back/Done/input controls use the
+same compact style with hotkey hints alongside. Controls wrap in narrow terminals.
+Host-row selection and checklist/radio markers retain their selection styling.
+Single-click a row to select it and view Details; double-click its text to perform
+Enter's action for that row only (other marked rows are not launched). Transfer
+double-click opens the review workflow, never bypassing confirmation. Tunnel
+double-click uses normal start/stop tracking. Clicking the checkbox still marks
+a host rather than launching it. Tunnel action buttons display Start or Stop.
+
 Settings menus and checklists use the picker-style bottom search bar (`⌕ Search:`)
 and bottom-up lists. **Ctrl+H / Left arrow / Esc** go back; **Ctrl+L / Enter**
 activate the highlighted row (toggle in a checklist). **Up / Ctrl+K** move visually

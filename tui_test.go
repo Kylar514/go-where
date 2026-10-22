@@ -133,7 +133,8 @@ func TestUnifiedMouseAndDialogs(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 25})
 	m.View()
 	// Second result sits one row above the bottom of the reverse list.
-	m.Update(tea.MouseMsg{X: 2, Y: 3 + m.rows() - 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	_, _, tabHeight := m.controls(pickerTabs, 0)
+	m.Update(tea.MouseMsg{X: 5, Y: tabHeight + 2 + m.toolbarGap() + m.rows() - 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	if h, _ := m.activeHost(); h.Alias != "b" {
 		t.Fatal("mouse did not select second row")
 	}
@@ -231,7 +232,7 @@ func TestModeKeysAndFramedLayout(t *testing.T) {
 		mode string
 	}{
 		{tea.KeyRight, "rdp"}, {tea.KeyCtrlL, "tunnels"}, {tea.KeyRight, "scp"},
-		{tea.KeyRight, "ssh"}, {tea.KeyLeft, "scp"}, {tea.KeyCtrlH, "tunnels"},
+		{tea.KeyRight, "legacy-scp"}, {tea.KeyRight, "rsync"}, {tea.KeyRight, "ssh"}, {tea.KeyLeft, "rsync"}, {tea.KeyLeft, "legacy-scp"}, {tea.KeyLeft, "scp"}, {tea.KeyCtrlH, "tunnels"},
 	} {
 		m.Update(tea.KeyMsg{Type: step.key})
 		if m.state.Mode != step.mode {
@@ -246,11 +247,12 @@ func TestModeKeysAndFramedLayout(t *testing.T) {
 	}
 	view := m.View()
 	lines := strings.Split(view, "\n")
-	searchRow := 3 + m.rows() + 1
-	if !strings.Contains(lines[searchRow], "⌕ Search:") || !strings.Contains(lines[searchRow-1], "────") || !strings.Contains(lines[searchRow+1], "Toggle") {
+	_, _, tabHeight := m.controls(pickerTabs, 0)
+	searchRow := tabHeight + m.rows() + 3 + m.toolbarGap()
+	if !strings.Contains(lines[searchRow], "⌕ Search:") || !strings.Contains(lines[searchRow-1], "────") || !strings.Contains(view, "Start") {
 		t.Fatal("search must sit between separator and action buttons")
 	}
-	if strings.Contains(view, "connections ·") || strings.Count(view, "Ctrl+R") != 1 || !strings.Contains(view, "╭─ Details") || !strings.Contains(view, "╰") {
+	if strings.Contains(view, "connections ·") || !strings.Contains(view, "Click to select") || !strings.Contains(view, "╭─ Details") || !strings.Contains(view, "╰") {
 		t.Fatalf("unexpected layout: %s", view)
 	}
 	if lipgloss.Width(view) > 148 || lipgloss.Height(view) != 28 {

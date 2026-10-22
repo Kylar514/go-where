@@ -110,12 +110,12 @@ func TestMenuKindsAndBottomInput(t *testing.T) {
 	d := newDialog("Settings", []choice{{"submenu", "SSH settings…"}, {"save", "Save"}}, "")
 	d.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
 	v := ansi.Strip(d.View())
-	if !strings.Contains(v, "Settings / actions") || !strings.Contains(v, "SSH settings…  ›") || strings.Contains(v, "Save  ›") {
+	if !strings.HasPrefix(v, "Settings\n") || !strings.Contains(v, "SSH settings…  ›") || strings.Contains(v, "Save  ›") {
 		t.Fatal(v)
 	}
 	d.singleChoice, d.current = true, "save"
 	v = ansi.Strip(d.View())
-	if !strings.Contains(v, "Choose one") || !strings.Contains(v, "○ SSH settings…") || !strings.Contains(v, "● Save") {
+	if !strings.Contains(v, "Choose one") || !strings.Contains(v, "○ SSH settings…") {
 		t.Fatal(v)
 	}
 	m := newMultiDialog("Algorithms", []multiItem{{ID: "a", Label: "Alpha", Checked: true}}, "")
@@ -131,7 +131,7 @@ func TestMenuKindsAndBottomInput(t *testing.T) {
 		if len(lines) != size[1] || lines[size[1]-3] != "Address" || !strings.HasPrefix(lines[size[1]-2], "› 192.0.2.1") || lipgloss.Width(p.View()) > size[0] {
 			t.Fatal(v)
 		}
-		p.Update(tea.MouseMsg{X: 22, Y: size[1] - 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		p.Update(tea.MouseMsg{X: 17, Y: size[1] - 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 		if !p.back {
 			t.Fatal("bottom Back button failed")
 		}
@@ -209,5 +209,79 @@ func TestListsCycleAtBothEnds(t *testing.T) {
 	p.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if p.cursor != 0 {
 		t.Fatal("completion reverse wrap failed")
+	}
+}
+
+func TestSettingsBreadcrumbDetailsAndActions(t *testing.T) {
+	old := runTUI
+	t.Cleanup(func() { runTUI = old })
+	defer menuSession()()
+	for _, title := range []string{"Settings", "SSH agents", "legacy"} {
+		runTUI = func(model tea.Model) (tea.Model, error) {
+			m := model.(*dialogModel)
+			m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+			view := ansi.Strip(m.View())
+			if !strings.Contains(view, "╭─ Details") || !strings.HasPrefix(view, strings.Join(menuTrail, " › ")) {
+				t.Fatal(view)
+			}
+			if title == "Settings" {
+				for _, index := range m.filtered {
+					if m.options[index].ID == "save" || m.options[index].ID == "cancel" {
+						t.Fatal("action still in list")
+					}
+				}
+				m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+				if m.result != "save" {
+					t.Fatal("save shortcut failed")
+				}
+			}
+			return m, nil
+		}
+		if _, _, err := choose(title, []choice{{"open", "Open…"}, {"save", "Save"}, {"cancel", "Cancel"}}, "First sentence. Second sentence."); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if strings.Join(menuTrail, " › ") != "Settings › SSH agents › legacy" {
+		t.Fatal(menuTrail)
+	}
+	if menuExplanation("First sentence. Second sentence.") != "First sentence.\n\nSecond sentence." {
+		t.Fatal("prose not separated")
+	}
+}
+
+func TestDetailsWrapWholeWordsAndLongValues(t *testing.T) {
+	text := "alpha beta elephant"
+	want := "alpha beta\nelephant"
+	d := newDialog("Details", nil, text)
+	d.Update(tea.WindowSizeMsg{Width: 24, Height: 20})
+	d.preview.Width = 12
+	d.preview.Height = 2
+	d.preview.SetContent(ansi.Wrap(text, 12, ""))
+	lines := strings.Split(d.preview.View(), "\n")
+	for i := range lines {
+		lines[i] = strings.TrimSpace(lines[i])
+	}
+	if strings.Join(lines, "\n") != want {
+		t.Fatal("word split", d.preview.View())
+	}
+	for _, value := range []string{text, "averylongunbrokenvalue", "日本語の長い文章"} {
+		wrapped := ansi.Wrap(value, 12, "")
+		if lipgloss.Width(wrapped) > 12 {
+			t.Fatal("long value overflows", wrapped)
+		}
+	}
+	c := defaultConfig()
+	c.TunnelsConfig = t.TempDir() + "/missing"
+	m := newPickerModel([]Host{{Alias: "alpha", Hostname: "beta elephant"}}, "", "current", Origin{}, PickerState{Mode: "ssh"}, c)
+	m.preview.Width = 12
+	m.preview.Height = 30
+	m.updatePreview()
+	if !strings.Contains(m.preview.View(), "elephant") {
+		t.Fatal("picker splits word", m.preview.View())
+	}
+	check := newMultiDialog("Details", nil, "alpha beta elephant")
+	check.Update(tea.WindowSizeMsg{Width: 24, Height: 20})
+	if !strings.Contains(check.preview.View(), "elephant") {
+		t.Fatal("checklist splits word")
 	}
 }

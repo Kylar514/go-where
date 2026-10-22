@@ -60,6 +60,8 @@ type pickerModel struct {
 	tunnelLoadErr                 error
 	tunnelStatus                  map[string]tunnelInfo
 	pending                       map[string]bool
+	lastClick                     string
+	lastClickAt                   time.Time
 }
 
 func newPickerModel(hosts []Host, query, dest string, o Origin, state PickerState, c Config) *pickerModel {
@@ -217,14 +219,22 @@ func matchesTags(tags, required []string) bool {
 	}
 	return true
 }
-func (m *pickerModel) rows() int { return max(1, min(20, m.height-8)) }
+func (m *pickerModel) rows() int {
+	_, _, tabs := m.controls(pickerTabs, 0)
+	_, _, buttons := m.controls(m.buttons(), 0)
+	return max(1, min(20, m.height-tabs-buttons-6-2*m.toolbarGap()))
+}
+
+func (m *pickerModel) toolbarGap() int {
+	return 0
+}
 
 // viewSplit: 70% list / 30% details on wide terminals; single column otherwise.
 func viewSplit(width int) (listWidth, previewWidth int) {
 	total := width - 2
 	if width >= 90 {
 		lw := max(40, total*7/10)
-		return lw, max(20, total-lw-3)
+		return lw, max(18, total-lw-5)
 	}
 	return total, 0
 }
@@ -539,7 +549,7 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+n":
 			return m, m.finish("new-connection")
 		case "left", "ctrl+h", "right", "ctrl+l":
-			modes := []string{"ssh", "rdp", "tunnels", m.transferMode}
+			modes := []string{"ssh", "rdp", "tunnels", "scp", "legacy-scp", "rsync"}
 			for i, mode := range modes {
 				if mode == m.state.Mode {
 					delta := 1
@@ -571,7 +581,13 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.switchMode("tunnels")
 			return m, nil
 		case "alt+4":
-			m.switchMode(m.transferMode)
+			m.switchMode("scp")
+			return m, nil
+		case "alt+5":
+			m.switchMode("legacy-scp")
+			return m, nil
+		case "alt+6":
+			m.switchMode("rsync")
 			return m, nil
 		// The list renders bottom-up: up moves the highlight visually up
 		// (a higher entry index), down moves visually down.
@@ -653,10 +669,27 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							if h, ok := m.activeHost(); ok {
 								m.marked[hostIdentity(h)] = !m.marked[hostIdentity(h)]
 							}
+							m.lastClick = ""
+							m.updatePreview()
+							return m, nil
 						}
 						m.updatePreview()
+						identity := m.state.Mode + ":" + strconv.Itoa(m.visible[hit.index])
+						now := time.Now()
+						if m.lastClick == identity && now.Sub(m.lastClickAt) < 400*time.Millisecond {
+							m.lastClick = ""
+							if m.state.Mode == "tunnels" {
+								return m, m.finish("enter")
+							}
+							h, _ := m.activeHost()
+							cmd := m.finish("enter")
+							m.selected = []Host{h}
+							return m, cmd
+						}
+						m.lastClick, m.lastClickAt = identity, now
 						return m, nil
 					}
+					m.lastClick = ""
 					if strings.HasPrefix(hit.action, "mode:") {
 						m.switchMode(strings.TrimPrefix(hit.action, "mode:"))
 						return m, nil
@@ -679,7 +712,7 @@ func (m *pickerModel) updatePreview() {
 				if err := m.tunnelErrors[c.Name]; err != nil {
 					text += "\n" + err.Error()
 				}
-				m.preview.SetContent(ansi.Hardwrap(cleanLines(text), max(1, m.preview.Width), true))
+				m.preview.SetContent(ansi.Wrap(cleanLines(text), max(1, m.preview.Width), ""))
 				return
 			}
 			text = fmt.Sprintf("%s\n\nType       %s\nLocal      127.0.0.1:%d\nRemote     %d\nSSH host   %s\nResource   %s\nNamespace  %s\n\n%s\n\n%s", c.Name, c.TunnelType, c.LocalPort, c.RemotePort, c.SSHHost, c.Resource, c.Namespace, m.tunnelLabel(c.Name), tunnelCommandPreview(c))
@@ -691,7 +724,7 @@ func (m *pickerModel) updatePreview() {
 		}
 	} else if h, ok := m.activeHost(); ok {
 		if h.SourceID != "" {
-			m.preview.SetContent(ansi.Hardwrap(cleanLines(managedDetails(h, m.config)), max(1, m.preview.Width), true))
+			m.preview.SetContent(ansi.Wrap(cleanLines(managedDetails(h, m.config)), max(1, m.preview.Width), ""))
 			return
 		}
 		text = fmt.Sprintf("%s\n\nAddress   %s\nJump      %s\nTags      %s\nNotes     %s\nSource    %s\nFile      %s:%d\n\n", h.Alias, h.Hostname, h.JumpHost, strings.Join(h.Tags, ", "), h.Comment, hostSourceLabel(h), h.File, h.Line)
@@ -707,7 +740,7 @@ func (m *pickerModel) updatePreview() {
 	} else {
 		text = "No matching hosts.\n\nRDP lists hosts with an indented # Windows or # RDP tag."
 	}
-	m.preview.SetContent(ansi.Hardwrap(cleanLines(text), max(1, m.preview.Width), true))
+	m.preview.SetContent(ansi.Wrap(cleanLines(text), max(1, m.preview.Width), ""))
 }
 func tunnelCommandPreview(c digletconfig.Connection) string {
 	if c.TunnelType == "ssh" {
@@ -749,26 +782,8 @@ func (m *pickerModel) View() string {
 		return fit("Resize terminal (30×12 minimum) · Esc exits", m.width)
 	}
 	width := m.width - 2
-	var tabs strings.Builder
-	for _, tab := range []struct{ label, mode string }{{"SSH", "ssh"}, {"RDP", "rdp"}, {"Tunnels", "tunnels"}, {"Transfers", m.transferMode}} {
-		if m.width < 55 {
-			if tab.mode == "tunnels" {
-				tab.label = "Tun"
-			}
-			if tab.mode == m.transferMode {
-				tab.label = "Files"
-			}
-		}
-		x := lipgloss.Width(tabs.String())
-		label := " " + tab.label + " "
-		if m.state.Mode == tab.mode {
-			tabs.WriteString(tuiSelected.Render(label))
-		} else {
-			tabs.WriteString(tuiDim.Render(label))
-		}
-		m.hits = append(m.hits, hitRegion{x, 0, len(label), "mode:" + tab.mode, 0})
-		tabs.WriteString("  ")
-	}
+	tabs, tabHits, tabHeight := m.controls(pickerTabs, 0)
+	m.hits = append(m.hits, tabHits...)
 	dest := m.dest
 	if m.state.Mode == "rdp" {
 		dest = rdpDestination(m.config, false)
@@ -779,7 +794,7 @@ func (m *pickerModel) View() string {
 	}
 	if m.state.Mode == m.transferMode {
 		context = strings.ToUpper(m.state.Mode) + " ▾"
-		m.hits = append(m.hits, hitRegion{0, 1, lipgloss.Width(context), "protocol", 0})
+		m.hits = append(m.hits, hitRegion{0, tabHeight, lipgloss.Width(context), "protocol", 0})
 	}
 	if len(m.config.Sources) > 0 {
 		name := "All sources"
@@ -790,7 +805,10 @@ func (m *pickerModel) View() string {
 		}
 		context += " │ " + name
 	}
-	lines := []string{tabs.String(), fit(tuiDim.Render(context), width)}
+	lines := []string{tabs, fit(tuiDim.Render(context), width)}
+	if m.toolbarGap() > 0 {
+		lines = append(lines, "")
+	}
 	listWidth, _ := viewSplit(m.width)
 	var left []string
 	// Fixed column titles; the list scrolls beneath them.
@@ -826,7 +844,7 @@ func (m *pickerModel) View() string {
 			if i == m.cursor {
 				line = tuiSelected.Render(fit("›"+strings.TrimPrefix(line, " "), listWidth))
 			}
-			m.hits = append(m.hits, hitRegion{0, 3 + row, listWidth, "row", i})
+			m.hits = append(m.hits, hitRegion{0, tabHeight + 2 + m.toolbarGap() + row, listWidth, "row", i})
 		} else if row == m.rows()-1 {
 			line = tuiDim.Render("No matches")
 		}
@@ -835,45 +853,27 @@ func (m *pickerModel) View() string {
 	body := strings.Join(left, "\n")
 	if m.width >= 90 {
 		// The frame shares the list's height, including its column heading.
-		pw := m.preview.Width
-		panel := tuiDim.Render("╭─ Details "+strings.Repeat("─", max(0, pw-10))+"╮") + "\n"
-		for _, line := range strings.Split(m.preview.View(), "\n") {
-			panel += tuiDim.Render("│") + lipgloss.NewStyle().Width(pw).Render(line) + tuiDim.Render("│") + "\n"
-		}
-		panel += tuiDim.Render("╰" + strings.Repeat("─", pw) + "╯")
+		panel := detailsPanel(m.preview)
 		body = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(listWidth).Render(body), " ", panel)
 	}
-	legend := "Enter connect │ ←/→ mode │ Tab mark │ Ctrl+R reload │ ? help"
+	legend := "Click to select · Double-click to connect · ? Help"
 	if m.state.Mode == "tunnels" {
-		legend = "Enter toggle │ ←/→ mode │ Ctrl+E edit │ Ctrl+R reload │ ? help"
+		legend = "Click to select · Double-click to start/stop · ? Help"
+	} else if m.state.Mode == "scp" || m.state.Mode == "legacy-scp" || m.state.Mode == "rsync" {
+		legend = "Click to select · Double-click to review transfer · ? Help"
 	}
 	// Separate the search input from results without adding another row.
 	lines = append(lines, body, strings.Repeat("─", width), m.search.View())
-	var buttons strings.Builder
-	buttonsList := []struct{ label, action string }{{"Connect", "connect"}, {"Target", "target"}, {"Help", "help"}}
-	if m.state.Mode != "tunnels" {
-		buttonsList = append(buttonsList, struct{ label, action string }{"Connect as", "connect-as"})
+	if m.toolbarGap() > 0 {
+		lines = append(lines, "")
 	}
-	buttonsList = append(buttonsList, struct{ label, action string }{"Settings", "settings"})
-	buttonsList = append(buttonsList, struct{ label, action string }{"Sources", "sources"})
-	if m.state.Mode == "rdp" {
-		buttonsList = append([]struct{ label, action string }{{"Connect", "connect"}, {"Account", "account"}}, buttonsList[1:]...)
-	}
-	if m.state.Mode == "tunnels" {
-		buttonsList = []struct{ label, action string }{{"Toggle", "connect"}, {"Settings", "settings"}, {"Help", "help"}}
-	}
-	for _, b := range buttonsList {
-		x := lipgloss.Width(buttons.String())
-		label := "[ " + b.label + " ]"
-		buttons.WriteString(tuiAccent.Render(label))
-		m.hits = append(m.hits, hitRegion{x, m.rows() + 5, len(label), b.action, 0})
-		buttons.WriteString("  ")
-	}
+	buttons, buttonHits, _ := m.controls(m.buttons(), tabHeight+m.rows()+4+2*m.toolbarGap())
+	m.hits = append(m.hits, buttonHits...)
 	status := tuiDim.Render(clean(m.status))
 	if m.statusError {
 		status = tuiError.Render(clean(m.status))
 	}
-	lines = append(lines, fit(buttons.String(), width), fit(tuiDim.Render(fmt.Sprintf("%d results · %d marked │ %s", len(m.visible), m.markCount(), legend)), width), fit(status, width))
+	lines = append(lines, buttons, fit(tuiDim.Render(fmt.Sprintf("%d results · %d marked │ %s", len(m.visible), m.markCount(), legend)), width), fit(status, width))
 	return strings.Join(lines, "\n")
 }
 func (m *pickerModel) markCount() int {

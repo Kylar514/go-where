@@ -97,6 +97,21 @@ func chooseOne(title string, options []choice, text, current string) (string, bo
 }
 
 func runChoice(m *dialogModel, key string) (string, bool, error) {
+	if menuPositions != nil {
+		found := -1
+		for i, title := range menuTrail {
+			if title == m.title {
+				found = i
+				break
+			}
+		}
+		if found >= 0 {
+			menuTrail = menuTrail[:found+1]
+		} else {
+			menuTrail = append(menuTrail, m.title)
+		}
+		m.breadcrumb = strings.Join(menuTrail, " › ")
+	}
 	if position, ok := menuPositions[key]; ok {
 		m.query.SetValue(position.query)
 		m.refilter()
@@ -110,6 +125,9 @@ func runChoice(m *dialogModel, key string) (string, bool, error) {
 		m.restorePreview = &position.preview
 	}
 	_, err := runTUI(m)
+	if m.back && len(menuTrail) > 0 {
+		menuTrail = menuTrail[:len(menuTrail)-1]
+	}
 	if menuPositions != nil {
 		position := menuPosition{query: m.query.Value(), cursor: m.cursor, preview: m.preview.YOffset}
 		if len(m.filtered) > 0 {
