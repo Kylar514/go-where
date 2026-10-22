@@ -264,7 +264,7 @@ func TestModeKeysAndFramedLayout(t *testing.T) {
 	if !strings.Contains(lines[searchRow], "⌕ Search:") || !strings.Contains(lines[searchRow-1], "────") || !strings.Contains(view, "Start") {
 		t.Fatal("search must sit between separator and action buttons")
 	}
-	if strings.Contains(view, "connections ·") || !strings.Contains(view, "Click to select") || !strings.Contains(view, "╭─ Details") || !strings.Contains(view, "╰") {
+	if strings.Contains(view, "connections ·") || !strings.Contains(view, "Settings |") || !strings.Contains(view, "╭─ Details") || !strings.Contains(view, "╰") {
 		t.Fatalf("unexpected layout: %s", view)
 	}
 	if lipgloss.Width(view) > 148 || lipgloss.Height(view) != 28 {

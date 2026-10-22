@@ -181,11 +181,34 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.restorePreview = nil
 		}
 	case tea.KeyMsg:
-		key := canonicalKey(menuHotkeys, msg.String(), "menu")
+		scope := "menu"
+		if m.sourceActions {
+			scope = "sources"
+		}
+		key := canonicalKey(menuHotkeys, msg.String(), scope)
 		if m.width > 0 && (m.width < 24 || m.height < 9) && key != "esc" {
 			return m, nil
 		}
 		switch key {
+		case "ctrl+n", "ctrl+o", "ctrl+alt+d":
+			if m.sourceActions {
+				id := "create"
+				if key == "ctrl+o" {
+					id = "attach"
+				}
+				if key == "ctrl+alt+d" {
+					if len(m.filtered) == 0 {
+						return m, nil
+					}
+					source := m.options[m.filtered[m.cursor]].ID
+					if source == "" || source == "ssh-config" {
+						return m, nil
+					}
+					id = "remove:" + source
+				}
+				m.result, m.done = id, true
+				return m, tea.Quit
+			}
 		case "ctrl+z":
 			m.resetMenuLayout()
 			return m, nil
@@ -195,6 +218,10 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		case "ctrl+s":
+			if m.sourceActions {
+				m.result, m.done = "settings", true
+				return m, tea.Quit
+			}
 			if m.saveHost {
 				m.result, m.done = "__save_host", true
 				return m, tea.Quit
@@ -268,6 +295,24 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if m.sourceActions && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() {
+			settingsX := 39
+			if len(m.filtered) > 0 {
+				id := m.options[m.filtered[m.cursor]].ID
+				if id != "" && id != "ssh-config" {
+					settingsX = 55
+				}
+			}
+			if msg.X >= settingsX && msg.X < settingsX+11 {
+				m.result, m.done = "settings", true
+				return m, tea.Quit
+			}
+			if msg.X >= 39 && msg.X < 55 && len(m.filtered) > 0 {
+				option := m.options[m.filtered[m.cursor]]
+				if option.ID != "" && option.ID != "ssh-config" {
+					m.result, m.done = "remove:"+option.ID, true
+					return m, tea.Quit
+				}
+			}
 			if msg.X >= 8 && msg.X < 24 {
 				m.result, m.done = "create", true
 				return m, tea.Quit
@@ -336,7 +381,7 @@ func (m *dialogModel) listStart() int {
 	return m.height - 3 - footerExtra(m.height) - m.optionRows()
 }
 
-func (m *dialogModel) footerY() int { return m.height - 1 - footerExtra(m.height)/2 }
+func (m *dialogModel) footerY() int { return footerButtonY(m.height) }
 func (m *dialogModel) View() string {
 	m.resizeHits = nil
 	if m.width == 0 {
@@ -459,7 +504,18 @@ func (m *dialogModel) View() string {
 	}
 	if m.sourceActions {
 		labels = []string{"Back", "Create source", "Add existing"}
-		hint = keyHint(menuHotkeys, "back") + " back · " + keyHint(menuHotkeys, "select") + " choose"
+		if len(m.filtered) > 0 {
+			id := m.options[m.filtered[m.cursor]].ID
+			if id != "" && id != "ssh-config" {
+				labels = append(labels, "Remove source")
+			}
+		}
+		hint = keyHint(menuHotkeys, "back") + " Back | " + keyHint(menuHotkeys, "source_create") + " Create | " + keyHint(menuHotkeys, "source_attach") + " Add existing"
+		if len(labels) > 3 {
+			hint += " | " + keyHint(menuHotkeys, "source_remove") + " Remove"
+		}
+		labels = append(labels, "Settings")
+		hint += " | " + keyHint(menuHotkeys, "source_settings") + " Settings"
 	}
 	if m.layout != (menuLayout{}) {
 		x := 1
@@ -469,6 +525,7 @@ func (m *dialogModel) View() string {
 		m.resizeHits = append(m.resizeHits, hitRegion{x - 1, m.footerY(), 14, "reset", 0})
 		labels = append(labels, "Reset layout")
 	}
+	hint = strings.ReplaceAll(hint, " · ", " | ")
 	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), menuFooter(m.height, m.width, labels, hint))
 	return strings.Join(lines, "\n")
 }
@@ -560,7 +617,7 @@ func (m *pathModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
-			if msg.Y == m.height-1-footerExtra(m.height)/2 && msg.X >= 0 && msg.X < 25 {
+			if msg.Y == footerButtonY(m.height) && msg.X >= 0 && msg.X < 25 {
 				m.done = true
 				m.back = msg.X >= 17
 				return m, tea.Quit

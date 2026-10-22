@@ -276,6 +276,15 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+**Settings → Sources** controls **Enabled sources** and **Startup source**.
+All registered sources (including SSH config) remain enabled unless unchecked;
+disabled sources are not read or listed, and their files remain untouched.
+All sources means all enabled sources. Startup source can select one enabled
+source or all; session switching does not change it. Disabling the selected
+startup source resets the draft's startup choice to all enabled sources.
+Preferences are local JSONC fields `disabled_sources` and `startup_source`;
+Settings Save persists them. Startup source takes effect on the next launch.
+
 ### Reusable source profiles (schema v7)
 
 Host → SSH/RDP profiles offers **Choose existing source profile** or **Add profile**.

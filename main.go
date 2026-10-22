@@ -170,7 +170,7 @@ func app(args []string) error {
 	popupFrameEnabled = *inPopup
 	defer func() { popupFrameEnabled = previousFrame }()
 	query := ""
-	state := PickerState{Mode: mode}
+	state := PickerState{Mode: mode, Source: c.StartupSource}
 	draft := Transfer{Direction: "upload"}
 	sessionDest := ""
 	sessionRDPDest := ""
@@ -192,9 +192,15 @@ func app(args []string) error {
 		if *tunnelsConfig != "" {
 			c.TunnelsConfig = *tunnelsConfig
 		}
-		hosts, err := readHosts(*sshConfig)
-		if err != nil && !(os.IsNotExist(err) && !customSSHConfig) {
-			return err
+		if state.Source != "" && !sourceEnabled(c, state.Source) {
+			state.Source = ""
+		}
+		var hosts []Host
+		if sourceEnabled(c, "ssh-config") {
+			hosts, err = readHosts(*sshConfig)
+			if err != nil && !(os.IsNotExist(err) && !customSSHConfig) {
+				return err
+			}
 		}
 		managed, err := inventoryHosts(c)
 		if err != nil {

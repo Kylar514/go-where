@@ -58,21 +58,48 @@ func attachInventory(name, path string) (InventorySource, error) {
 }
 
 func sourceMenu(settings string, c Config, state *PickerState) error {
-	options := []choice{{"", "All sources"}, {"ssh-config", "SSH config"}}
-	for _, s := range c.Sources {
-		options = append(options, choice{s.ID, s.Name + " — SQLite: " + s.Path})
+	defer menuSession()()
+	for {
+		options := []choice{{"", "All enabled sources"}}
+		if sourceEnabled(c, "ssh-config") {
+			options = append(options, choice{"ssh-config", "SSH config"})
+		}
+		for _, s := range c.Sources {
+			if !sourceEnabled(c, s.ID) {
+				continue
+			}
+			options = append(options, choice{s.ID, s.Name + " — SQLite: " + s.Path})
+		}
+		options = append(options, choice{"create", "Create local SQLite source…"}, choice{"attach", "Add existing SQLite source…"})
+		id, back, err := choose("Sources", options, "SQLite sources hold SSH, RDP and tunnel connections independently of personal files. No database is created until you explicitly confirm. Legacy file-backed connections retain their file editors.")
+		if err != nil || back {
+			return err
+		}
+		if id == "settings" {
+			raw, e := settingsMenuAt(settings, "sources")
+			if e != nil {
+				return e
+			}
+			if raw {
+				return notice("Use Settings from the main picker to open the raw editor.")
+			}
+			c, e = loadConfig(settings)
+			if e != nil {
+				return e
+			}
+			menuHotkeys = c
+			continue
+		}
+		if strings.HasPrefix(id, "remove:") {
+			return removeSourceRegistration(settings, c, state, strings.TrimPrefix(id, "remove:"))
+		}
+		if id != "create" && id != "attach" {
+			state.Source = id
+			state.Focus = ""
+			return nil
+		}
+		return addInventorySource(settings, c, state, id)
 	}
-	options = append(options, choice{"create", "Create local SQLite source…"}, choice{"attach", "Add existing SQLite source…"})
-	id, back, err := choose("Sources", options, "SQLite sources hold SSH, RDP and tunnel connections independently of personal files. No database is created until you explicitly confirm. Legacy file-backed connections retain their file editors.")
-	if err != nil || back {
-		return err
-	}
-	if id != "create" && id != "attach" {
-		state.Source = id
-		state.Focus = ""
-		return nil
-	}
-	return addInventorySource(settings, c, state, id)
 }
 
 func addInventorySource(settings string, c Config, state *PickerState, id string) error {

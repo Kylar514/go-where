@@ -72,6 +72,10 @@ func settingsDraft(path string) (original []byte, before, draft Config, err erro
 }
 
 func settingsMenu(path string) (raw bool, err error) {
+	return settingsMenuAt(path, "")
+}
+
+func settingsMenuAt(path, initial string) (raw bool, err error) {
 	defer menuSession()()
 	previousKeys := menuHotkeys
 	if loaded, e := loadConfig(path); e == nil {
@@ -107,6 +111,11 @@ func settingsMenu(path string) (raw bool, err error) {
 		}
 		return "No unsaved changes"
 	}
+	if initial == "sources" {
+		if err = editSourcePreferences(&draft); err != nil {
+			return false, err
+		}
+	}
 	for {
 		mode := draft.StartupMode
 		if mode == "" {
@@ -116,6 +125,7 @@ func settingsMenu(path string) (raw bool, err error) {
 			{"general", "General — startup mode: " + mode},
 			{"agents", "SSH agents — local socket/pipe profiles"},
 			{"hotkeys", "Hotkeys — configurable action bindings"},
+			{"sources", "Select sources — inventories loaded at launch"},
 			{"overrides", "Connection settings & overrides — SSH agents / compatibility"},
 			{"raw", "Edit raw settings (JSON with comments)"},
 			{"save", "Save settings and return"}, {"cancel", "Cancel changes"},
@@ -124,6 +134,10 @@ func settingsMenu(path string) (raw bool, err error) {
 			return false, e
 		}
 		switch id {
+		case "sources":
+			if e = editSourcePreferences(&draft); e != nil {
+				return false, e
+			}
 		case "hotkeys":
 			if e = editHotkeys(&draft); e != nil {
 				return false, e

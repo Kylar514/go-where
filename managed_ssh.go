@@ -43,6 +43,15 @@ func resolvedConnection(c Config, s InventorySource, r Connection) (Connection, 
 		}
 	}
 	o := c.Overrides[s.ID][r.ID]
+	if r.kind() == "rdp" {
+		if o.Account != nil {
+			r.Account = *o.Account
+		}
+		if o.Domain != nil {
+			domain := *o.Domain
+			r.Domain = &domain
+		}
+	}
 	if o.User != nil {
 		r.User = *o.User
 	}

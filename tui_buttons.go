@@ -18,23 +18,33 @@ func compactControl(labels ...string) string {
 }
 
 func menuFooter(height, width int, labels []string, hint string) string {
+	hint = strings.ReplaceAll(hint, " · ", " | ")
 	bar := compactControl(labels...)
 	lines := strings.Split(bar, "\n")
-	lines[1] = fit(lines[1]+"  "+hint, width)
 	if strings.Contains(lines[1], "Delete host") {
 		lines[1] = strings.Replace(lines[1], "Delete host", tuiError.Render("Delete host"), 1)
 	}
-	if height < 14 {
-		return lines[1]
+	if strings.Contains(lines[1], "Remove source") {
+		lines[1] = strings.Replace(lines[1], "Remove source", tuiError.Render("Remove source"), 1)
 	}
-	return strings.Join(lines, "\n")
+	if height < 14 {
+		return fit(lines[1], width) + "\n" + fit(hint, width)
+	}
+	return strings.Join(lines, "\n") + "\n" + fit(tuiDim.Render(hint), width)
 }
 
 func footerExtra(height int) int {
 	if height < 14 {
-		return 0
+		return 1
 	}
-	return 2
+	return 3
+}
+
+func footerButtonY(height int) int {
+	if height < 14 {
+		return height - 2
+	}
+	return height - 3
 }
 
 var pickerTabs = []pickerButton{{"SSH", "mode:ssh"}, {"RDP", "mode:rdp"}, {"Tunnels", "mode:tunnels"}, {"SCP", "mode:scp"}, {"Legacy SCP", "mode:legacy-scp"}, {"Rsync", "mode:rsync"}}

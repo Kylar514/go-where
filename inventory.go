@@ -65,6 +65,8 @@ func (r Connection) kind() string {
 }
 
 type ConnectionOverride struct {
+	Account                *string           `json:"account,omitempty"`
+	Domain                 *string           `json:"domain,omitempty"`
 	ExtraHostKeyAlgorithms *[]string         `json:"extra_host_key_algorithms,omitempty"`
 	ExtraPubkeyAlgorithms  *[]string         `json:"extra_pubkey_algorithms,omitempty"`
 	IdentitiesOnly         *bool             `json:"identities_only,omitempty"`
@@ -422,6 +424,9 @@ func findSource(c Config, id string) (InventorySource, error) {
 func inventoryHosts(c Config) ([]Host, error) {
 	var hosts []Host
 	for _, s := range c.Sources {
+		if !sourceEnabled(c, s.ID) {
+			continue
+		}
 		inventory, err := sourceInventoryHosts(s)
 		if err != nil {
 			return nil, err

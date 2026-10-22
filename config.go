@@ -10,6 +10,8 @@ import (
 )
 
 type Config struct {
+	DisabledSources  []string                           `json:"disabled_sources,omitempty"`
+	StartupSource    string                             `json:"startup_source,omitempty"`
 	Hotkeys          map[string][]string                `json:"hotkeys,omitempty"`
 	HostOverrides    map[string]map[string]HostOverride `json:"host_overrides,omitempty"`
 	StartupMode      string                             `json:"startup_mode,omitempty"`
@@ -77,6 +79,9 @@ func decodeConfig(data []byte) (Config, error) {
 }
 
 func (c Config) validate() error {
+	if err := validateSourcePreferences(c); err != nil {
+		return err
+	}
 	if err := validateHotkeys(c); err != nil {
 		return err
 	}
@@ -97,6 +102,14 @@ func (c Config) validate() error {
 	}
 	for _, byID := range c.Overrides {
 		for _, o := range byID {
+			for _, value := range []*string{o.User, o.IdentityFile, o.JumpID, o.Account, o.Domain} {
+				if value != nil && clean(*value) != *value {
+					return fmt.Errorf("local override contains control characters")
+				}
+			}
+			if o.Port != nil && (*o.Port < 1 || *o.Port > 65535) {
+				return fmt.Errorf("invalid local port override")
+			}
 			for directive, names := range map[string]*[]string{"HostKeyAlgorithms": o.ExtraHostKeyAlgorithms, "PubkeyAcceptedAlgorithms": o.ExtraPubkeyAlgorithms} {
 				if names != nil {
 					if err := validateExtraAlgorithms(directive, *names); err != nil {

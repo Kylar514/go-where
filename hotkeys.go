@@ -12,6 +12,10 @@ type hotkeyAction struct {
 }
 
 var hotkeyActions = []hotkeyAction{
+	{"source_settings", "Sources: open Settings", "sources", []string{"ctrl+s"}},
+	{"source_create", "Create source", "sources", []string{"ctrl+n"}},
+	{"source_attach", "Add existing source", "sources", []string{"ctrl+o"}},
+	{"source_remove", "Remove highlighted source", "sources", []string{"ctrl+alt+d"}},
 	{"delete_host", "Delete saved host", "menu", []string{"delete"}},
 	{"quit", "Exit picker", "picker", []string{"esc", "ctrl+c"}},
 	{"settings", "Settings", "picker", []string{"ctrl+s"}},
@@ -68,7 +72,10 @@ func canonicalKey(c Config, key, scope string) string {
 	key = strings.ReplaceAll(key, "alt+ctrl+", "ctrl+alt+")
 	old := false
 	for _, a := range hotkeyActions {
-		if a.scope != scope && a.scope != "both" {
+		if scope == "sources" && a.id == "menu_save" {
+			continue
+		}
+		if a.scope != scope && a.scope != "both" && !(scope == "sources" && a.scope == "menu") {
 			continue
 		}
 		for _, k := range effectiveKeys(c, a) {
@@ -124,11 +131,14 @@ func validHotkey(key string) bool {
 
 func validateHotkeys(c Config) error {
 	known := map[string]bool{}
-	for _, scope := range []string{"picker", "menu"} {
+	for _, scope := range []string{"picker", "menu", "sources"} {
 		seen := map[string]string{}
 		for _, a := range hotkeyActions {
+			if scope == "sources" && a.id == "menu_save" {
+				continue
+			}
 			known[a.id] = true
-			if a.scope != scope && a.scope != "both" {
+			if a.scope != scope && a.scope != "both" && !(scope == "sources" && a.scope == "menu") {
 				continue
 			}
 			for _, key := range effectiveKeys(c, a) {

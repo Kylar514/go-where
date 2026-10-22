@@ -133,7 +133,7 @@ func TestMenuKindsAndBottomInput(t *testing.T) {
 		if len(lines) != size[1] || lines[input-1] != "Address" || !strings.HasPrefix(lines[input], "› 192.0.2.1") || lipgloss.Width(p.View()) > size[0] {
 			t.Fatal(v)
 		}
-		p.Update(tea.MouseMsg{X: 18, Y: size[1] - 1 - footerExtra(size[1])/2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		p.Update(tea.MouseMsg{X: 18, Y: footerButtonY(size[1]), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 		if !p.back {
 			t.Fatal("bottom Back button failed")
 		}

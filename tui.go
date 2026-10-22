@@ -897,6 +897,7 @@ func (m *pickerModel) View() string {
 		legend = "Click to select · Double-click to review transfer · ? Help"
 	}
 	legend = strings.Replace(legend, "? Help", keyHint(m.config, "help")+" Help", 1)
+	legend = keyHint(m.config, "launch") + " Launch | " + keyHint(m.config, "settings") + " Settings | " + keyHint(m.config, "sources") + " Sources | " + keyHint(m.config, "help") + " Help"
 	// Separate the search input from results without adding another row.
 	lines = append(lines, body, strings.Repeat("─", width), m.search.View())
 	if m.toolbarGap() > 0 {

@@ -106,9 +106,6 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 	}
 	for {
 		options := []choice{{"alias", "Name: " + h.Alias}, {"address", "Address: " + h.Address}, {"tags", "Tags: " + strings.Join(h.Tags, ", ")}, {"notes", "Notes: " + h.Notes}, {"ssh", "SSH profiles: " + hostProfileSummary(profiles, "ssh") + " …"}, {"rdp", "RDP profiles: " + hostProfileSummary(profiles, "rdp") + " …"}, {"tunnels", "Tunnels…"}, {"save", "Save host and profiles"}}
-		if selected != nil {
-			options = append(options, choice{"local-address", "Local host address override…"})
-		}
 		options = append(options, choice{"color", "Color: " + h.Color + " …"})
 		if selected != nil {
 			options = append(options, choice{"local-overrides", "Local overrides… (this device only)"})
@@ -122,33 +119,14 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 		}
 		switch id {
 		case "local-overrides":
-			choices := []choice{}
-			for _, p := range profiles {
-				if p.kind() == "ssh" {
-					choices = append(choices, choice{p.ID, p.ProfileName})
-				}
+			if e = editHostLocalOverrides(state.ConfigPath, s, h); e != nil {
+				return e
 			}
-			id, b, e := choose("Local SSH profile overrides", choices, "Only this host/profile attachment changes. Shared profile data is untouched.")
+			c, e = loadConfig(state.ConfigPath)
 			if e != nil {
 				return e
 			}
-			if b {
-				continue
-			}
-			kind, b, e := choose("Override", []choice{{"agent", "SSH agent"}, {"compatibility", "SSH compatibility"}}, "")
-			if e != nil {
-				return e
-			}
-			if b {
-				continue
-			}
-			editor := editAgentOverrideDraft
-			if kind == "compatibility" {
-				editor = editCompatibilityOverrideDraft
-			}
-			if e = editConnectionOverride(state.ConfigPath, Host{SourceID: s.ID, ConnectionID: id, Alias: h.Alias}, editor); e != nil {
-				return e
-			}
+			continue
 		case "color":
 			value, back, err := chooseHostColor(h.Color)
 			if err != nil {
@@ -156,53 +134,6 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 			}
 			if !back {
 				h.Color = value
-			}
-		case "local-address":
-			if state.ConfigPath == "" {
-				return fmt.Errorf("settings path required")
-			}
-			original, before, draft, e := settingsDraft(state.ConfigPath)
-			if e != nil {
-				return e
-			}
-			mode, b, e := choose("Local host address", []choice{{"inherit", "Inherit shared host address"}, {"custom", "Set local address…"}}, "Applies to every SSH/RDP profile and saved-host tunnel target. Existing profile-specific address overrides still take precedence. Saved separately.")
-			if e != nil {
-				return e
-			}
-			if b {
-				continue
-			}
-			var address *string
-			if mode == "custom" {
-				v, b, e := inventoryPrompt("Local host address", h.Address)
-				if e != nil {
-					return e
-				}
-				if b {
-					continue
-				}
-				address = &v
-			}
-			if draft.HostOverrides == nil {
-				draft.HostOverrides = map[string]map[string]HostOverride{}
-			}
-			if draft.HostOverrides[s.ID] == nil {
-				draft.HostOverrides[s.ID] = map[string]HostOverride{}
-			}
-			draft.HostOverrides[s.ID][h.ID] = HostOverride{Address: address}
-			_, b, e = choose("Save local host override?", []choice{{"save", "Save local settings separately"}}, "Cancelling the host editor does not undo this save.")
-			if e != nil {
-				return e
-			}
-			if b {
-				continue
-			}
-			if e = saveSettingsDraft(state.ConfigPath, original, before, draft); e != nil {
-				return e
-			}
-			c, e = loadConfig(state.ConfigPath)
-			if e != nil {
-				return e
 			}
 		case "ssh", "rdp":
 			if e = editHostProfiles(c, s, h, &profiles, id, state.ConfigPath); e != nil {
