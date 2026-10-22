@@ -22,8 +22,9 @@ type Transfer struct {
 }
 
 type transferJob struct {
-	Label string
-	Argv  []string
+	Configuration string
+	Label         string
+	Argv          []string
 }
 
 func localTransferPath(value string) (string, error) {
@@ -143,7 +144,7 @@ func transferCommand(t Transfer, h Host, sshConfig string, dry bool) ([]string, 
 	return append(argv, "--", from, to), nil
 }
 
-func transferReview(t Transfer, hosts []Host, target, sshConfig string) (string, error) {
+func transferReview(t Transfer, hosts []Host, target, sshConfig string, configs ...Config) (string, error) {
 	var text strings.Builder
 	fmt.Fprintf(&text, "%s · %s · %d host(s) · execution: %s\n\n%s\n", strings.ToUpper(t.Mode), strings.ToUpper(t.Direction), len(hosts), target, modeWarning(t.Mode))
 	text.WriteString("Existing destination files may be overwritten.\nRemote paths are passed as entered; use a destination valid on every selected host.\n")
@@ -151,7 +152,7 @@ func transferReview(t Transfer, hosts []Host, target, sshConfig string) (string,
 		text.WriteString("Recursive copy with timestamps (-rt), not ownership/permissions/archive mode. Source dir/ copies contents; dir copies the directory. No deletion.\n")
 	}
 	for _, h := range hosts {
-		argv, err := transferCommand(t, h, sshConfig, false)
+		job, err := buildTransferJob(t, h, sshConfig, false, transferConfig(configs))
 		if err != nil {
 			return "", err
 		}
@@ -160,7 +161,10 @@ func transferReview(t Transfer, hosts []Host, target, sshConfig string) (string,
 		if t.Direction == "download" {
 			from, to = to, from
 		}
-		fmt.Fprintf(&text, "\nHOST %s\nFROM %s\nTO   %s\n%s\n", h.Alias, from, to, shellCommand(argv))
+		fmt.Fprintf(&text, "\nHOST %s\nFROM %s\nTO   %s\n%s\n", h.Alias, from, to, shellCommand(job.Argv))
+		if job.Configuration != "" {
+			text.WriteString("Private SSH snapshot (personal SSH config is not read):\n" + job.Configuration)
+		}
 	}
 	return text.String(), nil
 }
@@ -207,7 +211,7 @@ func transferWizard(t *Transfer, hosts []Host, target string, o Origin, c Config
 			}
 		case 3:
 			var text, action string
-			text, err = transferReview(*t, hosts, target, sshConfig)
+			text, err = transferReview(*t, hosts, target, sshConfig, c)
 			if err != nil {
 				if showErr := notice(err.Error()); showErr != nil {
 					return false, errors.Join(err, showErr)
@@ -230,7 +234,7 @@ func transferWizard(t *Transfer, hosts []Host, target string, o Origin, c Config
 				}
 				_, err = exec.LookPath(tool)
 				if err == nil && action == "preview" {
-					err = previewTransfers(*t, hosts, sshConfig)
+					err = previewTransfers(*t, hosts, sshConfig, c)
 					if err == nil {
 						continue // Preview never authorizes execution.
 					}
@@ -271,13 +275,9 @@ func launchTransfers(t Transfer, hosts []Host, dest string, o Origin, c Config, 
 	var labels []string
 	var argvs [][]string
 	for _, h := range hosts {
-		argv, err := transferCommand(t, h, sshConfig, false)
+		job, err := buildTransferJob(t, h, sshConfig, false, c)
 		if err != nil {
 			return err // Validate every job before launching any of them.
-		}
-		job := transferJob{Label: t.Mode + " " + t.Direction + " · " + h.Alias, Argv: argv}
-		if c.debugLaunch {
-			job.Argv = verboseTransfer(argv)
 		}
 		labels = append(labels, job.Label)
 		argvs = append(argvs, []string{exe, "__run-transfer", encodeJob(job)})
@@ -331,6 +331,12 @@ func placeJobs(labels []string, argvs [][]string, dest string, o Origin, c Confi
 }
 
 func runTransferJob(job transferJob) error {
+	argv, cleanup, err := prepareTransferJob(job)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	job.Argv = argv
 	if len(job.Argv) == 0 || (job.Argv[0] != "scp" && job.Argv[0] != "rsync") {
 		return fmt.Errorf("invalid transfer executable")
 	}
@@ -338,7 +344,7 @@ func runTransferJob(job transferJob) error {
 	// Let the client receive Ctrl+C without killing the output-holding parent.
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
-	err := run(job.Argv)
+	err = run(job.Argv)
 	signal.Stop(interrupts)
 	if err != nil {
 		fmt.Printf("\nFAILED: %s\n", clean(err.Error()))
@@ -350,15 +356,21 @@ func runTransferJob(job transferJob) error {
 	return err
 }
 
-func previewTransfers(t Transfer, hosts []Host, sshConfig string) error {
+func previewTransfers(t Transfer, hosts []Host, sshConfig string, configs ...Config) error {
 	var failures []error
 	for _, h := range hosts {
-		argv, err := transferCommand(t, h, sshConfig, true)
+		job, err := buildTransferJob(t, h, sshConfig, true, transferConfig(configs))
+		if err != nil {
+			return err
+		}
+		argv, cleanup, err := prepareTransferJob(job)
 		if err != nil {
 			return err
 		}
 		fmt.Printf("\nDRY RUN · %s\n%s\n\n", clean(h.Alias), clean(shellCommand(argv)))
-		if err := run(argv); err != nil {
+		err = run(argv)
+		cleanup()
+		if err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", h.Alias, err))
 		}
 	}

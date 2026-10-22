@@ -85,8 +85,8 @@ func TestSQLiteSourcesAndGraph(t *testing.T) {
 		t.Fatal("marks crossed source filter")
 	}
 	m.switchMode("scp")
-	if len(m.visible) != 0 {
-		t.Fatal("managed records leaked into unsupported transfer mode")
+	if len(m.visible) != 1 {
+		t.Fatal("managed SSH records missing from transfer mode")
 	}
 	settings := filepath.Join(t.TempDir(), "config.json")
 	if err = registerSource(settings, a); err != nil {

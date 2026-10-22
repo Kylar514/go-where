@@ -489,3 +489,14 @@ func managedHostMode(h Host) string {
 		return "ssh"
 	}
 }
+
+func isTransferMode(mode string) bool {
+	return mode == "scp" || mode == "legacy-scp" || mode == "rsync"
+}
+
+func managedModeEligible(h Host, mode string) bool {
+	if isTransferMode(mode) {
+		return h.Type == "ssh" || h.Type == ""
+	}
+	return managedHostMode(h) == mode
+}

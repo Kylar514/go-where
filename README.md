@@ -276,6 +276,13 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+Database-backed SCP, Legacy SCP and Rsync use the selected host's SSH attachment
+and local overrides, with the same private per-hop config as SSH/RDP jumps.
+Review shows the resolved snapshot. Workers create the private file only for the
+operation and clean it up after success/failure; rsync dry-run uses it too.
+Debug verbosity, legacy `-O`, modern SFTP mode, and explicit write confirmation
+are preserved. Managed transfers never resolve a personal SSH-config alias.
+
 **Alt+D / Debug** launches once with diagnostics; rebind it under Hotkeys.
 SSH uses `-vv` and a 15-second connection timeout with the same managed snapshot.
 Debug runs in a tmux pane when available, otherwise a terminal, and pauses when

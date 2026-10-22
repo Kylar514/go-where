@@ -185,7 +185,7 @@ func (m *pickerModel) refilter() {
 			if m.state.Source != "" && ((m.state.Source == "ssh-config" && h.SourceID != "") || (m.state.Source != "ssh-config" && h.SourceID != m.state.Source)) {
 				continue
 			}
-			if h.SourceID != "" && managedHostMode(h) != m.state.Mode {
+			if h.SourceID != "" && !managedModeEligible(h, m.state.Mode) {
 				continue
 			}
 			if m.state.Mode == "rdp" && !h.isRDP(m.config.RDP.Tags) {
@@ -351,7 +351,7 @@ func (m *pickerModel) selection(highlightOnly bool) []Host {
 			if m.state.Source != "" && ((m.state.Source == "ssh-config" && h.SourceID != "") || (m.state.Source != "ssh-config" && h.SourceID != m.state.Source)) {
 				continue
 			}
-			if h.SourceID != "" && managedHostMode(h) != m.state.Mode {
+			if h.SourceID != "" && !managedModeEligible(h, m.state.Mode) {
 				continue
 			}
 			if m.marked[hostIdentity(h)] && (m.state.Mode != "rdp" || h.isRDP(m.config.RDP.Tags)) {
@@ -768,7 +768,11 @@ func (m *pickerModel) updatePreview() {
 		}
 	} else if h, ok := m.activeHost(); ok {
 		if h.SourceID != "" {
-			text := ansi.Wrap(cleanLines(managedDetails(h, m.config)), max(1, m.preview.Width), "")
+			details := managedDetails(h, m.config)
+			if isTransferMode(m.state.Mode) {
+				details = "Transfer method: " + strings.ToUpper(m.state.Mode) + "\n" + modeWarning(m.state.Mode) + "\n\n" + details
+			}
+			text := ansi.Wrap(cleanLines(details), max(1, m.preview.Width), "")
 			if h.Color != "" {
 				text = strings.Replace(text, "■", colorSwatch(h.Color), 1)
 			}
@@ -787,6 +791,11 @@ func (m *pickerModel) updatePreview() {
 		text += modeWarning(m.state.Mode) + "\n\n" + h.Block
 	} else {
 		text = "No matching hosts.\n\nRDP lists hosts with an indented # Windows or # RDP tag."
+		if isTransferMode(m.state.Mode) {
+			text = "No SSH-capable hosts found in the selected sources.\n\nAdd an SSH profile to a host, or enable another source.\n\nTransfer method: " + strings.ToUpper(m.state.Mode) + "\n" + modeWarning(m.state.Mode)
+		} else if m.state.Mode == "ssh" {
+			text = "No matching hosts.\n\nAdd a host with an SSH profile, enable another source, or clear the search filter."
+		}
 	}
 	m.preview.SetContent(ansi.Wrap(cleanLines(text), max(1, m.preview.Width), ""))
 }
