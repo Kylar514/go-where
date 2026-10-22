@@ -243,7 +243,7 @@ func TestMultiDialogMouseAndSmallTerminals(t *testing.T) {
 	if v := m.View(); !strings.Contains(v, "Done — apply 0 selected") {
 		t.Fatalf("pinned rows must stay visible after scrolling:\n%s", v)
 	}
-	m.Update(tea.MouseMsg{X: 2, Y: m.height - 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m.Update(tea.MouseMsg{X: 2, Y: m.height - 1 - footerExtra(m.height)/2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	if !m.back {
 		t.Fatal("clicking Back must cancel")
 	}

@@ -2,8 +2,12 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 )
+
+var saveActiveHost func() error
+var hostSaveState func() string
 
 func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 	previousKeys := menuHotkeys
@@ -55,6 +59,36 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 				profiles = append(profiles, record)
 			}
 		}
+	}
+	previousSave, previousState := saveActiveHost, hostSaveState
+	defer func() { saveActiveHost, hostSaveState = previousSave, previousState }()
+	beforeHost := h
+	beforeProfiles := append([]Connection(nil), profiles...)
+	saved := false
+	saveActiveHost = func() error {
+		if err := saveInventoryHost(s, h, profiles); err != nil {
+			return err
+		}
+		beforeHost = h
+		beforeProfiles = append([]Connection(nil), profiles...)
+		saved = true
+		state.Source = s.ID
+		state.Focus = s.ID + ":" + h.ID
+		for _, p := range profiles {
+			if p.Default && p.kind() == state.Mode {
+				state.Focus = s.ID + ":" + p.ID
+			}
+		}
+		return nil
+	}
+	hostSaveState = func() string {
+		if !reflect.DeepEqual(h, beforeHost) || !reflect.DeepEqual(profiles, beforeProfiles) {
+			return "Unsaved changes"
+		}
+		if saved {
+			return "Saved"
+		}
+		return "No unsaved changes"
 	}
 	for {
 		options := []choice{{"alias", "Name: " + h.Alias}, {"address", "Address: " + h.Address}, {"tags", "Tags: " + strings.Join(h.Tags, ", ")}, {"notes", "Notes: " + h.Notes}, {"ssh", "SSH profiles…"}, {"rdp", "RDP profiles…"}, {"tunnels", "Tunnels…"}, {"save", "Save host and profiles"}}
@@ -266,10 +300,9 @@ func editHostProfiles(c Config, s InventorySource, h InventoryHost, profiles *[]
 			case "settings":
 				p.Address, p.Tags, p.Notes = h.Address, h.Tags, h.Notes
 				ps := PickerState{Source: s.ID, ConfigPath: configPath}
-				if e = editConnectionDraft(c, &ps, nil, &p); e != nil {
+				if e = editConnectionDraft(c, &ps, nil, &(*profiles)[index]); e != nil {
 					return e
 				}
-				(*profiles)[index] = p
 			case "name":
 				v, b, e := inventoryPrompt("Profile name", p.ProfileName)
 				if e != nil {

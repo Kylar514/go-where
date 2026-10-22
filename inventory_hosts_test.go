@@ -162,7 +162,7 @@ func TestHostEditorCreatesMultipleProtocolsAndCancel(t *testing.T) {
 	c := defaultConfig()
 	c.Sources = []InventorySource{s}
 	state := PickerState{Source: s.ID, Mode: "ssh"}
-	scriptTUI(t, "alias", "enter\nserver", "address", "enter\n192.0.2.1", "ssh", "add", "enter\nDefault", "settings", "user", "enter\noperator", "save", "back", "add", "enter\nAdmin", "settings", "user", "enter\nadmin", "port", "enter\n2222", "save", "back", "back", "rdp", "add", "enter\nAdmin", "settings", "user", "enter\ndesktop-admin", "save", "back", "back", "save")
+	scriptTUI(t, "alias", "enter\nserver", "address", "enter\n192.0.2.1", "ssh", "add", "enter\nDefault", "settings", "user", "enter\noperator", "save", "back", "add", "enter\nAdmin", "settings", "user", "enter\nadmin", "port", "enter\n2222", "save", "back", "back", "rdp", "add", "enter\nAdmin", "settings", "user", "enter\ndesktop-admin", "save", "back", "back", "save-host", "back")
 	if err := editInventoryHost(c, &state, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestHostEditorCreatesMultipleProtocolsAndCancel(t *testing.T) {
 		t.Fatal("cancel wrote host", hosts, err)
 	}
 	// Bare hosts remain visible and editable before protocols are configured.
-	scriptTUI(t, "alias", "enter\nbare", "address", "enter\n192.0.2.5", "save")
+	scriptTUI(t, "alias", "enter\nbare", "address", "enter\n192.0.2.5", "save-host", "back")
 	if err = editInventoryHost(c, &state, nil); err != nil {
 		t.Fatal(err)
 	}

@@ -47,6 +47,10 @@ func scriptTUI(t *testing.T, steps ...string) *[]string {
 			m.search.SetValue(parts[0])
 		case *dialogModel:
 			seen = append(seen, "dialog:"+m.title)
+			if step == "save-host" {
+				m.result = "__save_host"
+				return m, nil
+			}
 			if step == "back" {
 				m.back = true
 				return m, nil

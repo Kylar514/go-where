@@ -276,6 +276,13 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+Host editors and SSH/RDP profile menus expose **Save host** in the footer.
+Ctrl+S (the configured menu-save binding) persists the host/profile draft without
+leaving the screen, including current connection-profile edits. Headers show
+Saved/Unsaved changes; Back discards only changes made since the last save.
+Local overrides and tunnel definitions retain their separate-save workflows.
+Color choices show a swatch before their name and hex value, even when selected.
+
 ### Hotkeys and host colors
 
 **Settings → Hotkeys** edits comma-separated bindings for picker and menu actions.

@@ -1,12 +1,49 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
+
+func TestAllTabLabelsStayIdenticalWhenActivated(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+	bold := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	m := &pickerModel{width: 148, height: 28}
+	var expected string
+	for _, tab := range pickerTabs {
+		m.state.Mode = strings.TrimPrefix(tab.action, "mode:")
+		strip, _, _ := m.controls(pickerTabs, 0)
+		styledRow := strings.Split(strip, "\n")[1]
+		if !strings.Contains(styledRow, "\x1b[") {
+			t.Fatal("test requires styled output")
+		}
+		for _, code := range bold.FindAllString(styledRow, -1) {
+			for _, parameter := range strings.Split(strings.TrimSuffix(strings.TrimPrefix(code, "\x1b["), "m"), ";") {
+				if parameter == "1" {
+					t.Fatalf("%s tab uses bold: %q", tab.label, code)
+				}
+			}
+		}
+		labelRow := ansi.Strip(strings.Split(strip, "\n")[1])
+		if expected == "" {
+			expected = labelRow
+		}
+		if labelRow != expected {
+			t.Fatalf("%s changes tab labels: %q versus %q", tab.label, labelRow, expected)
+		}
+		if !strings.Contains(labelRow, "│ RDP │") {
+			t.Fatal("RDP label changed", labelRow)
+		}
+	}
+}
 
 func TestClickableControlsAndDoubleClick(t *testing.T) {
 	c := defaultConfig()
@@ -67,10 +104,10 @@ func TestConnectedStripsHaveSharedBordersAndOpenActiveTab(t *testing.T) {
 	m := &pickerModel{width: 100, height: 28, state: PickerState{Mode: "rdp"}}
 	strip, hits, height := m.controls(pickerTabs, 0)
 	lines := strings.Split(strip, "\n")
-	if height != 2 || !strings.Contains(lines[0], "│ SSH │ RDP │") || strings.Contains(lines[0], "││") {
+	if height != 3 || !strings.Contains(lines[1], "│ SSH │ RDP │") || strings.Contains(lines[1], "││") || !strings.Contains(lines[0], "╭─────┬─────┬") {
 		t.Fatal(strip)
 	}
-	if !strings.Contains(lines[1], "┘     └") {
+	if !strings.Contains(lines[2], "┘     └") {
 		t.Fatal("active tab underline was not opened", strip)
 	}
 	for _, hit := range hits {
@@ -82,17 +119,17 @@ func TestConnectedStripsHaveSharedBordersAndOpenActiveTab(t *testing.T) {
 	}
 	strip, _, _ = m.controls(m.buttons(), 0)
 	lines = strings.Split(strip, "\n")
-	if len(lines) != 1 || !strings.Contains(lines[0], "│ Connect │ Connect as │") || strings.Contains(lines[0], "││") {
+	if len(lines) != 3 || !strings.Contains(lines[1], "│ Connect │ Connect as │") || strings.Contains(lines[1], "││") || !strings.Contains(lines[0], "┬") || !strings.Contains(lines[2], "┴") {
 		t.Fatal("action bar disconnected", strip)
 	}
 	m.state.Mode = "rsync"
 	strip, _, _ = m.controls(pickerTabs, 0)
-	if !strings.Contains(strings.Split(strip, "\n")[1], "┘       └─") {
+	if !strings.Contains(strings.Split(strip, "\n")[2], "┘       └─") {
 		t.Fatal("last active tab does not join baseline", strip)
 	}
 	m.state.Mode = "ssh"
 	strip, _, _ = m.controls(pickerTabs, 0)
-	if !strings.HasPrefix(strings.Split(strip, "\n")[1], "┘     └") {
+	if !strings.HasPrefix(strings.Split(strip, "\n")[2], "┘     └") {
 		t.Fatal("first active tab does not join baseline", strip)
 	}
 }

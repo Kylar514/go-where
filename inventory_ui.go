@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/tailscale/hujson"
@@ -216,6 +217,25 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 		r = *profile
 		originalKind = r.kind()
 		existing = false
+	}
+	if profile != nil && saveActiveHost != nil && profile.kind() != "tunnel" {
+		parentSave, parentState := saveActiveHost, hostSaveState
+		defer func() { saveActiveHost, hostSaveState = parentSave, parentState }()
+		saveActiveHost = func() error {
+			previous := *profile
+			*profile = r
+			if err := parentSave(); err != nil {
+				*profile = previous
+				return err
+			}
+			return nil
+		}
+		hostSaveState = func() string {
+			if !reflect.DeepEqual(r, *profile) {
+				return "Unsaved changes"
+			}
+			return parentState()
+		}
 	}
 	for {
 		options := connectionFields(r, s, c)

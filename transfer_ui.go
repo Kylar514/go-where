@@ -99,6 +99,20 @@ func chooseOne(title string, options []choice, text, current string) (string, bo
 }
 
 func runChoice(m *dialogModel, key string) (string, bool, error) {
+	m.saveHost = saveActiveHost != nil && saveActiveSettings == nil
+	if strings.Contains(m.title, "tunnel") || strings.Contains(m.title, "Tunnel") || strings.Contains(m.title, "Local") || strings.Contains(m.title, "local") || m.title == "Notice" {
+		m.saveHost = false
+	}
+	if m.saveHost && strings.HasPrefix(m.title, "Host — ") {
+		var options []choice
+		for _, option := range m.options {
+			if option.ID != "save" {
+				options = append(options, option)
+			}
+		}
+		m.options = options
+		m.refilter()
+	}
 	if menuPositions != nil {
 		found := -1
 		for i, title := range menuTrail {
@@ -127,7 +141,14 @@ func runChoice(m *dialogModel, key string) (string, bool, error) {
 		m.restorePreview = &position.preview
 	}
 	_, err := runTUI(m)
-	for err == nil && m.result == "__save_settings" {
+	for err == nil && (m.result == "__save_settings" || m.result == "__save_host") {
+		if m.result == "__save_host" && saveActiveHost != nil {
+			if e := saveActiveHost(); e != nil {
+				m.saveMessage = e.Error()
+			} else {
+				m.saveMessage = ""
+			}
+		}
 		if saveActiveSettings != nil {
 			if e := saveActiveSettings(); e != nil {
 				m.saveMessage = e.Error()

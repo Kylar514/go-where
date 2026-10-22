@@ -96,11 +96,11 @@ func (m *multiDialog) tooSmall() bool { return m.width < 24 || m.height < 10 }
 func (m *multiDialog) Init() tea.Cmd { return textinput.Blink }
 
 func (m *multiDialog) listStart() int {
-	return m.height - 5 - m.itemRows()
+	return m.height - 5 - footerExtra(m.height) - m.itemRows()
 }
 
 func (m *multiDialog) itemRows() int {
-	rows := m.height - 7
+	rows := m.height - 7 - footerExtra(m.height)
 	if m.text != "" {
 		rows -= m.preview.Height + 1
 	}
@@ -169,7 +169,7 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.tooSmall() {
 			return m, nil
 		}
-		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.height-1 && msg.X >= 0 && msg.X < 8 {
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.height-1-footerExtra(m.height)/2 && msg.X >= 0 && msg.X < 8 {
 			m.done, m.back = true, true
 			return m, tea.Quit
 		}
@@ -269,7 +269,7 @@ func (m *multiDialog) View() string {
 	done := fmt.Sprintf("│ Done — apply %d selected │", m.checkedCount())
 	manual := "│ Type a name manually… │"
 	lines = append(lines, row(len(m.filtered), done, done), row(len(m.filtered)+1, manual, manual))
-	footer := compactControl("Back") + "  " + keyHint(menuHotkeys, "back") + " discard · " + keyHint(menuHotkeys, "select") + "/Space toggle"
-	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), fit(footer, m.width))
+	footer := menuFooter(m.height, m.width, []string{"Back"}, keyHint(menuHotkeys, "back")+" discard · "+keyHint(menuHotkeys, "select")+"/Space toggle")
+	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), footer)
 	return strings.Join(lines, "\n")
 }

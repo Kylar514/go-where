@@ -35,7 +35,8 @@ func TestMenuNavigationAndBottomSearch(t *testing.T) {
 		d.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		view := ansi.Strip(d.View())
 		lines := strings.Split(view, "\n")
-		if len(lines) != size[1] || !strings.HasPrefix(lines[size[1]-2], "⌕ Search: ") || !strings.HasPrefix(lines[size[1]-3], "─") || lipgloss.Width(d.View()) > size[0] {
+		search := size[1] - 2 - footerExtra(size[1])
+		if len(lines) != size[1] || !strings.HasPrefix(lines[search], "⌕ Search: ") || !strings.HasPrefix(lines[search-1], "─") || lipgloss.Width(d.View()) > size[0] {
 			t.Fatalf("layout %v:\n%s", size, view)
 		}
 		if d.query.PromptStyle.String() != tuiAccent.String() {
@@ -128,10 +129,11 @@ func TestMenuKindsAndBottomInput(t *testing.T) {
 		p.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		v = ansi.Strip(p.View())
 		lines := strings.Split(v, "\n")
-		if len(lines) != size[1] || lines[size[1]-3] != "Address" || !strings.HasPrefix(lines[size[1]-2], "› 192.0.2.1") || lipgloss.Width(p.View()) > size[0] {
+		input := size[1] - 2 - footerExtra(size[1])
+		if len(lines) != size[1] || lines[input-1] != "Address" || !strings.HasPrefix(lines[input], "› 192.0.2.1") || lipgloss.Width(p.View()) > size[0] {
 			t.Fatal(v)
 		}
-		p.Update(tea.MouseMsg{X: 17, Y: size[1] - 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		p.Update(tea.MouseMsg{X: 18, Y: size[1] - 1 - footerExtra(size[1])/2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 		if !p.back {
 			t.Fatal("bottom Back button failed")
 		}

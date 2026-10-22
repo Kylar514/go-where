@@ -9,7 +9,29 @@ import (
 type pickerButton struct{ label, action string }
 
 func compactControl(labels ...string) string {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Render("│ " + strings.Join(labels, " │ ") + " │")
+	var top, bottom []string
+	for _, label := range labels {
+		top = append(top, strings.Repeat("─", lipgloss.Width(label)+2))
+		bottom = append(bottom, strings.Repeat("─", lipgloss.Width(label)+2))
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Render("╭" + strings.Join(top, "┬") + "╮\n│ " + strings.Join(labels, " │ ") + " │\n╰" + strings.Join(bottom, "┴") + "╯")
+}
+
+func menuFooter(height, width int, labels []string, hint string) string {
+	bar := compactControl(labels...)
+	lines := strings.Split(bar, "\n")
+	lines[1] = fit(lines[1]+"  "+hint, width)
+	if height < 14 {
+		return lines[1]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func footerExtra(height int) int {
+	if height < 14 {
+		return 0
+	}
+	return 2
 }
 
 var pickerTabs = []pickerButton{{"SSH", "mode:ssh"}, {"RDP", "mode:rdp"}, {"Tunnels", "mode:tunnels"}, {"SCP", "mode:scp"}, {"Legacy SCP", "mode:legacy-scp"}, {"Rsync", "mode:rsync"}}
@@ -60,7 +82,12 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 	rounded := len(buttons) > 0 && strings.HasPrefix(buttons[0].action, "mode:")
 	height := 1
 	if rounded {
-		height = 2
+		height = 3
+		if m.height < 16 {
+			height = 2
+		}
+	} else if m.height >= 16 {
+		height = 3
 	}
 	var lines []string
 	var hits []hitRegion
@@ -71,7 +98,7 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 			return
 		}
 		tabs := strings.HasPrefix(group[0].action, "mode:")
-		var middle, bottom strings.Builder
+		var top, middle, bottom strings.Builder
 		x := 0
 		border := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 		for i, button := range group {
@@ -79,7 +106,7 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 			style := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 			edge := border
 			if active {
-				style = style.Foreground(lipgloss.Color("75")).Bold(true)
+				style = style.Foreground(lipgloss.Color("75"))
 			}
 			if button.action == "help" {
 				style = style.Foreground(lipgloss.Color("245"))
@@ -87,6 +114,11 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 			label := " " + button.label + " "
 			w := lipgloss.Width(label)
 			if rounded {
+				leftTop := "┬"
+				if i == 0 {
+					leftTop = "╭"
+				}
+				top.WriteString(edge.Render(leftTop + strings.Repeat("─", w)))
 				leftBottom := "┴"
 				if i == 0 {
 					leftBottom = "└"
@@ -102,6 +134,12 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 					bottom.WriteString(edge.Render(leftBottom + strings.Repeat("─", w)))
 				}
 			} else {
+				leftTop, leftBottom := "┬", "┴"
+				if i == 0 {
+					leftTop, leftBottom = "╭", "╰"
+				}
+				top.WriteString(edge.Render(leftTop + strings.Repeat("─", w)))
+				bottom.WriteString(edge.Render(leftBottom + strings.Repeat("─", w)))
 				if i == 0 {
 					middle.WriteString(border.Render("│"))
 				} else {
@@ -117,6 +155,7 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 		last := group[len(group)-1]
 		edge := border
 		if rounded {
+			top.WriteString(edge.Render("╮"))
 			middle.WriteString(edge.Render("│"))
 			if tabs && last.action == "mode:"+m.state.Mode {
 				bottom.WriteString(edge.Render("└"))
@@ -126,10 +165,19 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 			if tabs {
 				bottom.WriteString(border.Render(strings.Repeat("─", max(0, width-x-1))))
 			}
+			if height == 3 {
+				lines = append(lines, top.String())
+			}
 			lines = append(lines, middle.String(), bottom.String())
 		} else {
 			middle.WriteString(border.Render("│"))
-			lines = append(lines, middle.String())
+			if height == 3 {
+				top.WriteString(border.Render("╮"))
+				bottom.WriteString(border.Render("╯"))
+				lines = append(lines, top.String(), middle.String(), bottom.String())
+			} else {
+				lines = append(lines, middle.String())
+			}
 		}
 		// Include the final shared edge in the last segment's click target.
 		for i := len(hits) - height; i < len(hits); i++ {

@@ -100,6 +100,8 @@ func menuKey(title string) string {
 }
 
 type dialogModel struct {
+	saveHost       bool
+	colorChoices   bool
 	saveMessage    string
 	swatch         string
 	breadcrumb     string
@@ -163,7 +165,7 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		content := ansi.Wrap(menuExplanation(m.text), m.preview.Width, "")
 		m.preview.Height = min(lipgloss.Height(content), max(1, (msg.Height-7)/2))
 		if msg.Width >= 90 {
-			m.preview.Height = max(1, min(20, msg.Height-5)-2)
+			m.preview.Height = max(1, min(20, msg.Height-5-footerExtra(msg.Height))-2)
 		}
 		m.preview.SetContent(content)
 		if m.restorePreview != nil {
@@ -177,6 +179,10 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch key {
 		case "ctrl+s":
+			if m.saveHost {
+				m.result, m.done = "__save_host", true
+				return m, tea.Quit
+			}
 			if saveActiveSettings != nil {
 				m.result, m.done = "__save_settings", true
 				return m, tea.Quit
@@ -212,11 +218,11 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.width < 24 || m.height < 9 {
 			return m, nil
 		}
-		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.height-1 && msg.X >= 0 && msg.X < 8 {
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() && msg.X >= 0 && msg.X < 8 {
 			m.done, m.back = true, true
 			return m, tea.Quit
 		}
-		if m.title == "Settings" && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.height-1 {
+		if m.title == "Settings" && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() {
 			if msg.X >= 8 && msg.X < 15 {
 				if saveActiveSettings != nil {
 					m.result, m.done = "__save_settings", true
@@ -230,8 +236,12 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		}
-		if m.title != "Settings" && saveActiveSettings != nil && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.height-1 && msg.X >= 8 && msg.X < 24 {
+		if m.title != "Settings" && saveActiveSettings != nil && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() && msg.X >= 8 && msg.X < 24 {
 			m.result, m.done = "__save_settings", true
+			return m, tea.Quit
+		}
+		if m.saveHost && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() && msg.X >= 8 && msg.X < 20 {
+			m.result, m.done = "__save_host", true
 			return m, tea.Quit
 		}
 		if msg.Button == tea.MouseButtonWheelUp {
@@ -280,7 +290,7 @@ func (m *dialogModel) inList(x int) bool {
 	return x >= 0 && x < width
 }
 func (m *dialogModel) optionRows() int {
-	rows := m.height - 5
+	rows := m.height - 5 - footerExtra(m.height)
 	if m.text != "" && m.width < 90 {
 		rows -= m.preview.Height + 1
 	}
@@ -288,8 +298,10 @@ func (m *dialogModel) optionRows() int {
 }
 
 func (m *dialogModel) listStart() int {
-	return m.height - 3 - m.optionRows()
+	return m.height - 3 - footerExtra(m.height) - m.optionRows()
 }
+
+func (m *dialogModel) footerY() int { return m.height - 1 - footerExtra(m.height)/2 }
 func (m *dialogModel) View() string {
 	if m.width == 0 {
 		return "Loading…"
@@ -310,6 +322,9 @@ func (m *dialogModel) View() string {
 	}
 	if settingsSaveState != nil {
 		header += " · " + settingsSaveState()
+	}
+	if m.saveHost && hostSaveState != nil {
+		header += " · " + hostSaveState()
 	}
 	if m.saveMessage != "" {
 		header += " · " + m.saveMessage
@@ -355,6 +370,11 @@ func (m *dialogModel) View() string {
 		if i == m.cursor {
 			label = tuiSelected.Render(fit("› "+value, listWidth))
 		}
+		if m.colorChoices && hostHexColor.MatchString(option.ID) {
+			// The radio marker is two cells; put the swatch after it, outside
+			// the selected row's reverse video so its color remains visible.
+			label = ansi.Cut(label, 0, 4) + colorSwatch(option.ID) + " " + ansi.Cut(label, 4, listWidth-2)
+		}
 		rows = append(rows, fit(label, listWidth))
 	}
 	body := strings.Join(rows, "\n")
@@ -363,20 +383,27 @@ func (m *dialogModel) View() string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(listWidth).Render(body), " ", panel)
 	}
 	lines = append(lines, body)
-	footer := compactControl("Back") + "  Ctrl+H/← back · Ctrl+L/Enter select · ↑/↓ move · Ctrl+U/D details"
+	labels := []string{"Back"}
+	hint := "Ctrl+H/← back · Ctrl+L/Enter select · ↑/↓ move · Ctrl+U/D details"
 	if len(menuHotkeys.Hotkeys) > 0 {
-		footer = compactControl("Back") + "  " + keyHint(menuHotkeys, "back") + " back · " + keyHint(menuHotkeys, "select") + " select"
+		hint = keyHint(menuHotkeys, "back") + " back · " + keyHint(menuHotkeys, "select") + " select"
 	}
 	if m.title == "Settings" {
-		footer = compactControl("Back", "Save", "Cancel") + "  Ctrl+S save · Esc cancel · Ctrl+L/Enter open"
+		labels = []string{"Back", "Save", "Cancel"}
+		hint = "Ctrl+S save · Esc cancel · Ctrl+L/Enter open"
 		if len(menuHotkeys.Hotkeys) > 0 {
-			footer = compactControl("Back", "Save", "Cancel") + "  " + keyHint(menuHotkeys, "menu_save") + " save · " + keyHint(menuHotkeys, "back") + " back"
+			hint = keyHint(menuHotkeys, "menu_save") + " save · " + keyHint(menuHotkeys, "back") + " back"
 		}
 	}
 	if saveActiveSettings != nil && m.title != "Settings" {
-		footer = compactControl("Back", "Save settings") + "  " + keyHint(menuHotkeys, "menu_save") + " save · " + keyHint(menuHotkeys, "back") + " back"
+		labels = []string{"Back", "Save settings"}
+		hint = keyHint(menuHotkeys, "menu_save") + " save · " + keyHint(menuHotkeys, "back") + " back"
 	}
-	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), fit(footer, m.width))
+	if m.saveHost {
+		labels = []string{"Back", "Save host"}
+		hint = keyHint(menuHotkeys, "menu_save") + " save · " + keyHint(menuHotkeys, "back") + " back"
+	}
+	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), menuFooter(m.height, m.width, labels, hint))
 	return strings.Join(lines, "\n")
 }
 
@@ -467,7 +494,7 @@ func (m *pathModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
-			if msg.Y == m.height-1 && msg.X >= 0 && msg.X < 25 {
+			if msg.Y == m.height-1-footerExtra(m.height)/2 && msg.X >= 0 && msg.X < 25 {
 				m.done = true
 				m.back = msg.X >= 17
 				return m, tea.Quit
@@ -519,8 +546,8 @@ func (m *pathModel) View() string {
 	} else {
 		lines = append(lines, "")
 	}
-	lines = append(lines, strings.Repeat("─", m.width), tuiAccent.Render(fit(m.label, m.width)), m.input.View(), fit(compactControl("Use typed path", "Back")+"  Enter accept · Tab complete · Esc back", m.width))
+	lines = append(lines, strings.Repeat("─", m.width), tuiAccent.Render(fit(m.label, m.width)), m.input.View(), menuFooter(m.height, m.width, []string{"Use typed path", "Back"}, "Enter accept · Tab complete · Esc back"))
 	return strings.Join(lines, "\n")
 }
 
-func (m *pathModel) inputRows() int { return max(1, m.height-6) }
+func (m *pathModel) inputRows() int { return max(1, m.height-6-footerExtra(m.height)) }

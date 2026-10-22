@@ -24,7 +24,20 @@ func colorSwatch(color string) string {
 func chooseHostColor(current string) (string, bool, error) {
 	for {
 		options := []choice{{"custom", "Enter hex color…"}, {"", "Clear color"}, {"#ef4444", "Red"}, {"#f59e0b", "Amber"}, {"#22c55e", "Green"}, {"#3b82f6", "Blue"}, {"#a855f7", "Purple"}, {"#06b6d4", "Cyan"}}
-		id, back, err := chooseOne("Host color", options, "Current: "+current+"\n\nColors mark hosts, not access permissions. Dark colors may be difficult to see. Limited-color terminals approximate RGB colors.", current)
+		for i := range options {
+			if hostHexColor.MatchString(options[i].ID) {
+				options[i].Label += "  " + options[i].ID
+			}
+		}
+		menu := newDialog("Host color", options, "Current: "+current+"\n\nColors mark hosts, not access permissions. Dark colors may be difficult to see. Limited-color terminals approximate RGB colors.")
+		menu.singleChoice, menu.current, menu.colorChoices = true, current, true
+		for i, option := range options {
+			if option.ID == current {
+				menu.cursor = i
+				break
+			}
+		}
+		id, back, err := runChoice(menu, menuKey("Host color"))
 		if err != nil || back {
 			return current, back, err
 		}
