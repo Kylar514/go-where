@@ -28,8 +28,7 @@ func app(args []string) error {
 		if e1 != nil || e2 != nil || port < 1 || port > 65535 || pid < 1 {
 			return fmt.Errorf("invalid tunnel probe arguments")
 		}
-		runTunnelProbe(args[1], port, pid)
-		return nil
+		return fmt.Errorf("legacy tunnel probes are no longer supported; use database tunnel status")
 	}
 	if len(args) > 0 && strings.HasPrefix(args[0], "__") {
 		return transferInternal(args)
@@ -51,7 +50,7 @@ func app(args []string) error {
 	dest := fs.String("destination", "", "override default: tmux-pane, tmux-window, tmux-session, terminal, current")
 	noPopup := fs.Bool("no-popup", false, "run inline instead of opening a tmux popup")
 	popup := fs.Bool("popup", false, "open inside a tmux popup (default: standalone TUI)")
-	tunnelsConfig := fs.String("tunnels-config", "", "Diglet connections.yaml (default: existing Diglet user config)")
+	tunnelsConfig := fs.String("tunnels-config", "", "deprecated: legacy tunnel YAML is no longer supported")
 	inPopup := fs.Bool("in-popup", false, "internal: running inside a tmux popup that closes after a launch")
 	client := fs.String("client", "", "invoking tmux client (for bindings or shared panes)")
 	context := fs.String("origin", "", "internal: captured tmux origin")
@@ -75,6 +74,9 @@ func app(args []string) error {
 			return nil
 		}
 		return err
+	}
+	if *tunnelsConfig != "" {
+		return fmt.Errorf("--tunnels-config was removed; add tunnels to a database source")
 	}
 	if fs.NArg() != 0 {
 		return fmt.Errorf("unexpected argument %q", fs.Arg(0))
@@ -279,15 +281,7 @@ func app(args []string) error {
 			}
 			continue
 		case "tunnel-edit":
-			path := c.TunnelsConfig
-			if path == "" {
-				path = defaultTunnelPath()
-			}
-			path = expandHome(path, home)
-			if err := ensureTunnelConfig(path); err != nil {
-				return err
-			}
-			return editFile(path, 0, c.EditDestination, false, o, c)
+			return fmt.Errorf("legacy tunnel config editing was removed; use database tunnels")
 		case "ctrl-r":
 			continue
 		case "ctrl-alt-s":

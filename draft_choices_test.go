@@ -7,7 +7,7 @@ func TestTunnelBackendSelectionOnlyConfirmsDataLoss(t *testing.T) {
 	c := defaultConfig()
 	c.Sources = []InventorySource{s}
 	state := PickerState{Source: s.ID, Mode: "tunnels"}
-	scriptTUI(t, "tunnel_type", "kubectl", "alias", "enter\nforward", "resource", "enter\nservice/web", "save")
+	scriptTUI(t, s.ID, "tunnel_type", "kubectl", "alias", "enter\nforward", "resource", "enter\nservice/web", "save-tunnel", "back")
 	if err := editConnection(c, &state, nil); err != nil {
 		t.Fatal(err)
 	}

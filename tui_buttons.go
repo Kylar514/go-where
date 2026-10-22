@@ -65,6 +65,9 @@ func (m *pickerModel) buttons() []pickerButton {
 		return []pickerButton{{"Go", "connect"}, {"Settings", "settings"}, {"Help", "help"}}
 	}
 	if m.state.Mode == "tunnels" {
+		if len(m.markedTunnels()) > 0 {
+			return []pickerButton{{"Start selected", "start-selected"}, {"Stop selected", "stop-selected"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
+		}
 		primary = "Start"
 		if len(m.visible) > 0 {
 			info := m.tunnelStatus[m.tunnels[m.visible[m.cursor]].Name]

@@ -276,6 +276,23 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+### Standalone database tunnel engine
+
+go-where now owns the migrated tunnel lifecycle/registry and Linux/Windows
+process/listener code under `internal/tunnelcore/`. Diglet is no longer a module
+dependency and no Diglet binary or YAML is read. MIT attribution is retained in
+that package. SSH and Kubernetes tunnel definitions come only from enabled
+database sources; create/edit them through the Tunnels tab or host editor.
+
+The registry is private to `go-where/tunnels/state.json` in the user cache.
+Existing Diglet processes and files are not adopted or stopped. Stop old tunnels
+with their original manager before starting replacements on the same ports.
+PID creation identity checks protect against terminating reused PIDs; port
+reservations remain globally port-keyed. Abandoned registry/snapshot locks require
+manual removal only when no operation is running. macOS lifecycle support remains
+pending. Legacy `--tunnels-config` is rejected; old `tunnels_config` settings are
+accepted for compatibility but ignored. No database schema change is required.
+
 Database-backed SCP, Legacy SCP and Rsync use the selected host's SSH attachment
 and local overrides, with the same private per-hop config as SSH/RDP jumps.
 Review shows the resolved snapshot. Workers create the private file only for the

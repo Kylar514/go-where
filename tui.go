@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -12,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	digletconfig "github.com/kylar514/diglet/config"
+	digletconfig "github.com/kylar514/go-where/internal/tunnelcore"
 	"github.com/sahilm/fuzzy"
 )
 
@@ -65,6 +64,7 @@ type pickerModel struct {
 	dragKind                      string
 	dragColumn, dragX             int
 	dragWidths                    []int
+	dragHostWidths                []int
 }
 
 func newPickerModel(hosts []Host, query, dest string, o Origin, state PickerState, c Config) *pickerModel {
@@ -108,18 +108,7 @@ func newPickerModel(hosts []Host, query, dest string, o Origin, state PickerStat
 func (m *pickerModel) loadTunnels() {
 	m.tunnelHosts = map[string]Host{}
 	m.tunnelErrors = map[string]error{}
-	m.tunnelPath = m.config.TunnelsConfig
-	if m.tunnelPath == "" {
-		m.tunnelPath = digletconfig.DefaultConfigPath()
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		m.tunnelPath = expandHome(m.tunnelPath, home)
-	}
-	cfg, err := digletconfig.Load(m.tunnelPath)
-	m.tunnelLoadErr = err
-	if err == nil {
-		m.tunnels = cfg.Connections
-	}
+	m.tunnels = nil
 	for _, h := range m.hosts {
 		if h.SourceID != "" && h.Type == "tunnel" {
 			conn, err := inventoryTunnel(h, m.config)
@@ -380,7 +369,7 @@ func (m *pickerModel) finish(key string) tea.Cmd {
 				return tea.Quit
 			}
 		}
-		m.key = "tunnel-edit"
+		m.key = "new-connection"
 		return tea.Quit
 	}
 	if key == "enter" && m.state.Mode == "tunnels" {
@@ -464,6 +453,10 @@ func (m *pickerModel) action(action string) tea.Cmd {
 		return m.finish("settings")
 	case "connect":
 		return m.finish("enter")
+	case "start-selected":
+		return m.bulkTunnels(false)
+	case "stop-selected":
+		return m.bulkTunnels(true)
 	case "debug":
 		return m.finish("debug")
 	case "connect-as":
@@ -643,6 +636,16 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.preview.ScrollDown(1)
 			return m, nil
 		case "tab", "shift+tab":
+			if m.state.Mode == "tunnels" && len(m.visible) > 0 {
+				name := m.tunnels[m.visible[m.cursor]].Name
+				m.marked[name] = !m.marked[name]
+				delta := 1
+				if key == "shift+tab" {
+					delta = -1
+				}
+				m.cursor = cycleCursor(m.cursor, delta, len(m.visible))
+				break
+			}
 			if h, ok := m.activeHost(); ok {
 				m.marked[hostIdentity(h)] = !m.marked[hostIdentity(h)]
 				delta := 1
@@ -706,6 +709,10 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if hit.action == "row" {
 						m.cursor = hit.index
 						if msg.X >= 1 && msg.X <= 3 {
+							if m.state.Mode == "tunnels" {
+								name := m.tunnels[m.visible[m.cursor]].Name
+								m.marked[name] = !m.marked[name]
+							}
 							if h, ok := m.activeHost(); ok {
 								m.marked[hostIdentity(h)] = !m.marked[hostIdentity(h)]
 							}
@@ -756,12 +763,12 @@ func (m *pickerModel) updatePreview() {
 				if err := m.tunnelErrors[c.Name]; err != nil {
 					text += "\n" + err.Error()
 				}
-				m.preview.SetContent(ansi.Wrap(cleanLines(text), max(1, m.preview.Width), ""))
+				m.setHostPreview(text, h)
 				return
 			}
 			text = fmt.Sprintf("%s\n\nType       %s\nLocal      127.0.0.1:%d\nRemote     %d\nSSH host   %s\nResource   %s\nNamespace  %s\n\n%s\n\n%s", c.Name, c.TunnelType, c.LocalPort, c.RemotePort, c.SSHHost, c.Resource, c.Namespace, m.tunnelLabel(c.Name), tunnelCommandPreview(c))
 		} else {
-			text = "No tunnels configured.\n\nCtrl+E creates/edits your Diglet connections file.\n\n" + m.tunnelPath
+			text = "No database tunnels configured.\n\nAdd a tunnel with Ctrl+N in an enabled SQLite source. SSH tunnels reference saved SSH profiles; Kubernetes tunnels use saved forwarding settings."
 			if m.tunnelLoadErr != nil {
 				text += "\n\n" + m.tunnelLoadErr.Error()
 			}
@@ -772,11 +779,7 @@ func (m *pickerModel) updatePreview() {
 			if isTransferMode(m.state.Mode) {
 				details = "Transfer method: " + strings.ToUpper(m.state.Mode) + "\n" + modeWarning(m.state.Mode) + "\n\n" + details
 			}
-			text := ansi.Wrap(cleanLines(details), max(1, m.preview.Width), "")
-			if h.Color != "" {
-				text = strings.Replace(text, "■", colorSwatch(h.Color), 1)
-			}
-			m.preview.SetContent(text)
+			m.setHostPreview(details, h)
 			return
 		}
 		text = fmt.Sprintf("%s\n\nAddress   %s\nJump      %s\nTags      %s\nNotes     %s\nSource    %s\nFile      %s:%d\n\n", h.Alias, h.Hostname, h.JumpHost, strings.Join(h.Tags, ", "), h.Comment, hostSourceLabel(h), h.File, h.Line)
@@ -850,7 +853,15 @@ func (m *pickerModel) View() string {
 	var left []string
 	// Fixed column titles; the list scrolls beneath them.
 	if m.state.Mode == "tunnels" {
-		left = append(left, fit(tuiDim.Render(fmt.Sprintf("  %-32s %s", "NAME / SOURCE", "STATUS")), listWidth))
+		left = append(left, tuiDim.Render(m.tunnelColumns(-1, listWidth, columns)))
+		x := 7
+		for i, w := range columns {
+			x += w
+			if i < len(columns)-1 {
+				m.hits = append(m.hits, hitRegion{x, tabHeight, 2, "resize-column", i})
+				x += 2
+			}
+		}
 	} else {
 		heading := renderHostColumns(nil, listWidth, "", columns)
 		left = append(left, tuiDim.Render(heading))
@@ -877,8 +888,7 @@ func (m *pickerModel) View() string {
 		if i < len(m.visible) {
 			id := m.visible[i]
 			if m.state.Mode == "tunnels" {
-				c := m.tunnels[id]
-				line = fmt.Sprintf("  %-32s %s", fit(clean(m.tunnelDisplayName(c)), 32), m.tunnelLabel(c.Name))
+				line = m.tunnelColumns(id, listWidth, columns)
 			} else {
 				h := m.hosts[id]
 				mark := "[ ]"
@@ -896,7 +906,7 @@ func (m *pickerModel) View() string {
 					line = ansi.Cut(line, 0, 5) + lipgloss.NewStyle().Reverse(false).Foreground(lipgloss.Color(h.Color)).Render("■") + ansi.Cut(line, 6, listWidth)
 				}
 			} else if h, ok := m.tunnelHosts[m.tunnels[id].Name]; ok && h.Color != "" {
-				line = ansi.Cut(line, 0, 2) + colorSwatch(h.Color) + " " + ansi.Cut(line, 4, listWidth)
+				line = ansi.Cut(line, 0, 5) + lipgloss.NewStyle().Reverse(false).Foreground(lipgloss.Color(h.Color)).Render("■") + ansi.Cut(line, 6, listWidth)
 			}
 			m.hits = append(m.hits, hitRegion{0, tabHeight + 1 + m.toolbarGap() + row, listWidth, "row", i})
 		} else if row == m.rows()-1 {
@@ -979,6 +989,11 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 	for _, h := range hosts {
 		if m.marked[hostIdentity(h)] {
 			state.Marked = append(state.Marked, hostIdentity(h))
+		}
+	}
+	for _, tunnel := range m.tunnels {
+		if m.marked[tunnel.Name] {
+			state.Marked = append(state.Marked, tunnel.Name)
 		}
 	}
 	if h, ok := m.activeHost(); ok {

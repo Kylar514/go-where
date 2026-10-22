@@ -7,18 +7,19 @@ import (
 )
 
 type PickerState struct {
-	ListPercent    int
-	ColumnWidths   []int
-	Source         string
-	TunnelsConfig  string
-	ConfigPath     string
-	Account        RDPAccount
-	Mode           string
-	Focus          string
-	Marked         []string
-	RDPTags        []string
-	Debug          bool
-	RDPDestination string
+	TunnelColumnWidths []int
+	ListPercent        int
+	ColumnWidths       []int
+	Source             string
+	TunnelsConfig      string
+	ConfigPath         string
+	Account            RDPAccount
+	Mode               string
+	Focus              string
+	Marked             []string
+	RDPTags            []string
+	Debug              bool
+	RDPDestination     string
 }
 
 func pickerHelp(mode string) string {
@@ -99,6 +100,7 @@ func chooseOne(title string, options []choice, text, current string) (string, bo
 }
 
 func runChoice(m *dialogModel, key string) (string, bool, error) {
+	m.saveTunnel = saveActiveTunnel != nil
 	if m.title == "Sources" {
 		m.sourceActions = true
 		var options []choice
@@ -156,7 +158,14 @@ func runChoice(m *dialogModel, key string) (string, bool, error) {
 		m.restorePreview = &position.preview
 	}
 	_, err := runTUI(m)
-	for err == nil && (m.result == "__save_settings" || m.result == "__save_host") {
+	for err == nil && (m.result == "__save_settings" || m.result == "__save_host" || m.result == "__save_tunnel") {
+		if m.result == "__save_tunnel" && saveActiveTunnel != nil {
+			if e := saveActiveTunnel(); e != nil {
+				m.saveMessage = e.Error()
+			} else {
+				m.saveMessage = ""
+			}
+		}
 		if m.result == "__save_host" && saveActiveHost != nil {
 			if e := saveActiveHost(); e != nil {
 				m.saveMessage = e.Error()

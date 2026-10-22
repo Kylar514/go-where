@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	digletconfig "github.com/kylar514/diglet/config"
 )
 
-func defaultTunnelPath() string { return digletconfig.DefaultConfigPath() }
+func defaultTunnelPath() string { return "" }
 func ensureTunnelConfig(path string) error {
 	if home, err := os.UserHomeDir(); err == nil {
 		path = expandHome(path, home)
@@ -18,7 +16,7 @@ func ensureTunnelConfig(path string) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	return digletconfig.Scaffold(path)
+	return fmt.Errorf("legacy tunnel files are no longer used; create a database tunnel")
 }
 func chooseTarget(current Origin, dest string, rdp ...bool) (string, Origin, bool, error) {
 	options := []choice{{"terminal", "New terminal"}, {"current", "Current terminal (one host)"}}

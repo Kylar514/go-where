@@ -47,6 +47,10 @@ func scriptTUI(t *testing.T, steps ...string) *[]string {
 			m.search.SetValue(parts[0])
 		case *dialogModel:
 			seen = append(seen, "dialog:"+m.title)
+			if step == "save-tunnel" {
+				m.result = "__save_tunnel"
+				return m, nil
+			}
 			if m.sourceActions && (step == "create" || step == "attach") {
 				m.result = step
 				return m, nil

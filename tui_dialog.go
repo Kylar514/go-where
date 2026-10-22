@@ -101,6 +101,7 @@ func menuKey(title string) string {
 }
 
 type dialogModel struct {
+	saveTunnel     bool
 	layout         menuLayout
 	resizeKind     string
 	resizeStart    int
@@ -218,6 +219,10 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		case "ctrl+s":
+			if m.saveTunnel {
+				m.result, m.done = "__save_tunnel", true
+				return m, tea.Quit
+			}
 			if m.sourceActions {
 				m.result, m.done = "settings", true
 				return m, tea.Quit
@@ -288,6 +293,10 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.saveHost && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() && msg.X >= 8 && msg.X < 20 {
 			m.result, m.done = "__save_host", true
+			return m, tea.Quit
+		}
+		if m.saveTunnel && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() && msg.X >= 8 && msg.X < 22 {
+			m.result, m.done = "__save_tunnel", true
 			return m, tea.Quit
 		}
 		if m.deleteHost && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() && msg.X >= 20 && msg.X < 34 {
@@ -407,6 +416,9 @@ func (m *dialogModel) View() string {
 	if m.saveHost && hostSaveState != nil {
 		header += " · " + hostSaveState()
 	}
+	if m.saveTunnel && tunnelSaveState != nil {
+		header += " · " + tunnelSaveState()
+	}
 	if m.saveMessage != "" {
 		header += " · " + m.saveMessage
 	}
@@ -497,6 +509,10 @@ func (m *dialogModel) View() string {
 	if m.saveHost {
 		labels = []string{"Back", "Save host"}
 		hint = keyHint(menuHotkeys, "menu_save") + " save · " + keyHint(menuHotkeys, "back") + " back"
+	}
+	if m.saveTunnel {
+		labels = []string{"Back", "Save tunnel"}
+		hint = keyHint(menuHotkeys, "menu_save") + " save | " + keyHint(menuHotkeys, "back") + " back"
 	}
 	if m.deleteHost {
 		labels = append(labels, "Delete host")

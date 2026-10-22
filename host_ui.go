@@ -18,6 +18,9 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 	if selected != nil {
 		preferred = selected.SourceID
 	}
+	if selected == nil {
+		preferred = ""
+	}
 	s, back, err := writableSource(c, preferred, state.ConfigPath)
 	if err != nil || back {
 		return err

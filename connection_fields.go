@@ -73,10 +73,25 @@ func connectionFields(r Connection, s InventorySource, c Config) []choice {
 			if r.RemoteHostID != "" {
 				target = "Saved host: " + r.RemoteHostID
 			}
-			fields = append(fields, choice{"ssh_id", "SSH profile: " + sshReferenceLabel(c, s, r.SSHID)}, choice{"remote_target", "Remote target: " + target}, choice{"remote_host", "Custom remote address: " + r.RemoteHost})
+			fields = append(fields, choice{"ssh_id", "SSH profile: " + sshReferenceLabel(c, s, r.SSHID)}, choice{"remote_target", "Remote target: " + target})
+			if r.RemoteHostID == "" {
+				fields = append(fields, choice{"remote_host", "Remote address: " + r.RemoteHost})
+			}
 		} else {
 			fields = append(fields, choice{"resource", "Resource: " + r.Resource}, choice{"namespace", "Namespace: " + r.Namespace}, choice{"context", "Context: " + r.Context})
 		}
+	}
+	if r.kind() == "tunnel" {
+		order := []string{"type", "alias", "source", "tunnel_type", "ssh_id", "resource", "namespace", "context", "bind", "local_port", "remote_target", "remote_host", "remote_port"}
+		var sorted []choice
+		for _, id := range order {
+			for _, field := range fields {
+				if field.ID == id {
+					sorted = append(sorted, field)
+				}
+			}
+		}
+		fields = sorted
 	}
 	return append(fields, choice{"tags", "Tags: " + strings.Join(r.Tags, ", ")}, choice{"notes", "Notes: " + r.Notes}, choice{"save", "Save connection"})
 }

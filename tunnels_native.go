@@ -6,17 +6,17 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/kylar514/diglet/config"
-	"github.com/kylar514/diglet/tunnel"
+	config "github.com/kylar514/go-where/internal/tunnelcore"
+	tunnel "github.com/kylar514/go-where/internal/tunnelcore"
 	"os"
 	"os/exec"
 	"path/filepath"
 )
 
 func init() {
-	// Reuse Diglet's PID-identity checks, detached processes and ownership registry.
+	// Migrated PID-identity checks, detached processes and ownership registry.
 	// ponytail: registry is port-based; identical ports on different loopback IPs
-	// need an address-aware Diglet registry before they can run simultaneously.
+	// need an address-aware registry before they can run simultaneously.
 	tunnel.Register("go-where", func(c config.Connection) (*exec.Cmd, error) {
 		data, err := base64.RawURLEncoding.DecodeString(c.Resource)
 		if err != nil {
@@ -104,22 +104,10 @@ func toggleManagedTunnel(c config.Connection, stop bool) error {
 		}
 		return err
 	}
-	pid, err := tunnel.Start(c)
+	_, err := tunnel.Start(c)
 	if err != nil {
-		return err
-	}
-	// Diglet's active probe assumes 127.0.0.1. Inventory tunnels can bind
-	// other loopback addresses; PID/listener status polling handles those.
-	if c.TunnelType == "go-where" {
-		return nil
-	}
-	if err = tunnel.StartProbe(c.Name, c.LocalPort, pid); err != nil {
-		_ = tunnel.Stop(c)
-		if c.TunnelType == "go-where" {
-			cleanupTunnelSnapshot(c.Name)
-		}
 		return err
 	}
 	return nil
 }
-func runTunnelProbe(name string, port, pid int) { tunnel.RunProbe(name, port, pid) }
+func runTunnelProbe(name string, port, pid int) {}

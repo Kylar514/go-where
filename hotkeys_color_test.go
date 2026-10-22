@@ -83,7 +83,7 @@ func TestHostColorPersistenceAndValidation(t *testing.T) {
 	}
 	m := newPickerModel(hosts, "", "current", Origin{}, PickerState{Mode: "ssh"}, c)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
-	if !strings.Contains(m.View(), "■") || !strings.Contains(managedDetails(hosts[0], c), h.Color) {
+	if !strings.Contains(m.View(), "■") || strings.Contains(managedDetails(hosts[0], c), "Color:") || strings.Contains(managedDetails(hosts[0], c), h.Color) {
 		t.Fatal("color not displayed")
 	}
 	for _, bad := range []string{"red", "#abc", "#1234567", "#12zz34", "#123456\n"} {

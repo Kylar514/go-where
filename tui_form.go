@@ -114,6 +114,20 @@ func (m *dialogModel) visualSlots() []int {
 		if strings.HasPrefix(m.title, "Host — ") && m.query.Value() == "" {
 			group = hostFormGroup(m.options[m.filtered[i]].ID)
 		}
+		if strings.HasPrefix(m.title, "Tunnel — ") && m.query.Value() == "" {
+			switch m.options[m.filtered[i]].ID {
+			case "alias", "source":
+				group = 0
+			case "tunnel_type", "ssh_id", "resource", "namespace", "context":
+				group = 1
+			case "bind", "local_port":
+				group = 2
+			case "remote_target", "remote_host", "remote_port":
+				group = 3
+			default:
+				group = 4
+			}
+		}
 		if lastGroup >= 0 && group != lastGroup {
 			slots = append(slots, -1)
 		}

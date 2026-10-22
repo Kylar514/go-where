@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	digletconfig "github.com/kylar514/diglet/config"
+	digletconfig "github.com/kylar514/go-where/internal/tunnelcore"
 )
 
-func TestInventoryTunnelUsesDigletLifecycle(t *testing.T) {
+func TestInventoryTunnelUsesLocalLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))

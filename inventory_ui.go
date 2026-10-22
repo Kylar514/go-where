@@ -209,14 +209,27 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 	if h != nil {
 		preferred = h.SourceID
 	}
-	if len(c.Sources) == 0 {
+	if len(c.Sources) == 0 && !(h == nil && profile == nil && state.Mode == "tunnels" && state.ConfigPath != "") {
 		return fmt.Errorf("create a SQLite source first with Ctrl+B")
 	}
-	s := c.Sources[0]
+	var s InventorySource
+	if len(c.Sources) > 0 {
+		s = c.Sources[0]
+	}
 	if candidate, e := findSource(c, preferred); e == nil {
 		s = candidate
 	}
 	var err error
+	if h == nil && profile == nil && state.Mode == "tunnels" {
+		var back bool
+		s, back, err = writableSource(c, "", state.ConfigPath)
+		if err != nil || back {
+			return err
+		}
+		if _, e := findSource(c, s.ID); e != nil {
+			c.Sources = append(c.Sources, s)
+		}
+	}
 	r := Connection{ID: inventoryID(), Type: "ssh", Port: 22}
 	if h == nil && state.Mode == "tunnels" {
 		r = connectionWithType(r, "tunnel")
@@ -264,6 +277,38 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 			return parentState()
 		}
 	}
+	if r.kind() == "tunnel" && profile == nil {
+		previousSave, previousState := saveActiveTunnel, tunnelSaveState
+		defer func() { saveActiveTunnel, tunnelSaveState = previousSave, previousState }()
+		before := r
+		saved := false
+		saveActiveTunnel = func() error {
+			if existing && h != nil {
+				if err := ensureInventoryTunnelStopped(*h); err != nil {
+					return err
+				}
+			}
+			if err := changeConnection(s, r, false); err != nil {
+				return err
+			}
+			before = r
+			saved = true
+			existing = true
+			state.Source = s.ID
+			state.Mode = "tunnels"
+			state.Focus = s.ID + ":" + r.ID
+			return nil
+		}
+		tunnelSaveState = func() string {
+			if !reflect.DeepEqual(before, r) {
+				return "Unsaved changes"
+			}
+			if saved {
+				return "Saved"
+			}
+			return "No unsaved changes"
+		}
+	}
 	for {
 		options := connectionFields(r, s, c)
 		if profile != nil {
@@ -283,7 +328,20 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 		if existing {
 			options = append(options, choice{"duplicate", "Duplicate as new connection"}, choice{"delete", "Delete connection…"})
 		}
-		id, back, e := choose("Connection — "+s.Name, options, "Type changes fields in this editor. ${NAME} variables are local settings; no passwords are stored here. SSH references stay within this source. RDP uses local client/account preferences. Tunnel binds are loopback-only. Esc discards unsaved edits.")
+		title := "Connection — " + s.Name
+		text := "Type changes fields in this editor. ${NAME} variables are local settings; no passwords are stored here. SSH references stay within this source. RDP uses local client/account preferences. Tunnel binds are loopback-only. Esc discards unsaved edits."
+		if r.kind() == "tunnel" && profile == nil && saveActiveTunnel != nil {
+			title = "Tunnel — " + s.Name
+			text = "SSH tunnels reuse a saved host/profile.\n\nLocal binds must be loopback addresses. Remote targets are reached from the SSH host.\n\nSave tunnel persists the draft. Back discards changes since the last save."
+			var fields []choice
+			for _, field := range options {
+				if field.ID != "type" && field.ID != "save" {
+					fields = append(fields, field)
+				}
+			}
+			options = fields
+		}
+		id, back, e := choose(title, options, text)
 		if e != nil || back {
 			return e
 		}

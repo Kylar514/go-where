@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"regexp"
 	"strings"
 )
@@ -20,6 +21,14 @@ func colorSwatch(color string) string {
 		return " "
 	}
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render("■")
+}
+
+func (m *pickerModel) setHostPreview(text string, h Host) {
+	text = ansi.Wrap(cleanLines(text), max(1, m.preview.Width), "")
+	if h.Color != "" {
+		text = strings.Replace(text, "■", colorSwatch(h.Color), 1)
+	}
+	m.preview.SetContent(text)
 }
 func chooseHostColor(current string) (string, bool, error) {
 	for {

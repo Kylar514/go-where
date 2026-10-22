@@ -14,6 +14,9 @@ func (m *pickerModel) paneWidths() (int, int) {
 }
 
 func (m *pickerModel) columnWidths(width int) []int {
+	if m.state.Mode == "tunnels" {
+		return m.tunnelColumnWidths(width)
+	}
 	var widths []int
 	switch {
 	case width >= 88:
@@ -45,6 +48,7 @@ func (m *pickerModel) columnWidths(width int) []int {
 func (m *pickerModel) resetLayout() {
 	m.state.ListPercent = 0
 	m.state.ColumnWidths = nil
+	m.state.TunnelColumnWidths = nil
 	m.dragKind = ""
 	m.lastClick = ""
 	_, m.preview.Width = m.paneWidths()
@@ -70,6 +74,10 @@ func (m *pickerModel) resizeMouse(msg tea.MouseMsg) bool {
 			m.state.ColumnWidths = append([]int(nil), m.dragWidths...)
 			m.state.ColumnWidths[i] += delta
 			m.state.ColumnWidths[i+1] -= delta
+			if m.state.Mode == "tunnels" {
+				m.state.TunnelColumnWidths = m.state.ColumnWidths
+				m.state.ColumnWidths = m.dragHostWidths
+			}
 		}
 		_, m.preview.Width = m.paneWidths()
 		m.preview.Height = max(1, m.rows()-1)
@@ -86,6 +94,7 @@ func (m *pickerModel) resizeMouse(msg tea.MouseMsg) bool {
 			m.dragKind, m.dragColumn, m.dragX = hit.action, hit.index, msg.X
 			width, _ := m.paneWidths()
 			m.dragWidths = m.columnWidths(width)
+			m.dragHostWidths = m.state.ColumnWidths
 			m.lastClick = ""
 			return true
 		}

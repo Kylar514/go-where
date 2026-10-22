@@ -4,7 +4,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/kylar514/diglet/config"
+	config "github.com/kylar514/go-where/internal/tunnelcore"
 )
 
 func tunnelStatuses([]config.Connection) (map[string]tunnelInfo, error) {

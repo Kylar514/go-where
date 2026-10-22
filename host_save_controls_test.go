@@ -13,7 +13,7 @@ func TestSaveHostFromCurrentProfileDraft(t *testing.T) {
 	c := defaultConfig()
 	c.Sources = []InventorySource{s}
 	state := PickerState{Source: s.ID, Mode: "ssh"}
-	scriptTUI(t, "alias", "enter\nserver", "address", "enter\n192.0.2.1", "ssh", "add", "enter\nDefault", "settings", "user", "enter\noperator", "save-host", "back", "back", "back", "back")
+	scriptTUI(t, s.ID, "alias", "enter\nserver", "address", "enter\n192.0.2.1", "ssh", "add", "enter\nDefault", "settings", "user", "enter\noperator", "save-host", "back", "back", "back", "back")
 	if err := editInventoryHost(c, &state, nil); err != nil {
 		t.Fatal(err)
 	}

@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	digletconfig "github.com/kylar514/diglet/config"
+	digletconfig "github.com/kylar514/go-where/internal/tunnelcore"
 )
 
 type inventoryTunnelSpec struct {
@@ -33,6 +33,7 @@ func inventoryTunnel(h Host, c Config) (digletconfig.Connection, error) {
 	if r.Bind == "" {
 		r.Bind = "127.0.0.1"
 	}
+	conn.Bind = r.Bind
 	ip := net.ParseIP(r.Bind)
 	if ip == nil || !ip.IsLoopback() {
 		return conn, fmt.Errorf("%s: local bind must be a loopback IP", r.Alias)
