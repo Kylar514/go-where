@@ -130,6 +130,9 @@ func TestHostMigrationPreservesIDsWithoutMerging(t *testing.T) {
 			if _, err = db.Exec("DROP TABLE hosts"); err != nil {
 				t.Fatal(err)
 			}
+			if _, err = db.Exec("DROP TABLE profiles"); err != nil {
+				t.Fatal(err)
+			}
 			a := Connection{ID: "a", Alias: "a", Address: "192.0.2.1", Port: 22, User: "operator", SSHAgent: "legacy", ExtraHostKeyAlgorithms: []string{"ssh-rsa"}, ExtraPubkeyAlgorithms: []string{"ssh-rsa"}}
 			b := Connection{ID: "b", Alias: "b", Address: a.Address, Port: 22, JumpID: a.ID}
 			for _, r := range []Connection{a, b} {

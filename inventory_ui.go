@@ -246,6 +246,9 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 				case "type", "source", "alias", "address", "tags", "notes", "local_agent", "local_compatibility":
 					continue
 				}
+				if field.ID == "jump" && profile.kind() != "tunnel" {
+					continue
+				}
 				fields = append(fields, field)
 			}
 			options = fields

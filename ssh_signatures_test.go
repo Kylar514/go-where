@@ -225,6 +225,9 @@ func TestSignatureMigrationPreservesSettings(t *testing.T) {
 	if _, err = db.Exec("DROP TABLE hosts"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = db.Exec("DROP TABLE profiles"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = db.Exec("PRAGMA user_version=4"); err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +239,7 @@ func TestSignatureMigrationPreservesSettings(t *testing.T) {
 	defer db.Close()
 	var version int
 	var got string
-	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 6 {
+	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 7 {
 		t.Fatal("marker not advanced", version, err)
 	}
 	if err = db.QueryRow("SELECT data FROM connections").Scan(&got); err != nil {

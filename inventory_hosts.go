@@ -89,6 +89,29 @@ func readHostConnections(db inventoryReader) ([]Connection, error) {
 	for _, h := range hosts {
 		byID[h.ID] = h
 	}
+	var version int
+	// Legacy host migration runs inside a transaction before profiles exists.
+	vr, err := db.Query("PRAGMA user_version")
+	if err != nil {
+		return nil, err
+	}
+	if vr.Next() {
+		err = vr.Scan(&version)
+	}
+	vr.Close()
+	if err != nil {
+		return nil, err
+	}
+	shared := map[string]Connection{}
+	if version >= 7 {
+		profiles, e := readReusableProfiles(db)
+		if e != nil {
+			return nil, e
+		}
+		for _, p := range profiles {
+			shared[p.ID] = p
+		}
+	}
 	for i := range records {
 		r := &records[i]
 		if r.kind() == "tunnel" {
@@ -98,6 +121,13 @@ func readHostConnections(db inventoryReader) ([]Connection, error) {
 				}
 			}
 			continue
+		}
+		if version >= 7 {
+			p, ok := shared[r.ProfileID]
+			if !ok {
+				return nil, fmt.Errorf("%s: missing reusable profile", r.Alias)
+			}
+			*r = applyProfile(*r, p)
 		}
 		h, ok := byID[r.HostID]
 		if !ok {
@@ -224,6 +254,10 @@ func saveInventoryHost(s InventorySource, h InventoryHost, profiles []Connection
 		if r.HostID != h.ID || (r.kind() != "ssh" && r.kind() != "rdp") {
 			return fmt.Errorf("invalid host profile")
 		}
+		if err = persistProfileEdit(tx, &r); err != nil {
+			return err
+		}
+		r = profileAttachment(r)
 		r.Address, r.Tags, r.Notes = "", nil, ""
 		data, e := json.Marshal(r)
 		if e != nil {

@@ -276,6 +276,26 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+### Reusable source profiles (schema v7)
+
+Host → SSH/RDP profiles offers **Choose existing source profile** or **Add profile**.
+Profiles are reusable within the source; hosts retain their own address, default
+selection and jump references. Editing shared settings and saving the host updates
+all attachments using that profile; the profile menu shows the saved usage count.
+**Duplicate as independent profile** creates a separate profile for exceptions.
+Detaching a profile leaves its source-owned settings available to other hosts.
+
+**Local overrides (this device only)** belongs to the host editor, not the shared
+profile menu. Select the host's SSH attachment to edit local agent/compatibility
+settings. Local address overrides retain their separate host-level control.
+Passwords and agent endpoints remain local. Profile names are not automatically
+merged; migrated duplicate names display stable IDs in the source chooser.
+
+Opening v1–v6 inventories migrates transactionally to v7, preserving attachment
+IDs, host assignments, jumps, tunnels and existing local override keys. Back up
+before upgrading; older binaries refuse v7. Source-default profiles, dedicated
+source-profile management and source startup preferences are not included yet.
+
 Host editors and SSH/RDP profile menus expose **Save host** in the footer.
 Ctrl+S (the configured menu-save binding) persists the host/profile draft without
 leaving the screen, including current connection-profile edits. Headers show

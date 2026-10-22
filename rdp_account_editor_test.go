@@ -114,6 +114,7 @@ func TestRDPAccountEditorModesAndResolution(t *testing.T) {
 	if err != nil || j.User != "profile-user" || j.Domain != "LAB" {
 		t.Fatalf("one-launch override: %+v %v", j, err)
 	}
+	r = read()
 	r.Account = "Missing"
 	if err = changeConnection(s, r, false); err != nil {
 		t.Fatal(err)

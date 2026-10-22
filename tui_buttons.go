@@ -21,6 +21,9 @@ func menuFooter(height, width int, labels []string, hint string) string {
 	bar := compactControl(labels...)
 	lines := strings.Split(bar, "\n")
 	lines[1] = fit(lines[1]+"  "+hint, width)
+	if strings.Contains(lines[1], "Delete host") {
+		lines[1] = strings.Replace(lines[1], "Delete host", tuiError.Render("Delete host"), 1)
+	}
 	if height < 14 {
 		return lines[1]
 	}

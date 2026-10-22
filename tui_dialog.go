@@ -70,6 +70,7 @@ func menuSearch() textinput.Model {
 }
 
 type menuPosition struct {
+	layout          menuLayout
 	query, selected string
 	cursor, preview int
 }
@@ -100,6 +101,13 @@ func menuKey(title string) string {
 }
 
 type dialogModel struct {
+	layout         menuLayout
+	resizeKind     string
+	resizeStart    int
+	resizeLayout   menuLayout
+	resizeHits     []hitRegion
+	sourceActions  bool
+	deleteHost     bool
 	saveHost       bool
 	colorChoices   bool
 	saveMessage    string
@@ -159,7 +167,7 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.query.Width = max(1, msg.Width-ansi.StringWidth(m.query.Prompt)-1)
 		m.preview.Width = max(1, min(64, msg.Width-4))
 		if msg.Width >= 90 {
-			_, pw := viewSplit(msg.Width)
+			_, pw := m.menuPaneWidths()
 			m.preview.Width = pw
 		}
 		content := ansi.Wrap(menuExplanation(m.text), m.preview.Width, "")
@@ -178,6 +186,14 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch key {
+		case "ctrl+z":
+			m.resetMenuLayout()
+			return m, nil
+		case "delete":
+			if m.deleteHost {
+				m.result, m.done = "delete", true
+				return m, tea.Quit
+			}
 		case "ctrl+s":
 			if m.saveHost {
 				m.result, m.done = "__save_host", true
@@ -215,6 +231,9 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case tea.MouseMsg:
+		if m.resizeMenuMouse(msg) {
+			return m, nil
+		}
 		if m.width < 24 || m.height < 9 {
 			return m, nil
 		}
@@ -244,6 +263,20 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.result, m.done = "__save_host", true
 			return m, tea.Quit
 		}
+		if m.deleteHost && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() && msg.X >= 20 && msg.X < 34 {
+			m.result, m.done = "delete", true
+			return m, tea.Quit
+		}
+		if m.sourceActions && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() {
+			if msg.X >= 8 && msg.X < 24 {
+				m.result, m.done = "create", true
+				return m, tea.Quit
+			}
+			if msg.X >= 24 && msg.X < 39 {
+				m.result, m.done = "attach", true
+				return m, tea.Quit
+			}
+		}
 		if msg.Button == tea.MouseButtonWheelUp {
 			if msg.Y >= m.listStart() && msg.Y < m.listStart()+m.optionRows() && m.inList(msg.X) {
 				m.cursor = min(max(0, len(m.filtered)-1), m.cursor+3)
@@ -262,9 +295,11 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
 			row := msg.Y - m.listStart()
-			offset := max(0, m.cursor-m.optionRows()+1)
-			i := offset + m.optionRows() - 1 - row
-			if row >= 0 && row < m.optionRows() && i < len(m.filtered) && m.inList(msg.X) {
+			i := -1
+			if row >= 0 && row < m.optionRows() {
+				i = m.visibleSlots()[row]
+			}
+			if i >= 0 && i < len(m.filtered) && m.inList(msg.X) {
 				m.cursor = i
 				m.result = m.options[m.filtered[m.cursor]].ID
 				m.done = true
@@ -285,7 +320,7 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *dialogModel) inList(x int) bool {
 	width := m.width
 	if m.width >= 90 {
-		width, _ = viewSplit(m.width)
+		width, _ = m.menuPaneWidths()
 	}
 	return x >= 0 && x < width
 }
@@ -303,6 +338,7 @@ func (m *dialogModel) listStart() int {
 
 func (m *dialogModel) footerY() int { return m.height - 1 - footerExtra(m.height)/2 }
 func (m *dialogModel) View() string {
+	m.resizeHits = nil
 	if m.width == 0 {
 		return "Loading…"
 	}
@@ -339,16 +375,14 @@ func (m *dialogModel) View() string {
 	for lipgloss.Height(strings.Join(lines, "\n")) < m.listStart() {
 		lines = append(lines, "")
 	}
-	offset := max(0, m.cursor-m.optionRows()+1)
 	var rows []string
 	listWidth := m.width - 2
 	if m.width >= 90 {
-		listWidth, _ = viewSplit(m.width)
+		listWidth, _ = m.menuPaneWidths()
 	}
-	for row := m.optionRows() - 1; row >= 0; row-- {
-		i := offset + row
-		if i >= len(m.filtered) {
-			if len(m.filtered) == 0 && row == 0 {
+	for row, i := range m.visibleSlots() {
+		if i < 0 {
+			if len(m.filtered) == 0 && row == m.optionRows()-1 {
 				rows = append(rows, tuiDim.Render("No matches"))
 			} else {
 				rows = append(rows, "")
@@ -357,13 +391,19 @@ func (m *dialogModel) View() string {
 		}
 		option := m.options[m.filtered[i]]
 		value := clean(option.Label)
+		if m.formRows() {
+			value = m.formLabel(option, listWidth-2)
+		}
+		if m.sourceActions {
+			value = m.sourceLabel(option, listWidth-2)
+		}
 		if m.singleChoice {
 			marker := "○ "
 			if option.ID == m.current {
 				marker = "● "
 			}
 			value = marker + value
-		} else if strings.HasSuffix(value, "…") || strings.HasSuffix(value, "...") || strings.Contains(value, ": ") || strings.Contains(value, " — ") {
+		} else if !m.formRows() && (strings.HasSuffix(value, "…") || strings.HasSuffix(value, "...") || strings.Contains(value, ": ") || strings.Contains(value, " — ")) {
 			value += "  ›"
 		}
 		label := "  " + value
@@ -376,11 +416,21 @@ func (m *dialogModel) View() string {
 			label = ansi.Cut(label, 0, 4) + colorSwatch(option.ID) + " " + ansi.Cut(label, 4, listWidth-2)
 		}
 		rows = append(rows, fit(label, listWidth))
+		if m.sourceActions || m.formRows() {
+			bounds := m.menuColumnBounds(listWidth - 2)
+			for index, x := range bounds {
+				m.resizeHits = append(m.resizeHits, hitRegion{x + 2, m.listStart() + row, 2, "column", index})
+			}
+		}
 	}
 	body := strings.Join(rows, "\n")
 	if m.width >= 90 {
 		panel := detailsPanel(m.preview)
-		body = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(listWidth).Render(body), " ", panel)
+		divider := strings.TrimSuffix(strings.Repeat(tuiDim.Render("│")+"\n", m.optionRows()), "\n")
+		body = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(listWidth).Render(body), divider, panel)
+		for row := 0; row < m.optionRows(); row++ {
+			m.resizeHits = append(m.resizeHits, hitRegion{listWidth, m.listStart() + row, 1, "pane", 0})
+		}
 	}
 	lines = append(lines, body)
 	labels := []string{"Back"}
@@ -402,6 +452,22 @@ func (m *dialogModel) View() string {
 	if m.saveHost {
 		labels = []string{"Back", "Save host"}
 		hint = keyHint(menuHotkeys, "menu_save") + " save · " + keyHint(menuHotkeys, "back") + " back"
+	}
+	if m.deleteHost {
+		labels = append(labels, "Delete host")
+		hint += " · " + keyHint(menuHotkeys, "delete_host") + " delete"
+	}
+	if m.sourceActions {
+		labels = []string{"Back", "Create source", "Add existing"}
+		hint = keyHint(menuHotkeys, "back") + " back · " + keyHint(menuHotkeys, "select") + " choose"
+	}
+	if m.layout != (menuLayout{}) {
+		x := 1
+		for _, label := range labels {
+			x += lipgloss.Width(label) + 3
+		}
+		m.resizeHits = append(m.resizeHits, hitRegion{x - 1, m.footerY(), 14, "reset", 0})
+		labels = append(labels, "Reset layout")
 	}
 	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), menuFooter(m.height, m.width, labels, hint))
 	return strings.Join(lines, "\n")

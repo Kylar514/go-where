@@ -111,7 +111,7 @@ func TestMenuKindsAndBottomInput(t *testing.T) {
 	d := newDialog("Settings", []choice{{"submenu", "SSH settings…"}, {"save", "Save"}}, "")
 	d.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
 	v := ansi.Strip(d.View())
-	if !strings.HasPrefix(v, "Settings\n") || !strings.Contains(v, "SSH settings…  ›") || strings.Contains(v, "Save  ›") {
+	if !strings.HasPrefix(v, "Settings\n") || !strings.Contains(v, "SSH settings │   ›") || strings.Contains(v, "Save  ›") {
 		t.Fatal(v)
 	}
 	d.singleChoice, d.current = true, "save"

@@ -29,6 +29,9 @@ func TestTypedInventoryMigrationAndReferences(t *testing.T) {
 	if _, err = db.Exec("DROP TABLE hosts"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = db.Exec("DROP TABLE profiles"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = db.Exec("PRAGMA user_version=1"); err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +71,7 @@ func TestTypedInventoryMigrationAndReferences(t *testing.T) {
 	}
 	var version int
 	db.QueryRow("PRAGMA user_version").Scan(&version)
-	if version != 6 {
+	if version != 7 {
 		t.Fatal("migration did not update version")
 	}
 	db.Exec("PRAGMA user_version=99")

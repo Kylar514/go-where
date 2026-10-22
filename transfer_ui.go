@@ -99,6 +99,17 @@ func chooseOne(title string, options []choice, text, current string) (string, bo
 }
 
 func runChoice(m *dialogModel, key string) (string, bool, error) {
+	if m.title == "Sources" {
+		m.sourceActions = true
+		var options []choice
+		for _, option := range m.options {
+			if option.ID != "create" && option.ID != "attach" {
+				options = append(options, option)
+			}
+		}
+		m.options = options
+		m.refilter()
+	}
 	m.saveHost = saveActiveHost != nil && saveActiveSettings == nil
 	if strings.Contains(m.title, "tunnel") || strings.Contains(m.title, "Tunnel") || strings.Contains(m.title, "Local") || strings.Contains(m.title, "local") || m.title == "Notice" {
 		m.saveHost = false
@@ -106,7 +117,10 @@ func runChoice(m *dialogModel, key string) (string, bool, error) {
 	if m.saveHost && strings.HasPrefix(m.title, "Host — ") {
 		var options []choice
 		for _, option := range m.options {
-			if option.ID != "save" {
+			if option.ID == "delete" {
+				m.deleteHost = true
+			}
+			if option.ID != "save" && option.ID != "delete" {
 				options = append(options, option)
 			}
 		}
@@ -129,6 +143,7 @@ func runChoice(m *dialogModel, key string) (string, bool, error) {
 		m.breadcrumb = strings.Join(menuTrail, " › ")
 	}
 	if position, ok := menuPositions[key]; ok {
+		m.layout = position.layout
 		m.query.SetValue(position.query)
 		m.refilter()
 		m.cursor = min(position.cursor, max(0, len(m.filtered)-1))
@@ -165,7 +180,7 @@ func runChoice(m *dialogModel, key string) (string, bool, error) {
 		menuTrail = menuTrail[:len(menuTrail)-1]
 	}
 	if menuPositions != nil {
-		position := menuPosition{query: m.query.Value(), cursor: m.cursor, preview: m.preview.YOffset}
+		position := menuPosition{layout: m.layout, query: m.query.Value(), cursor: m.cursor, preview: m.preview.YOffset}
 		if len(m.filtered) > 0 {
 			position.selected = m.options[m.filtered[m.cursor]].ID
 		}

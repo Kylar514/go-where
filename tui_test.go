@@ -47,6 +47,14 @@ func scriptTUI(t *testing.T, steps ...string) *[]string {
 			m.search.SetValue(parts[0])
 		case *dialogModel:
 			seen = append(seen, "dialog:"+m.title)
+			if m.sourceActions && (step == "create" || step == "attach") {
+				m.result = step
+				return m, nil
+			}
+			if step == "delete" && m.deleteHost {
+				m.result = "delete"
+				return m, nil
+			}
 			if step == "save-host" {
 				m.result = "__save_host"
 				return m, nil

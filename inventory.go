@@ -23,36 +23,38 @@ type InventorySource struct {
 }
 
 type Connection struct {
-	HostID                 string   `json:"host_id,omitempty"`
-	ProfileName            string   `json:"profile_name,omitempty"`
-	Default                bool     `json:"default,omitempty"`
-	ExtraHostKeyAlgorithms []string `json:"extra_host_key_algorithms,omitempty"`
-	ExtraPubkeyAlgorithms  []string `json:"extra_pubkey_algorithms,omitempty"`
-	IdentitiesOnly         *bool    `json:"identities_only,omitempty"`
-	ExtraKexAlgorithms     []string `json:"extra_kex_algorithms,omitempty"`
-	SSHAgent               string   `json:"ssh_agent,omitempty"`
-	Type                   string   `json:"type,omitempty"`
-	Domain                 *string  `json:"domain,omitempty"`
-	Account                string   `json:"account,omitempty"`
-	TunnelType             string   `json:"tunnel_type,omitempty"`
-	Bind                   string   `json:"local_bind,omitempty"`
-	LocalPort              int      `json:"local_port,omitempty"`
-	RemoteHost             string   `json:"remote_host,omitempty"`
-	RemoteHostID           string   `json:"remote_host_id,omitempty"`
-	RemotePort             int      `json:"remote_port,omitempty"`
-	SSHID                  string   `json:"ssh_id,omitempty"`
-	Resource               string   `json:"resource,omitempty"`
-	Namespace              string   `json:"namespace,omitempty"`
-	Context                string   `json:"context,omitempty"`
-	ID                     string   `json:"id"`
-	Alias                  string   `json:"alias"`
-	Address                string   `json:"address,omitempty"`
-	Port                   int      `json:"port"`
-	User                   string   `json:"user,omitempty"`
-	IdentityFile           string   `json:"identity_file,omitempty"`
-	JumpID                 string   `json:"jump_id,omitempty"`
-	Tags                   []string `json:"tags,omitempty"`
-	Notes                  string   `json:"notes,omitempty"`
+	OriginalProfile        *Connection `json:"-"`
+	ProfileID              string      `json:"profile_id,omitempty"`
+	HostID                 string      `json:"host_id,omitempty"`
+	ProfileName            string      `json:"profile_name,omitempty"`
+	Default                bool        `json:"default,omitempty"`
+	ExtraHostKeyAlgorithms []string    `json:"extra_host_key_algorithms,omitempty"`
+	ExtraPubkeyAlgorithms  []string    `json:"extra_pubkey_algorithms,omitempty"`
+	IdentitiesOnly         *bool       `json:"identities_only,omitempty"`
+	ExtraKexAlgorithms     []string    `json:"extra_kex_algorithms,omitempty"`
+	SSHAgent               string      `json:"ssh_agent,omitempty"`
+	Type                   string      `json:"type,omitempty"`
+	Domain                 *string     `json:"domain,omitempty"`
+	Account                string      `json:"account,omitempty"`
+	TunnelType             string      `json:"tunnel_type,omitempty"`
+	Bind                   string      `json:"local_bind,omitempty"`
+	LocalPort              int         `json:"local_port,omitempty"`
+	RemoteHost             string      `json:"remote_host,omitempty"`
+	RemoteHostID           string      `json:"remote_host_id,omitempty"`
+	RemotePort             int         `json:"remote_port,omitempty"`
+	SSHID                  string      `json:"ssh_id,omitempty"`
+	Resource               string      `json:"resource,omitempty"`
+	Namespace              string      `json:"namespace,omitempty"`
+	Context                string      `json:"context,omitempty"`
+	ID                     string      `json:"id"`
+	Alias                  string      `json:"alias"`
+	Address                string      `json:"address,omitempty"`
+	Port                   int         `json:"port"`
+	User                   string      `json:"user,omitempty"`
+	IdentityFile           string      `json:"identity_file,omitempty"`
+	JumpID                 string      `json:"jump_id,omitempty"`
+	Tags                   []string    `json:"tags,omitempty"`
+	Notes                  string      `json:"notes,omitempty"`
 }
 
 func (r Connection) kind() string {
@@ -111,8 +113,8 @@ func openInventory(s InventorySource) (*sql.DB, error) {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version < 1 || version > 6 {
-		return fail(fmt.Errorf("unsupported inventory schema %d (expected 1 through 6)", version))
+	if version < 1 || version > 7 {
+		return fail(fmt.Errorf("unsupported inventory schema %d (expected 1 through 7)", version))
 	}
 	var id string
 	if err = db.QueryRow("SELECT id FROM source").Scan(&id); err != nil {
@@ -123,6 +125,11 @@ func openInventory(s InventorySource) (*sql.DB, error) {
 	}
 	if version < 6 {
 		if err = migrateInventoryHosts(db, version); err != nil {
+			return fail(err)
+		}
+	}
+	if version < 7 {
+		if err = migrateReusableProfiles(db); err != nil {
 			return fail(err)
 		}
 	}
@@ -196,7 +203,8 @@ func createInventory(name, path string) (InventorySource, error) {
 		"CREATE TABLE source (id TEXT PRIMARY KEY NOT NULL)",
 		"CREATE TABLE connections (id TEXT PRIMARY KEY NOT NULL, alias TEXT UNIQUE NOT NULL, data TEXT NOT NULL)",
 		hostTableSQL,
-		"PRAGMA user_version=6",
+		profileTableSQL,
+		"PRAGMA user_version=7",
 	} {
 		if _, err = tx.Exec(stmt); err != nil {
 			return s, err
@@ -375,6 +383,10 @@ func changeConnection(s InventorySource, c Connection, remove bool) error {
 				}
 			}
 			c.Address, c.Tags, c.Notes = "", nil, ""
+			if err = persistProfileEdit(tx, &c); err != nil {
+				return err
+			}
+			c = profileAttachment(c)
 		}
 		data, e := json.Marshal(c)
 		if e != nil {

@@ -69,9 +69,23 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 		if err := saveInventoryHost(s, h, profiles); err != nil {
 			return err
 		}
+		rows, err := sourceConnections(s)
+		if err != nil {
+			return err
+		}
+		for i := range profiles {
+			for _, row := range rows {
+				if row.ID == profiles[i].ID {
+					profiles[i] = row
+				}
+			}
+		}
 		beforeHost = h
 		beforeProfiles = append([]Connection(nil), profiles...)
 		saved = true
+		if selected == nil {
+			selected = &Host{SourceID: s.ID, InventoryHostID: h.ID}
+		}
 		state.Source = s.ID
 		state.Focus = s.ID + ":" + h.ID
 		for _, p := range profiles {
@@ -91,11 +105,14 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 		return "No unsaved changes"
 	}
 	for {
-		options := []choice{{"alias", "Name: " + h.Alias}, {"address", "Address: " + h.Address}, {"tags", "Tags: " + strings.Join(h.Tags, ", ")}, {"notes", "Notes: " + h.Notes}, {"ssh", "SSH profiles…"}, {"rdp", "RDP profiles…"}, {"tunnels", "Tunnels…"}, {"save", "Save host and profiles"}}
+		options := []choice{{"alias", "Name: " + h.Alias}, {"address", "Address: " + h.Address}, {"tags", "Tags: " + strings.Join(h.Tags, ", ")}, {"notes", "Notes: " + h.Notes}, {"ssh", "SSH profiles: " + hostProfileSummary(profiles, "ssh") + " …"}, {"rdp", "RDP profiles: " + hostProfileSummary(profiles, "rdp") + " …"}, {"tunnels", "Tunnels…"}, {"save", "Save host and profiles"}}
 		if selected != nil {
 			options = append(options, choice{"local-address", "Local host address override…"})
 		}
 		options = append(options, choice{"color", "Color: " + h.Color + " …"})
+		if selected != nil {
+			options = append(options, choice{"local-overrides", "Local overrides… (this device only)"})
+		}
 		if selected != nil {
 			options = append(options, choice{"delete", "Delete host and profiles…"})
 		}
@@ -104,6 +121,34 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 			return e
 		}
 		switch id {
+		case "local-overrides":
+			choices := []choice{}
+			for _, p := range profiles {
+				if p.kind() == "ssh" {
+					choices = append(choices, choice{p.ID, p.ProfileName})
+				}
+			}
+			id, b, e := choose("Local SSH profile overrides", choices, "Only this host/profile attachment changes. Shared profile data is untouched.")
+			if e != nil {
+				return e
+			}
+			if b {
+				continue
+			}
+			kind, b, e := choose("Override", []choice{{"agent", "SSH agent"}, {"compatibility", "SSH compatibility"}}, "")
+			if e != nil {
+				return e
+			}
+			if b {
+				continue
+			}
+			editor := editAgentOverrideDraft
+			if kind == "compatibility" {
+				editor = editCompatibilityOverrideDraft
+			}
+			if e = editConnectionOverride(state.ConfigPath, Host{SourceID: s.ID, ConnectionID: id, Alias: h.Alias}, editor); e != nil {
+				return e
+			}
 		case "color":
 			value, back, err := chooseHostColor(h.Color)
 			if err != nil {
@@ -189,7 +234,7 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 			}
 			return nil
 		case "delete":
-			_, b, e = choose("Delete host?", []choice{{"delete", "Delete host and all profiles"}}, "Referenced profiles cannot be deleted. Tunnels must be removed or reassigned first.")
+			_, b, e = choose("Delete "+h.Alias+"?", []choice{{"delete", "Delete host and all attachments"}}, "Host: "+h.Alias+"\n\nShared source profiles remain available. Referenced attachments cannot be deleted. Tunnels must be removed or reassigned first.")
 			if e != nil {
 				return e
 			}
@@ -234,22 +279,81 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 	}
 }
 
+func hostProfileSummary(profiles []Connection, kind string) string {
+	var names []string
+	for _, profile := range profiles {
+		if profile.kind() != kind {
+			continue
+		}
+		name := profile.ProfileName
+		if profile.Default {
+			name += " ★"
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return "Not configured"
+	}
+	return strings.Join(names, ", ")
+}
+
 func editHostProfiles(c Config, s InventorySource, h InventoryHost, profiles *[]Connection, kind, configPath string) error {
 	for {
 		options := []choice{{"add", "Add " + strings.ToUpper(kind) + " profile…"}}
+		shared, err := sourceProfiles(s)
+		if err != nil {
+			return err
+		}
+		for _, p := range shared {
+			if p.kind() != kind {
+				continue
+			}
+			attached := false
+			for _, a := range *profiles {
+				if a.ProfileID == p.ID {
+					attached = true
+					break
+				}
+			}
+			if !attached {
+				options = append(options, choice{"available:" + p.ID, "○ " + p.ProfileName + " — available [" + p.ID + "]"})
+			}
+		}
 		for _, p := range *profiles {
 			if p.kind() != kind {
 				continue
 			}
-			label := p.ProfileName
+			label := "✓ " + p.ProfileName + " — assigned"
 			if p.Default {
 				label += " ★ default"
 			}
 			options = append(options, choice{p.ID, label})
 		}
-		id, back, err := choose(strings.ToUpper(kind)+" profiles", options, "Enter uses the default profile. Connect as chooses another. Referenced profiles cannot be removed when the host is saved.")
+		id, back, err := choose(strings.ToUpper(kind)+" profiles", options, "All profiles in this source are available here.\n\nSelect an available profile to assign it to this host's draft. Select an assigned profile to edit it or choose the default. Save host persists assignments.\n\nShared edits affect every host using that profile.")
 		if err != nil || back {
 			return err
+		}
+		if strings.HasPrefix(id, "available:") {
+			pid := strings.TrimPrefix(id, "available:")
+			for _, p := range shared {
+				if p.ID == pid {
+					a := p
+					original := p
+					a.OriginalProfile = &original
+					a.ProfileID = p.ID
+					a.ID = inventoryID()
+					a.Alias = "profile-" + a.ID
+					a.HostID = h.ID
+					a.Default = true
+					for _, old := range *profiles {
+						if old.kind() == kind {
+							a.Default = false
+						}
+					}
+					*profiles = append(*profiles, a)
+				}
+			}
+			continue
 		}
 		if id == "add" {
 			name, b, e := inventoryPrompt("Profile name", "Default")
@@ -289,7 +393,15 @@ func editHostProfiles(c Config, s InventorySource, h InventoryHost, profiles *[]
 		}
 		for {
 			p := (*profiles)[index]
-			action, b, e := choose("Profile — "+p.ProfileName, []choice{{"settings", "Connection settings…"}, {"name", "Name: " + p.ProfileName}, {"default", "Make default"}, {"local", "Local settings overrides…"}, {"remove", "Remove profile from draft"}}, "Profile settings belong to this host; address, tags and notes are shared. Local overrides save separately and require a previously saved profile.")
+			uses := 0
+			if rows, e := sourceConnections(s); e == nil {
+				for _, a := range rows {
+					if a.ProfileID == p.ProfileID && p.ProfileID != "" {
+						uses++
+					}
+				}
+			}
+			action, b, e := choose("Profile — "+p.ProfileName, []choice{{"settings", "Shared connection settings…"}, {"name", "Name: " + p.ProfileName}, {"default", "Make default for this host"}, {"jump", "Host-specific SSH jump…"}, {"duplicate", "Duplicate as independent profile"}, {"remove", "Detach profile from host draft"}}, fmt.Sprintf("Shared profile used by %d saved host attachments. Editing settings updates all users of this profile on Save host. Address, default and jumps remain host-specific. Local overrides belong in the host editor.", uses))
 			if e != nil {
 				return e
 			}
@@ -297,6 +409,28 @@ func editHostProfiles(c Config, s InventorySource, h InventoryHost, profiles *[]
 				break
 			}
 			switch action {
+			case "duplicate":
+				(*profiles)[index].ProfileID = ""
+				(*profiles)[index].OriginalProfile = nil
+				(*profiles)[index].ProfileName += "-copy"
+			case "jump":
+				rows, e := sourceConnections(s)
+				if e != nil {
+					return e
+				}
+				choices := []choice{{"", "None (direct)"}}
+				for _, a := range rows {
+					if a.kind() == "ssh" && a.ID != p.ID {
+						choices = append(choices, choice{a.ID, a.Alias + " / " + a.ProfileName})
+					}
+				}
+				id, b, e := chooseOne("Host jump", choices, "Pinned to a host/profile attachment.", p.JumpID)
+				if e != nil {
+					return e
+				}
+				if !b {
+					(*profiles)[index].JumpID = id
+				}
 			case "settings":
 				p.Address, p.Tags, p.Notes = h.Address, h.Tags, h.Notes
 				ps := PickerState{Source: s.ID, ConfigPath: configPath}
