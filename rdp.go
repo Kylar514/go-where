@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -241,6 +242,7 @@ func (r RDPConfig) domainFor(hops []hop) string {
 }
 
 type rdpJob struct {
+	Debug           bool
 	Title           string
 	TitleBar        bool
 	Label           string
@@ -311,6 +313,9 @@ func (j rdpJob) tunnelArgv(mode string, port int) ([]string, error) {
 		return nil, fmt.Errorf("no ProxyJump to tunnel through")
 	}
 	argv := []string{"ssh", "-N", "-o", "ExitOnForwardFailure=yes"}
+	if j.Debug {
+		argv = append(argv, "-vv", "-o", "ConnectTimeout=15")
+	}
 	if j.SSHConfig != "" {
 		argv = append(argv, "-F", j.SSHConfig)
 	}
@@ -580,6 +585,10 @@ func runRDPJob(j rdpJob) error {
 	if err != nil {
 		fmt.Printf("\nFAILED: %s\n", clean(err.Error()))
 	}
+	if j.Debug {
+		fmt.Print("\nDebug RDP ended. Press Enter to close… ")
+		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
+	}
 	return err
 }
 
@@ -614,6 +623,9 @@ func launchRDP(hosts []Host, o Origin, c Config, sshConfig, exe string, debug bo
 		return nil
 	}
 	dest := rdpDestination(c, debug)
+	if debug {
+		dest = debugDestination(o)
+	}
 	if err := checkPlacement(len(hosts), dest, o); err != nil {
 		return err
 	}
@@ -628,6 +640,12 @@ func launchRDP(hosts []Host, o Origin, c Config, sshConfig, exe string, debug bo
 			return err // Validate every job before launching any of them.
 		}
 		labels = append(labels, job.Label)
+		job.Debug = debug
+		if debug {
+			// Debug client logs must not receive credential-provider output.
+			job.PasswordCommand = nil
+			job.ClientArgs = append(append([]string(nil), job.ClientArgs...), "/log-level:DEBUG")
+		}
 		argvs = append(argvs, []string{exe, "__run-rdp", encodeRDPJob(job)})
 	}
 	if dest == "background" {

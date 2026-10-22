@@ -369,6 +369,9 @@ func (m *pickerModel) selection(highlightOnly bool) []Host {
 	return []Host{h}
 }
 func (m *pickerModel) finish(key string) tea.Cmd {
+	if key == "debug" && m.state.Mode == "tunnels" {
+		return m.debugTunnel()
+	}
 	if m.state.Mode == "tunnels" && (key == "ctrl-e" || key == "ctrl-alt-e") {
 		if len(m.visible) > 0 {
 			if h, ok := m.tunnelHosts[m.tunnels[m.visible[m.cursor]].Name]; ok {
@@ -383,14 +386,14 @@ func (m *pickerModel) finish(key string) tea.Cmd {
 	if key == "enter" && m.state.Mode == "tunnels" {
 		return m.toggleTunnel()
 	}
-	if key == "enter" || key == "connect-as" || strings.HasPrefix(key, "ctrl-alt-") || key == "ctrl-e" {
+	if key == "enter" || key == "debug" || key == "connect-as" || strings.HasPrefix(key, "ctrl-alt-") || key == "ctrl-e" {
 		m.selected = m.selection(key == "ctrl-e" || key == "ctrl-alt-e")
 		if len(m.selected) == 0 && key != "ctrl-alt-s" {
 			return nil
 		}
 	}
 	m.key = key
-	m.state.Debug = key == "ctrl-alt-t" && m.state.Mode == "rdp"
+	m.state.Debug = key == "debug" || key == "ctrl-alt-t" && m.state.Mode == "rdp"
 	return tea.Quit
 }
 func (m *pickerModel) openDialog(kind, title string, options []choice, text string) {
@@ -461,6 +464,8 @@ func (m *pickerModel) action(action string) tea.Cmd {
 		return m.finish("settings")
 	case "connect":
 		return m.finish("enter")
+	case "debug":
+		return m.finish("debug")
 	case "connect-as":
 		return m.finish("connect-as")
 	case "protocol":
@@ -512,6 +517,14 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updatePreview()
 		return m, tunnelTick()
 	case tunnelActionMsg:
+		if result, ok := msg.err.(debugTunnelResult); ok {
+			msg.err = result.err
+			text := result.text + "\n\nTracked tunnel startup completed."
+			if result.err != nil {
+				text = result.text + "\n\nFAILED: " + result.err.Error()
+			}
+			m.openDialog("debug-tunnel", "Tunnel diagnostics", []choice{{"back", "Back"}}, text)
+		}
 		delete(m.pending, msg.name)
 		if msg.err != nil {
 			m.status = msg.err.Error()
@@ -563,6 +576,8 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch key {
+		case "alt+d":
+			return m, m.finish("debug")
 		case "ctrl+b":
 			return m, m.finish("sources")
 		case "ctrl+n":
@@ -897,7 +912,7 @@ func (m *pickerModel) View() string {
 		legend = "Click to select · Double-click to review transfer · ? Help"
 	}
 	legend = strings.Replace(legend, "? Help", keyHint(m.config, "help")+" Help", 1)
-	legend = keyHint(m.config, "launch") + " Launch | " + keyHint(m.config, "settings") + " Settings | " + keyHint(m.config, "sources") + " Sources | " + keyHint(m.config, "help") + " Help"
+	legend = keyHint(m.config, "launch") + " Launch | " + keyHint(m.config, "debug") + " Debug | " + keyHint(m.config, "settings") + " Settings | " + keyHint(m.config, "sources") + " Sources | " + keyHint(m.config, "help") + " Help"
 	// Separate the search input from results without adding another row.
 	lines = append(lines, body, strings.Repeat("─", width), m.search.View())
 	if m.toolbarGap() > 0 {

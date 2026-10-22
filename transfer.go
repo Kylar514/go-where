@@ -83,6 +83,9 @@ func legacyRemotePath(path string) string {
 }
 
 func transferCommand(t Transfer, h Host, sshConfig string, dry bool) ([]string, error) {
+	if h.SourceID != "" {
+		return nil, fmt.Errorf("database-backed transfers are not integrated yet; refusing to use SSH-config alias %q", h.Alias)
+	}
 	if !validAlias(h.Alias) {
 		return nil, fmt.Errorf("invalid SSH alias")
 	}
@@ -273,6 +276,9 @@ func launchTransfers(t Transfer, hosts []Host, dest string, o Origin, c Config, 
 			return err // Validate every job before launching any of them.
 		}
 		job := transferJob{Label: t.Mode + " " + t.Direction + " · " + h.Alias, Argv: argv}
+		if c.debugLaunch {
+			job.Argv = verboseTransfer(argv)
+		}
 		labels = append(labels, job.Label)
 		argvs = append(argvs, []string{exe, "__run-transfer", encodeJob(job)})
 	}
@@ -362,6 +368,20 @@ func previewTransfers(t Transfer, hosts []Host, sshConfig string) error {
 }
 
 func transferInternal(args []string) error {
+	if len(args) == 2 && args[0] == "__debug" {
+		b, err := base64.RawURLEncoding.DecodeString(args[1])
+		if err != nil {
+			return err
+		}
+		var j transferJob
+		if err = json.Unmarshal(b, &j); err != nil {
+			return err
+		}
+		if len(j.Argv) == 0 || j.Argv[0] != "ssh" {
+			return fmt.Errorf("invalid debug job")
+		}
+		return runDebugCommand(j.Argv)
+	}
 	if len(args) == 2 && args[0] == "__managed-ssh" {
 		return runManagedSSH(args[1])
 	}

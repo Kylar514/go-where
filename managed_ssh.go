@@ -154,6 +154,7 @@ func resolvedConnection(c Config, s InventorySource, r Connection) (Connection, 
 }
 
 type managedSSHJob struct {
+	Debug         bool
 	Configuration string
 	Target        string
 }
@@ -255,6 +256,7 @@ func managedSSHCommand(h Host, c Config) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	j.Debug = c.debugLaunch
 	data, err := json.Marshal(j)
 	if err != nil {
 		return nil, err
@@ -289,7 +291,12 @@ func runManagedSSH(encoded string) error {
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
-	return run([]string{"ssh", "-F", path, "--", j.Target})
+	argv := []string{"ssh", "-F", path, "--", j.Target}
+	if j.Debug {
+		argv = append([]string{"ssh", "-vv", "-o", "ConnectTimeout=15"}, argv[1:]...)
+		return runDebugCommand(argv)
+	}
+	return run(argv)
 }
 
 func sshSnapshot(configuration string) (string, func(), error) {

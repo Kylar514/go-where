@@ -10,6 +10,7 @@ import (
 )
 
 type Config struct {
+	debugLaunch      bool
 	DisabledSources  []string                           `json:"disabled_sources,omitempty"`
 	StartupSource    string                             `json:"startup_source,omitempty"`
 	Hotkeys          map[string][]string                `json:"hotkeys,omitempty"`

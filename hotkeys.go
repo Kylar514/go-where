@@ -12,6 +12,7 @@ type hotkeyAction struct {
 }
 
 var hotkeyActions = []hotkeyAction{
+	{"debug", "Debug launch", "picker", []string{"alt+d"}},
 	{"source_settings", "Sources: open Settings", "sources", []string{"ctrl+s"}},
 	{"source_create", "Create source", "sources", []string{"ctrl+n"}},
 	{"source_attach", "Add existing source", "sources", []string{"ctrl+o"}},

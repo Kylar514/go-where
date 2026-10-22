@@ -276,6 +276,18 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+**Alt+D / Debug** launches once with diagnostics; rebind it under Hotkeys.
+SSH uses `-vv` and a 15-second connection timeout with the same managed snapshot.
+Debug runs in a tmux pane when available, otherwise a terminal, and pauses when
+finished. RDP enables client/SSH-jump debug output and uses the client's password
+prompt rather than passing credential-provider output to debug logs.
+File-backed transfers retain review/confirmation and add verbose client/SSH
+flags. Database-backed transfers are rejected until managed snapshot integration
+is implemented, rather than silently using a matching personal-config alias.
+Tunnel Debug displays configuration/status and ordinary tracked startup results;
+already-running tunnels are not restarted. Live verbose detached-tunnel logs
+remain unsupported. No diagnostic logs are automatically saved.
+
 **Settings → Sources** controls **Enabled sources** and **Startup source**.
 All registered sources (including SSH config) remain enabled unless unchecked;
 disabled sources are not read or listed, and their files remain untouched.

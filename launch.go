@@ -130,6 +130,15 @@ func connect(hosts []Host, dest string, o Origin, c Config, sshConfig string) er
 			argv = []string{"ssh", "-F", sshConfig, "--", h.Alias}
 		}
 		commands[hostIdentity(h)] = argv
+		if c.debugLaunch && h.SourceID == "" {
+			argv = append([]string{"ssh", "-vv", "-o", "ConnectTimeout=15"}, argv[1:]...)
+			job := transferJob{Label: "Debug SSH", Argv: argv}
+			exe, err := os.Executable()
+			if err != nil {
+				return err
+			}
+			commands[hostIdentity(h)] = []string{exe, "__debug", encodeJob(job)}
+		}
 	}
 	ssh := func(h Host) []string { return commands[hostIdentity(h)] }
 	if dest == "current" && len(hosts) > 1 {

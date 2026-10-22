@@ -72,9 +72,9 @@ func (m *pickerModel) buttons() []pickerButton {
 				primary = "Stop"
 			}
 		}
-		return []pickerButton{{primary, "connect"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
+		return []pickerButton{{primary, "connect"}, {"Debug", "debug"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
 	}
-	buttons := []pickerButton{{primary, "connect"}, {"Connect as", "connect-as"}}
+	buttons := []pickerButton{{primary, "connect"}, {"Debug", "debug"}, {"Connect as", "connect-as"}}
 	if m.state.Mode == "rdp" {
 		buttons = append(buttons, pickerButton{"Account", "account"})
 	}

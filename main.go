@@ -344,6 +344,10 @@ func app(args []string) error {
 			}
 		}
 		target := destination(c.Destination, o, c)
+		c.debugLaunch = state.Debug
+		if key == "debug" {
+			target = debugDestination(o)
+		}
 		switch key {
 		case "ctrl-alt-p":
 			target = "tmux-pane"
