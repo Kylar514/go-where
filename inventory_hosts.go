@@ -9,6 +9,7 @@ import (
 const hostTableSQL = "CREATE TABLE hosts (id TEXT PRIMARY KEY NOT NULL, alias TEXT UNIQUE NOT NULL, data TEXT NOT NULL)"
 
 type InventoryHost struct {
+	Color   string   `json:"color,omitempty"`
 	ID      string   `json:"id"`
 	Alias   string   `json:"alias"`
 	Address string   `json:"address"`
@@ -44,6 +45,9 @@ func readInventoryHosts(db inventoryReader) ([]InventoryHost, error) {
 		if err = json.Unmarshal([]byte(data), &h); err != nil {
 			return nil, err
 		}
+		if err = validateHostColor(h.Color); err != nil {
+			return nil, err
+		}
 		if h.ID != id || h.Alias != alias || !inventoryName(id) || !inventoryName(alias) || h.Address == "" || clean(h.Address) != h.Address || clean(h.Notes) != h.Notes {
 			return nil, fmt.Errorf("invalid host %s", id)
 		}
@@ -58,6 +62,9 @@ func readInventoryHosts(db inventoryReader) ([]InventoryHost, error) {
 }
 
 func writeInventoryHost(tx *sql.Tx, h InventoryHost) error {
+	if err := validateHostColor(h.Color); err != nil {
+		return err
+	}
 	if !inventoryName(h.ID) || !inventoryName(h.Alias) || h.Address == "" || clean(h.Address) != h.Address || clean(h.Notes) != h.Notes {
 		return fmt.Errorf("valid host name and address required")
 	}

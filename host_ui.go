@@ -6,6 +6,9 @@ import (
 )
 
 func editInventoryHost(c Config, state *PickerState, selected *Host) error {
+	previousKeys := menuHotkeys
+	menuHotkeys = c
+	defer func() { menuHotkeys = previousKeys }()
 	defer menuSession()()
 	preferred := state.Source
 	if selected != nil {
@@ -58,6 +61,7 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 		if selected != nil {
 			options = append(options, choice{"local-address", "Local host address override…"})
 		}
+		options = append(options, choice{"color", "Color: " + h.Color + " …"})
 		if selected != nil {
 			options = append(options, choice{"delete", "Delete host and profiles…"})
 		}
@@ -66,6 +70,14 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 			return e
 		}
 		switch id {
+		case "color":
+			value, back, err := chooseHostColor(h.Color)
+			if err != nil {
+				return err
+			}
+			if !back {
+				h.Color = value
+			}
 		case "local-address":
 			if state.ConfigPath == "" {
 				return fmt.Errorf("settings path required")

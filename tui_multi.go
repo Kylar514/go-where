@@ -142,10 +142,11 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.restorePreview = nil
 		}
 	case tea.KeyMsg:
-		if m.width > 0 && m.tooSmall() && msg.String() != "esc" && msg.String() != "ctrl+c" && msg.String() != "ctrl+h" && msg.String() != "left" {
+		key := canonicalKey(menuHotkeys, msg.String(), "menu")
+		if m.width > 0 && m.tooSmall() && key != "esc" {
 			return m, nil
 		}
-		switch msg.String() {
+		switch key {
 		case "esc", "ctrl+c", "ctrl+h", "left":
 			m.done, m.back = true, true
 			return m, tea.Quit
@@ -268,6 +269,7 @@ func (m *multiDialog) View() string {
 	done := fmt.Sprintf("│ Done — apply %d selected │", m.checkedCount())
 	manual := "│ Type a name manually… │"
 	lines = append(lines, row(len(m.filtered), done, done), row(len(m.filtered)+1, manual, manual))
-	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), fit(compactControl("Back")+"  Ctrl+H/← discard · Ctrl+L/Enter/Space toggle · ↑/↓ move · Ctrl+U/D details", m.width))
+	footer := compactControl("Back") + "  " + keyHint(menuHotkeys, "back") + " discard · " + keyHint(menuHotkeys, "select") + "/Space toggle"
+	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), fit(footer, m.width))
 	return strings.Join(lines, "\n")
 }

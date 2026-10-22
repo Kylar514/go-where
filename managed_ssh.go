@@ -325,6 +325,9 @@ func selectedRecord(h Host, c Config) (InventorySource, Connection, error) {
 
 func managedDetails(h Host, c Config) string {
 	metadata := "Source: " + h.SourceName + "\nConnection ID: " + h.ConnectionID + "\nTags: " + strings.Join(h.Tags, ", ") + "\nNotes: " + h.Comment + "\n\n"
+	if h.Color != "" {
+		metadata = "■ " + h.Alias + "\nColor: " + h.Color + "\n\n" + metadata
+	}
 	if h.Type == "rdp" {
 		j, err := hostRDPJob(c, h, "")
 		if err != nil {

@@ -10,6 +10,7 @@ import (
 )
 
 type Config struct {
+	Hotkeys          map[string][]string                `json:"hotkeys,omitempty"`
 	HostOverrides    map[string]map[string]HostOverride `json:"host_overrides,omitempty"`
 	StartupMode      string                             `json:"startup_mode,omitempty"`
 	SSHAgents        map[string]SSHAgentProfile         `json:"ssh_agents,omitempty"`
@@ -76,6 +77,9 @@ func decodeConfig(data []byte) (Config, error) {
 }
 
 func (c Config) validate() error {
+	if err := validateHotkeys(c); err != nil {
+		return err
+	}
 	for _, hosts := range c.HostOverrides {
 		for _, o := range hosts {
 			if o.Address != nil && (*o.Address == "" || clean(*o.Address) != *o.Address) {

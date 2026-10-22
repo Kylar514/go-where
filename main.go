@@ -179,6 +179,7 @@ func app(args []string) error {
 		if err != nil {
 			return err
 		}
+		menuHotkeys = c
 		if *dest != "" {
 			c.Destination = *dest
 		}

@@ -9,6 +9,9 @@ import (
 	"strings"
 )
 
+var saveActiveSettings func() error
+var settingsSaveState func() string
+
 func agentNames(c Config) []string {
 	names := make([]string, 0, len(c.SSHAgents))
 	for name := range c.SSHAgents {
@@ -33,6 +36,7 @@ func chooseAgent(c Config, override bool, current string) (string, bool, error) 
 }
 
 func cloneAgentSettings(c Config) Config {
+	c.Hotkeys = maps.Clone(c.Hotkeys)
 	if c.HostOverrides != nil {
 		hosts := make(map[string]map[string]HostOverride, len(c.HostOverrides))
 		for s, overrides := range c.HostOverrides {
@@ -69,9 +73,39 @@ func settingsDraft(path string) (original []byte, before, draft Config, err erro
 
 func settingsMenu(path string) (raw bool, err error) {
 	defer menuSession()()
+	previousKeys := menuHotkeys
+	if loaded, e := loadConfig(path); e == nil {
+		menuHotkeys = loaded
+	}
+	defer func() { menuHotkeys = previousKeys }()
 	original, before, draft, err := settingsDraft(path)
 	if err != nil {
 		return false, err
+	}
+	previousSave, previousState := saveActiveSettings, settingsSaveState
+	defer func() { saveActiveSettings, settingsSaveState = previousSave, previousState }()
+	saved := false
+	saveActiveSettings = func() error {
+		if err := saveSettingsDraft(path, original, before, draft); err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		original = data
+		before = cloneAgentSettings(draft)
+		saved = true
+		return nil
+	}
+	settingsSaveState = func() string {
+		if !reflect.DeepEqual(before, draft) {
+			return "Unsaved changes"
+		}
+		if saved {
+			return "Saved"
+		}
+		return "No unsaved changes"
 	}
 	for {
 		mode := draft.StartupMode
@@ -81,14 +115,19 @@ func settingsMenu(path string) (raw bool, err error) {
 		id, back, e := choose("Settings", []choice{
 			{"general", "General — startup mode: " + mode},
 			{"agents", "SSH agents — local socket/pipe profiles"},
+			{"hotkeys", "Hotkeys — configurable action bindings"},
 			{"overrides", "Connection settings & overrides — SSH agents / compatibility"},
 			{"raw", "Edit raw settings (JSON with comments)"},
 			{"save", "Save settings and return"}, {"cancel", "Cancel changes"},
-		}, "Changes stay in a draft until you save.\n\n• Save applies your changes.\n• Cancel leaves settings unchanged.\n• Raw editing discards the current draft.\n\nJSONC comments and trailing commas are supported.\n\nAccount management and configurable hotkeys are not available yet.")
+		}, "Changes stay in a draft until you save.\n\n• Save applies your changes.\n• Cancel leaves settings unchanged.\n• Raw editing discards the current draft.\n\nJSONC comments and trailing commas are supported.")
 		if e != nil || back || id == "cancel" {
 			return false, e
 		}
 		switch id {
+		case "hotkeys":
+			if e = editHotkeys(&draft); e != nil {
+				return false, e
+			}
 		case "general":
 			v, b, e := chooseOne("Startup mode", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnels", "Tunnels"}, {"scp", "Transfers — SCP"}, {"rsync", "Transfers — rsync"}, {"legacy-scp", "Transfers — legacy SCP"}}, "An explicit CLI mode, e.g. go-where rdp, wins over this preference.", mode)
 			if e != nil {
@@ -121,7 +160,7 @@ func settingsMenu(path string) (raw bool, err error) {
 			}
 			return true, nil
 		case "save":
-			if e = saveSettingsDraft(path, original, before, draft); e != nil {
+			if e = saveActiveSettings(); e != nil {
 				if e = notice(e.Error()); e != nil {
 					return false, e
 				}

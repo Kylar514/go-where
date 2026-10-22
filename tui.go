@@ -256,9 +256,11 @@ func hostColumnLine(h *Host, width int, mark string) string {
 
 func renderHostColumns(h *Host, width int, mark string, custom []int) string {
 	values := []string{"HOST", "HOSTNAME / IP", "SOURCE", "TAGS", "NOTES"}
+	values[0] = "  HOST"
 	prefix := "     "
 	if h != nil {
 		values = []string{h.Alias, h.Hostname, hostSourceLabel(*h), strings.Join(h.Tags, ", "), h.Comment}
+		values[0] = "  " + h.Alias
 		prefix = " " + mark + " "
 	}
 	var widths []int
@@ -438,6 +440,9 @@ func (m *pickerModel) action(action string) tea.Cmd {
 	switch action {
 	case "help":
 		text := pickerHelp(m.state.Mode)
+		if len(m.config.Hotkeys) > 0 {
+			text = configuredHelp(m.config) + "\n\n" + modeWarning(m.state.Mode)
+		}
 		if m.state.Mode == "tunnels" {
 			text = "TUNNELS\nEnter / Toggle  Start or stop the highlighted tunnel\nCtrl+N          New connection (choose Type in the editor)\nCtrl+E          Edit database tunnel, or legacy connections.yaml\nCtrl+B          Choose inventory source\nCtrl+R          Reload config\nTunnels remain running when this TUI closes.\nOnly owned processes can be stopped.\n"
 		}
@@ -553,7 +558,7 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		key := strings.ReplaceAll(msg.String(), "alt+ctrl+", "ctrl+alt+")
+		key := canonicalKey(m.config, msg.String(), "picker")
 		if m.width > 0 && (m.width < 30 || m.height < 12) && key != "esc" && key != "ctrl+c" {
 			return m, nil
 		}
@@ -626,7 +631,7 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if h, ok := m.activeHost(); ok {
 				m.marked[hostIdentity(h)] = !m.marked[hostIdentity(h)]
 				delta := 1
-				if msg.String() == "shift+tab" {
+				if key == "shift+tab" {
 					delta = -1
 				}
 				m.cursor = max(0, min(len(m.visible)-1, m.cursor+delta))
@@ -748,7 +753,11 @@ func (m *pickerModel) updatePreview() {
 		}
 	} else if h, ok := m.activeHost(); ok {
 		if h.SourceID != "" {
-			m.preview.SetContent(ansi.Wrap(cleanLines(managedDetails(h, m.config)), max(1, m.preview.Width), ""))
+			text := ansi.Wrap(cleanLines(managedDetails(h, m.config)), max(1, m.preview.Width), "")
+			if h.Color != "" {
+				text = strings.Replace(text, "■", colorSwatch(h.Color), 1)
+			}
+			m.preview.SetContent(text)
 			return
 		}
 		text = fmt.Sprintf("%s\n\nAddress   %s\nJump      %s\nTags      %s\nNotes     %s\nSource    %s\nFile      %s:%d\n\n", h.Alias, h.Hostname, h.JumpHost, strings.Join(h.Tags, ", "), h.Comment, hostSourceLabel(h), h.File, h.Line)
@@ -857,6 +866,14 @@ func (m *pickerModel) View() string {
 			if i == m.cursor {
 				line = tuiSelected.Render(fit("›"+strings.TrimPrefix(line, " "), listWidth))
 			}
+			if m.state.Mode != "tunnels" {
+				h := m.hosts[id]
+				if h.Color != "" {
+					line = ansi.Cut(line, 0, 5) + lipgloss.NewStyle().Reverse(false).Foreground(lipgloss.Color(h.Color)).Render("■") + ansi.Cut(line, 6, listWidth)
+				}
+			} else if h, ok := m.tunnelHosts[m.tunnels[id].Name]; ok && h.Color != "" {
+				line = ansi.Cut(line, 0, 2) + colorSwatch(h.Color) + " " + ansi.Cut(line, 4, listWidth)
+			}
 			m.hits = append(m.hits, hitRegion{0, tabHeight + 1 + m.toolbarGap() + row, listWidth, "row", i})
 		} else if row == m.rows()-1 {
 			line = tuiDim.Render("No matches")
@@ -879,6 +896,7 @@ func (m *pickerModel) View() string {
 	} else if m.state.Mode == "scp" || m.state.Mode == "legacy-scp" || m.state.Mode == "rsync" {
 		legend = "Click to select · Double-click to review transfer · ? Help"
 	}
+	legend = strings.Replace(legend, "? Help", keyHint(m.config, "help")+" Help", 1)
 	// Separate the search input from results without adding another row.
 	lines = append(lines, body, strings.Repeat("─", width), m.search.View())
 	if m.toolbarGap() > 0 {
@@ -925,6 +943,9 @@ func pick(hosts []Host, exe, query, dest string, o Origin, state *PickerState) (
 		c.TunnelsConfig = state.TunnelsConfig
 	}
 	m := newPickerModel(hosts, query, dest, o, *state, c)
+	previousKeys := menuHotkeys
+	menuHotkeys = c
+	defer func() { menuHotkeys = previousKeys }()
 	if _, err := runTUI(m); err != nil {
 		return "", query, nil, err
 	}

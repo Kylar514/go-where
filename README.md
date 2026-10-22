@@ -276,6 +276,23 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+### Hotkeys and host colors
+
+**Settings → Hotkeys** edits comma-separated bindings for picker and menu actions.
+Conflicts are checked within each scope; ordinary printable letters are rejected
+so search remains usable. Empty bindings disable an action, and Restore all
+defaults removes overrides. Changes take effect after Settings Save. Help and
+menu hints use the configured bindings. Text-field cursor/editing keys and
+checklist Space remain native rather than configurable action bindings.
+
+Host editor → **Color** accepts optional `#RRGGBB`, offers a basic palette,
+preview and clearing. A single swatch precedes the host name and appears in
+Details; SSH/RDP profiles share the host color, and SSH tunnels inherit their
+transport host's color. No full-row coloring or automatic tag/environment rules.
+Lip Gloss adapts RGB to the terminal palette; exact colors require true-color
+support (including Windows Terminal). Very dark colors may be difficult to see.
+Colors are optional metadata; the database schema remains v6.
+
 Current launch location and source filter appear in the bottom controls:
 **Launch: …** and **Sources: …**, not a separate line beneath the tabs.
 Launch changes apply for the session: RDP has its own location (including

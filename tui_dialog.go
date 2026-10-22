@@ -100,6 +100,8 @@ func menuKey(title string) string {
 }
 
 type dialogModel struct {
+	saveMessage    string
+	swatch         string
 	breadcrumb     string
 	singleChoice   bool
 	current        string
@@ -169,11 +171,16 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.restorePreview = nil
 		}
 	case tea.KeyMsg:
-		if m.width > 0 && (m.width < 24 || m.height < 9) && msg.String() != "esc" && msg.String() != "ctrl+c" && msg.String() != "ctrl+h" && msg.String() != "left" {
+		key := canonicalKey(menuHotkeys, msg.String(), "menu")
+		if m.width > 0 && (m.width < 24 || m.height < 9) && key != "esc" {
 			return m, nil
 		}
-		switch msg.String() {
+		switch key {
 		case "ctrl+s":
+			if saveActiveSettings != nil {
+				m.result, m.done = "__save_settings", true
+				return m, tea.Quit
+			}
 			if m.title == "Settings" {
 				m.result, m.done = "save", true
 				return m, tea.Quit
@@ -211,6 +218,10 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.title == "Settings" && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.height-1 {
 			if msg.X >= 8 && msg.X < 15 {
+				if saveActiveSettings != nil {
+					m.result, m.done = "__save_settings", true
+					return m, tea.Quit
+				}
 				m.result, m.done = "save", true
 				return m, tea.Quit
 			}
@@ -218,6 +229,10 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.result, m.done = "cancel", true
 				return m, tea.Quit
 			}
+		}
+		if m.title != "Settings" && saveActiveSettings != nil && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.height-1 && msg.X >= 8 && msg.X < 24 {
+			m.result, m.done = "__save_settings", true
+			return m, tea.Quit
 		}
 		if msg.Button == tea.MouseButtonWheelUp {
 			if msg.Y >= m.listStart() && msg.Y < m.listStart()+m.optionRows() && m.inList(msg.X) {
@@ -293,7 +308,16 @@ func (m *dialogModel) View() string {
 	if m.singleChoice {
 		header += " — " + kind
 	}
+	if settingsSaveState != nil {
+		header += " · " + settingsSaveState()
+	}
+	if m.saveMessage != "" {
+		header += " · " + m.saveMessage
+	}
 	lines := []string{tuiAccent.Render(fit(header, m.width))}
+	if m.swatch != "" {
+		lines[0] += " " + colorSwatch(m.swatch)
+	}
 	if m.text != "" && m.width < 90 {
 		lines = append(lines, m.preview.View(), "")
 	}
@@ -340,8 +364,17 @@ func (m *dialogModel) View() string {
 	}
 	lines = append(lines, body)
 	footer := compactControl("Back") + "  Ctrl+H/← back · Ctrl+L/Enter select · ↑/↓ move · Ctrl+U/D details"
+	if len(menuHotkeys.Hotkeys) > 0 {
+		footer = compactControl("Back") + "  " + keyHint(menuHotkeys, "back") + " back · " + keyHint(menuHotkeys, "select") + " select"
+	}
 	if m.title == "Settings" {
 		footer = compactControl("Back", "Save", "Cancel") + "  Ctrl+S save · Esc cancel · Ctrl+L/Enter open"
+		if len(menuHotkeys.Hotkeys) > 0 {
+			footer = compactControl("Back", "Save", "Cancel") + "  " + keyHint(menuHotkeys, "menu_save") + " save · " + keyHint(menuHotkeys, "back") + " back"
+		}
+	}
+	if saveActiveSettings != nil && m.title != "Settings" {
+		footer = compactControl("Back", "Save settings") + "  " + keyHint(menuHotkeys, "menu_save") + " save · " + keyHint(menuHotkeys, "back") + " back"
 	}
 	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), fit(footer, m.width))
 	return strings.Join(lines, "\n")

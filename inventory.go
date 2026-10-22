@@ -435,11 +435,20 @@ func inventoryHosts(c Config) ([]Host, error) {
 			if r.HostID != "" {
 				alias = byID[r.HostID].Alias
 			}
-			hosts = append(hosts, Host{Alias: alias, Hostname: r.Address, Comment: r.Notes, Tags: r.Tags, SourceID: s.ID, SourceName: s.Name, ConnectionID: r.ID, InventoryHostID: r.HostID, ProfileName: r.ProfileName, Type: r.kind()})
+			color := byID[r.HostID].Color
+			if r.kind() == "tunnel" && r.SSHID != "" {
+				for _, p := range records {
+					if p.ID == r.SSHID {
+						color = byID[p.HostID].Color
+						break
+					}
+				}
+			}
+			hosts = append(hosts, Host{Color: color, Alias: alias, Hostname: r.Address, Comment: r.Notes, Tags: r.Tags, SourceID: s.ID, SourceName: s.Name, ConnectionID: r.ID, InventoryHostID: r.HostID, ProfileName: r.ProfileName, Type: r.kind()})
 		}
 		for _, host := range inventory {
 			if !configured[host.ID] {
-				hosts = append(hosts, Host{Alias: host.Alias, Hostname: host.Address, Tags: host.Tags, Comment: host.Notes, SourceID: s.ID, SourceName: s.Name, ConnectionID: host.ID, InventoryHostID: host.ID, Type: "host"})
+				hosts = append(hosts, Host{Color: host.Color, Alias: host.Alias, Hostname: host.Address, Tags: host.Tags, Comment: host.Notes, SourceID: s.ID, SourceName: s.Name, ConnectionID: host.ID, InventoryHostID: host.ID, Type: "host"})
 			}
 		}
 	}

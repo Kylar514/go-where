@@ -127,6 +127,19 @@ func runChoice(m *dialogModel, key string) (string, bool, error) {
 		m.restorePreview = &position.preview
 	}
 	_, err := runTUI(m)
+	for err == nil && m.result == "__save_settings" {
+		if saveActiveSettings != nil {
+			if e := saveActiveSettings(); e != nil {
+				m.saveMessage = e.Error()
+			} else {
+				m.saveMessage = "Saved"
+			}
+		}
+		m.result = ""
+		m.done = false
+		m.back = false
+		_, err = runTUI(m)
+	}
 	if m.back && len(menuTrail) > 0 {
 		menuTrail = menuTrail[:len(menuTrail)-1]
 	}

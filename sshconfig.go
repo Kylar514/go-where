@@ -10,6 +10,7 @@ import (
 )
 
 type Host struct {
+	Color           string
 	InventoryHostID string
 	ProfileName     string
 	Type            string
