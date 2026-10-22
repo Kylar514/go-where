@@ -225,7 +225,7 @@ func matchesTags(tags, required []string) bool {
 func (m *pickerModel) rows() int {
 	_, _, tabs := m.controls(pickerTabs, 0)
 	_, _, buttons := m.controls(m.buttons(), 0)
-	return max(1, min(20, m.height-tabs-buttons-6-2*m.toolbarGap()))
+	return max(1, min(20, m.height-tabs-buttons-5-2*m.toolbarGap()))
 }
 
 func (m *pickerModel) toolbarGap() int {
@@ -808,28 +808,7 @@ func (m *pickerModel) View() string {
 	width := m.width - 2
 	tabs, tabHits, tabHeight := m.controls(pickerTabs, 0)
 	m.hits = append(m.hits, tabHits...)
-	dest := m.dest
-	if m.state.Mode == "rdp" {
-		dest = rdpDestination(m.config, false)
-	}
-	context := "Destination: " + strings.ReplaceAll(dest, "-", " ")
-	if m.state.Mode == "tunnels" {
-		context = "Managed tunnels"
-	}
-	if m.state.Mode == m.transferMode {
-		context = strings.ToUpper(m.state.Mode) + " ▾"
-		m.hits = append(m.hits, hitRegion{0, tabHeight, lipgloss.Width(context), "protocol", 0})
-	}
-	if len(m.config.Sources) > 0 {
-		name := "All sources"
-		if m.state.Source == "ssh-config" {
-			name = "SSH config"
-		} else if s, err := findSource(m.config, m.state.Source); err == nil {
-			name = s.Name
-		}
-		context += " │ " + name
-	}
-	lines := []string{tabs, fit(tuiDim.Render(context), width)}
+	lines := []string{tabs}
 	if m.toolbarGap() > 0 {
 		lines = append(lines, "")
 	}
@@ -846,7 +825,7 @@ func (m *pickerModel) View() string {
 		for i, w := range columns {
 			x += w
 			if i < len(columns)-1 {
-				m.hits = append(m.hits, hitRegion{x, tabHeight + 1, 2, "resize-column", i})
+				m.hits = append(m.hits, hitRegion{x, tabHeight, 2, "resize-column", i})
 				x += 2
 			}
 		}
@@ -878,7 +857,7 @@ func (m *pickerModel) View() string {
 			if i == m.cursor {
 				line = tuiSelected.Render(fit("›"+strings.TrimPrefix(line, " "), listWidth))
 			}
-			m.hits = append(m.hits, hitRegion{0, tabHeight + 2 + m.toolbarGap() + row, listWidth, "row", i})
+			m.hits = append(m.hits, hitRegion{0, tabHeight + 1 + m.toolbarGap() + row, listWidth, "row", i})
 		} else if row == m.rows()-1 {
 			line = tuiDim.Render("No matches")
 		}
@@ -891,7 +870,7 @@ func (m *pickerModel) View() string {
 		divider := strings.TrimSuffix(strings.Repeat(tuiDim.Render("│")+"\n", m.rows()+1), "\n")
 		body = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(listWidth).Render(body), divider, panel)
 		for row := 0; row < m.rows()+1; row++ {
-			m.hits = append(m.hits, hitRegion{listWidth, tabHeight + 1 + row, 1, "resize-pane", 0})
+			m.hits = append(m.hits, hitRegion{listWidth, tabHeight + row, 1, "resize-pane", 0})
 		}
 	}
 	legend := "Click to select · Double-click to connect · ? Help"
@@ -905,7 +884,7 @@ func (m *pickerModel) View() string {
 	if m.toolbarGap() > 0 {
 		lines = append(lines, "")
 	}
-	buttons, buttonHits, _ := m.controls(m.buttons(), tabHeight+m.rows()+4+2*m.toolbarGap())
+	buttons, buttonHits, _ := m.controls(m.buttons(), tabHeight+m.rows()+3+2*m.toolbarGap())
 	m.hits = append(m.hits, buttonHits...)
 	status := tuiDim.Render(clean(m.status))
 	if m.statusError {

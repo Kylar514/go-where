@@ -173,6 +173,7 @@ func app(args []string) error {
 	state := PickerState{Mode: mode}
 	draft := Transfer{Direction: "upload"}
 	sessionDest := ""
+	sessionRDPDest := ""
 	for {
 		c, err = loadConfig(*config)
 		if err != nil {
@@ -183,6 +184,9 @@ func app(args []string) error {
 		}
 		if sessionDest != "" {
 			c.Destination = sessionDest
+		}
+		if sessionRDPDest != "" {
+			c.RDP.Destination = sessionRDPDest
 		}
 		if *tunnelsConfig != "" {
 			c.TunnelsConfig = *tunnelsConfig
@@ -247,7 +251,11 @@ func app(args []string) error {
 			}
 			continue
 		case "target":
-			chosen, nextOrigin, back, targetErr := chooseTarget(o, c.Destination)
+			current := c.Destination
+			if state.Mode == "rdp" {
+				current = rdpDestination(c, false)
+			}
+			chosen, nextOrigin, back, targetErr := chooseTarget(o, current, state.Mode == "rdp")
 			err = targetErr
 			if err != nil {
 				if showErr := notice(err.Error()); showErr != nil {
@@ -255,7 +263,12 @@ func app(args []string) error {
 				}
 			}
 			if !back && err == nil {
-				sessionDest, o = chosen, nextOrigin
+				if state.Mode == "rdp" {
+					sessionRDPDest = chosen
+				} else {
+					sessionDest = chosen
+				}
+				o = nextOrigin
 			}
 			continue
 		case "tunnel-edit":

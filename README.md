@@ -276,6 +276,11 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+Current launch location and source filter appear in the bottom controls:
+**Launch: …** and **Sources: …**, not a separate line beneath the tabs.
+Launch changes apply for the session: RDP has its own location (including
+background), separate from SSH/transfers. Tunnels have no launch-location control.
+
 In the main picker, drag the vertical List/Details divider or a separator in the
 column headings to resize. Widths remain in the current picker session, not the
 database or settings file. Minimum widths protect readability. **Ctrl+Z** resets

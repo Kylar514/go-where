@@ -15,6 +15,13 @@ func compactControl(labels ...string) string {
 var pickerTabs = []pickerButton{{"SSH", "mode:ssh"}, {"RDP", "mode:rdp"}, {"Tunnels", "mode:tunnels"}, {"SCP", "mode:scp"}, {"Legacy SCP", "mode:legacy-scp"}, {"Rsync", "mode:rsync"}}
 
 func (m *pickerModel) buttons() []pickerButton {
+	source := "All"
+	if m.state.Source == "ssh-config" {
+		source = "SSH config"
+	} else if s, err := findSource(m.config, m.state.Source); err == nil {
+		source = s.Name
+	}
+	sourceButton := pickerButton{"Sources: " + source, "sources"}
 	primary := "Connect"
 	if m.state.Mode == "scp" || m.state.Mode == "legacy-scp" || m.state.Mode == "rsync" {
 		primary = "Review transfer"
@@ -30,13 +37,17 @@ func (m *pickerModel) buttons() []pickerButton {
 				primary = "Stop"
 			}
 		}
-		return []pickerButton{{primary, "connect"}, {"Settings", "settings"}, {"Sources", "sources"}, {"Help", "help"}}
+		return []pickerButton{{primary, "connect"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
 	}
 	buttons := []pickerButton{{primary, "connect"}, {"Connect as", "connect-as"}}
 	if m.state.Mode == "rdp" {
 		buttons = append(buttons, pickerButton{"Account", "account"})
 	}
-	buttons = append(buttons, pickerButton{"Target", "target"}, pickerButton{"Settings", "settings"}, pickerButton{"Sources", "sources"})
+	dest := m.dest
+	if m.state.Mode == "rdp" {
+		dest = rdpDestination(m.config, false)
+	}
+	buttons = append(buttons, pickerButton{"Launch: " + strings.ReplaceAll(dest, "-", " "), "target"}, pickerButton{"Settings", "settings"}, sourceButton)
 	if m.state.ListPercent != 0 || len(m.state.ColumnWidths) > 0 {
 		buttons = append(buttons, pickerButton{"Reset layout", "reset-layout"})
 	}

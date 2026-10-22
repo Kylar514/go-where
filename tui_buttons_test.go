@@ -96,3 +96,28 @@ func TestConnectedStripsHaveSharedBordersAndOpenActiveTab(t *testing.T) {
 		t.Fatal("first active tab does not join baseline", strip)
 	}
 }
+
+func TestLaunchAndSourceControlsReflectCurrentMode(t *testing.T) {
+	c := defaultConfig()
+	c.TunnelsConfig = t.TempDir() + "/missing"
+	c.RDP.Destination = "background"
+	m := newPickerModel(nil, "", "terminal", Origin{}, PickerState{Mode: "rdp", Source: "ssh-config"}, c)
+	m.Update(tea.WindowSizeMsg{Width: 148, Height: 28})
+	v := m.View()
+	if strings.Contains(v, "Destination:") || !strings.Contains(v, "Launch: background") || !strings.Contains(v, "Sources: SSH config") {
+		t.Fatal(v)
+	}
+	m.switchMode("ssh")
+	if !strings.Contains(m.View(), "Launch: terminal") {
+		t.Fatal("SSH launch label ignored destination")
+	}
+	m.switchMode("tunnels")
+	if strings.Contains(m.View(), "Launch:") {
+		t.Fatal("tunnels have launch-location control")
+	}
+	scriptTUI(t, "background")
+	dest, _, back, err := chooseTarget(Origin{}, "terminal", true)
+	if err != nil || back || dest != "background" {
+		t.Fatal(dest, back, err)
+	}
+}

@@ -134,7 +134,7 @@ func TestUnifiedMouseAndDialogs(t *testing.T) {
 	m.View()
 	// Second result sits one row above the bottom of the reverse list.
 	_, _, tabHeight := m.controls(pickerTabs, 0)
-	m.Update(tea.MouseMsg{X: 5, Y: tabHeight + 2 + m.toolbarGap() + m.rows() - 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m.Update(tea.MouseMsg{X: 5, Y: tabHeight + 1 + m.toolbarGap() + m.rows() - 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	if h, _ := m.activeHost(); h.Alias != "b" {
 		t.Fatal("mouse did not select second row")
 	}
@@ -248,7 +248,7 @@ func TestModeKeysAndFramedLayout(t *testing.T) {
 	view := m.View()
 	lines := strings.Split(view, "\n")
 	_, _, tabHeight := m.controls(pickerTabs, 0)
-	searchRow := tabHeight + m.rows() + 3 + m.toolbarGap()
+	searchRow := tabHeight + m.rows() + 2 + m.toolbarGap()
 	if !strings.Contains(lines[searchRow], "⌕ Search:") || !strings.Contains(lines[searchRow-1], "────") || !strings.Contains(view, "Start") {
 		t.Fatal("search must sit between separator and action buttons")
 	}
