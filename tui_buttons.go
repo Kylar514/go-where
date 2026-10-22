@@ -36,7 +36,11 @@ func (m *pickerModel) buttons() []pickerButton {
 	if m.state.Mode == "rdp" {
 		buttons = append(buttons, pickerButton{"Account", "account"})
 	}
-	return append(buttons, pickerButton{"Target", "target"}, pickerButton{"Settings", "settings"}, pickerButton{"Sources", "sources"}, pickerButton{"Help", "help"})
+	buttons = append(buttons, pickerButton{"Target", "target"}, pickerButton{"Settings", "settings"}, pickerButton{"Sources", "sources"})
+	if m.state.ListPercent != 0 || len(m.state.ColumnWidths) > 0 {
+		buttons = append(buttons, pickerButton{"Reset layout", "reset-layout"})
+	}
+	return append(buttons, pickerButton{"Help", "help"})
 }
 
 // Render and hit-test from the same dimensions, including wrapped rows/borders.

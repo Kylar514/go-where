@@ -276,6 +276,12 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+In the main picker, drag the vertical List/Details divider or a separator in the
+column headings to resize. Widths remain in the current picker session, not the
+database or settings file. Minimum widths protect readability. **Ctrl+Z** resets
+the layout; a **Reset layout** action appears after resizing in host modes.
+Resizing is separate from row selection and double-click launch.
+
 Menu headers show a breadcrumb (`Settings › SSH agents › profile`). Wide menus
 use the picker's list/Details split; narrow menus show wrapped guidance above
 the list. Guidance uses short paragraphs and bullets rather than full-width

@@ -7,6 +7,8 @@ import (
 )
 
 type PickerState struct {
+	ListPercent    int
+	ColumnWidths   []int
 	Source         string
 	TunnelsConfig  string
 	ConfigPath     string

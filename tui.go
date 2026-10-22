@@ -62,6 +62,9 @@ type pickerModel struct {
 	pending                       map[string]bool
 	lastClick                     string
 	lastClickAt                   time.Time
+	dragKind                      string
+	dragColumn, dragX             int
+	dragWidths                    []int
 }
 
 func newPickerModel(hosts []Host, query, dest string, o Origin, state PickerState, c Config) *pickerModel {
@@ -248,6 +251,10 @@ func hostSourceLabel(h Host) string {
 
 // Headings and rows share cell widths; hide Notes, then Tags as space shrinks.
 func hostColumnLine(h *Host, width int, mark string) string {
+	return renderHostColumns(h, width, mark, nil)
+}
+
+func renderHostColumns(h *Host, width int, mark string, custom []int) string {
 	values := []string{"HOST", "HOSTNAME / IP", "SOURCE", "TAGS", "NOTES"}
 	prefix := "     "
 	if h != nil {
@@ -268,11 +275,18 @@ func hostColumnLine(h *Host, width int, mark string) string {
 		widths = []int{max(1, width-5)}
 	}
 	columns := make([]string, len(widths))
+	if len(custom) == len(widths) {
+		widths = custom
+	}
 	for i, w := range widths {
 		v := fit(clean(values[i]), w)
 		columns[i] = v + strings.Repeat(" ", max(0, w-lipgloss.Width(v)))
 	}
-	return fit(prefix+strings.Join(columns, "  "), width)
+	separator := "  "
+	if h == nil {
+		separator = " │"
+	}
+	return fit(prefix+strings.Join(columns, separator), width)
 }
 func (m *pickerModel) scrollToCursor() {
 	if m.cursor < m.offset {
@@ -509,7 +523,7 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.search.Width = max(1, msg.Width-4-lipgloss.Width(m.search.Prompt))
-		_, previewWidth := viewSplit(msg.Width)
+		_, previewWidth := m.paneWidths()
 		m.preview.Width = max(1, previewWidth)
 		m.preview.Height = max(1, m.rows()-1)
 		m.scrollToCursor()
@@ -569,6 +583,9 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.action("mode")
 		case "ctrl+g":
 			return m, m.action("target")
+		case "ctrl+z":
+			m.resetLayout()
+			return m, nil
 		case "alt+a":
 			return m, m.action("account")
 		case "alt+1":
@@ -638,6 +655,9 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.preview.GotoTop()
 		m.updatePreview()
 	case tea.MouseMsg:
+		if m.resizeMouse(msg) {
+			return m, nil
+		}
 		if m.width < 30 || m.height < 12 {
 			return m, nil
 		}
@@ -646,7 +666,7 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Button == tea.MouseButtonWheelUp {
 				delta = -3
 			}
-			listWidth, _ := viewSplit(m.width)
+			listWidth, _ := m.paneWidths()
 			if m.width >= 90 && msg.X > listWidth {
 				if delta < 0 {
 					m.preview.ScrollUp(-delta)
@@ -690,6 +710,10 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					}
 					m.lastClick = ""
+					if hit.action == "reset-layout" {
+						m.resetLayout()
+						return m, nil
+					}
 					if strings.HasPrefix(hit.action, "mode:") {
 						m.switchMode(strings.TrimPrefix(hit.action, "mode:"))
 						return m, nil
@@ -809,13 +833,23 @@ func (m *pickerModel) View() string {
 	if m.toolbarGap() > 0 {
 		lines = append(lines, "")
 	}
-	listWidth, _ := viewSplit(m.width)
+	listWidth, _ := m.paneWidths()
+	columns := m.columnWidths(listWidth)
 	var left []string
 	// Fixed column titles; the list scrolls beneath them.
 	if m.state.Mode == "tunnels" {
 		left = append(left, fit(tuiDim.Render(fmt.Sprintf("  %-32s %s", "NAME / SOURCE", "STATUS")), listWidth))
 	} else {
-		left = append(left, tuiDim.Render(hostColumnLine(nil, listWidth, "")))
+		heading := renderHostColumns(nil, listWidth, "", columns)
+		left = append(left, tuiDim.Render(heading))
+		x := 5
+		for i, w := range columns {
+			x += w
+			if i < len(columns)-1 {
+				m.hits = append(m.hits, hitRegion{x, tabHeight + 1, 2, "resize-column", i})
+				x += 2
+			}
+		}
 	}
 	// Rows anchor to the bottom and fill upward (fzf --layout=reverse): the
 	// first result sits on the last slot, older entries stack above it.
@@ -839,7 +873,7 @@ func (m *pickerModel) View() string {
 				if m.marked[hostIdentity(h)] {
 					mark = "[✓]"
 				}
-				line = hostColumnLine(&h, listWidth, mark)
+				line = renderHostColumns(&h, listWidth, mark, columns)
 			}
 			if i == m.cursor {
 				line = tuiSelected.Render(fit("›"+strings.TrimPrefix(line, " "), listWidth))
@@ -854,7 +888,11 @@ func (m *pickerModel) View() string {
 	if m.width >= 90 {
 		// The frame shares the list's height, including its column heading.
 		panel := detailsPanel(m.preview)
-		body = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(listWidth).Render(body), " ", panel)
+		divider := strings.TrimSuffix(strings.Repeat(tuiDim.Render("│")+"\n", m.rows()+1), "\n")
+		body = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(listWidth).Render(body), divider, panel)
+		for row := 0; row < m.rows()+1; row++ {
+			m.hits = append(m.hits, hitRegion{listWidth, tabHeight + 1 + row, 1, "resize-pane", 0})
+		}
 	}
 	legend := "Click to select · Double-click to connect · ? Help"
 	if m.state.Mode == "tunnels" {
