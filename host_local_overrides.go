@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"reflect"
 	"strings"
 )
@@ -18,7 +17,7 @@ func editHostLocalOverrides(path string, s InventorySource, h InventoryHost) err
 		if err := saveSettingsDraft(path, original, before, draft); err != nil {
 			return err
 		}
-		data, err := os.ReadFile(path)
+		data, err := readSettingsData(path)
 		if err != nil {
 			return err
 		}

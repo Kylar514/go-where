@@ -155,6 +155,9 @@ func addInventorySource(settings string, c Config, state *PickerState, id string
 func writableSource(c Config, preferred string, settings ...string) (InventorySource, bool, error) {
 	if preferred != "" && preferred != "ssh-config" {
 		s, err := findSource(c, preferred)
+		if err == nil && s.ReadOnly {
+			return s, false, fmt.Errorf("source %s is read-only", s.Name)
+		}
 		return s, false, err
 	}
 	path := ""
@@ -167,6 +170,9 @@ func writableSource(c Config, preferred string, settings ...string) (InventorySo
 	for {
 		options := []choice{}
 		for _, s := range c.Sources {
+			if s.ReadOnly {
+				continue
+			}
 			options = append(options, choice{s.ID, s.Name})
 		}
 		if path != "" {

@@ -381,6 +381,12 @@ func (m *pickerModel) finish(key string) tea.Cmd {
 			return nil
 		}
 	}
+	if key == "bulk-edit" {
+		m.selected = m.selection(false)
+		if len(m.selected) == 0 {
+			return nil
+		}
+	}
 	m.key = key
 	m.state.Debug = key == "debug" || key == "ctrl-alt-t" && m.state.Mode == "rdp"
 	return tea.Quit
@@ -453,6 +459,8 @@ func (m *pickerModel) action(action string) tea.Cmd {
 		return m.finish("settings")
 	case "connect":
 		return m.finish("enter")
+	case "bulk-edit":
+		return m.finish("bulk-edit")
 	case "start-selected":
 		return m.bulkTunnels(false)
 	case "stop-selected":

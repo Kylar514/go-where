@@ -106,6 +106,9 @@ func patchSetting(v *hujson.Value, op, path string, value any) error {
 // All local-settings writers share this path. Preserve source-file symlinks,
 // comments and unrelated fields; reject stale drafts instead of overwriting.
 func modifySettings(path string, expected []byte, edit func(*hujson.Value, Config) error) error {
+	if databaseSettings(path) {
+		return modifyDatabaseSettings(path, expected, edit)
+	}
 	if real, err := filepath.EvalSymlinks(path); err == nil {
 		path = real
 	}

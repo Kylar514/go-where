@@ -39,6 +39,14 @@ func validateAgentProfile(name string, p SSHAgentProfile) error {
 
 func effectiveAgent(c Config, sourceID string, r Connection) (name, origin string) {
 	name, origin = r.SSHAgent, "connection default"
+	selection := c.PersonalConnections[sourceID][personalKey(r)]
+	if identity, identityOrigin := identityChoice(c, sourceID, r); identity != "" && r.kind() == "ssh" && selection.Profile == nil && selection.DefaultIdentity == "" {
+		name = ""
+		origin = identityOrigin
+		if identity != "default" {
+			name = c.Identities[identity].SSHAgent
+		}
+	}
 	if o := c.Overrides[sourceID][r.ID]; o.SSHAgent != nil {
 		name, origin = *o.SSHAgent, "local override"
 	}

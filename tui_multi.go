@@ -20,6 +20,11 @@ type multiItem struct {
 // multiDialog is a searchable checklist. Two pinned rows sit under the list so
 // "Done" and "Type a name manually" stay reachable however long it is.
 type multiDialog struct {
+	hostRows        map[string]Host
+	columnLayout    pickerModel
+	columnHits      []hitRegion
+	columnDrag      int
+	columnDragging  bool
 	resize          dialogModel
 	sourceSelection bool
 	allowManual     bool
@@ -149,6 +154,7 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.columnLayout.width = msg.Width
 		m.resize.width, m.resize.height = msg.Width, msg.Height
 		m.query.Width = max(1, msg.Width-ansi.StringWidth(m.query.Prompt)-1)
 		m.preview.Width = max(1, msg.Width-4)
@@ -161,6 +167,12 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			gap := 0
 			if m.sourceSelection {
 				gap = 1
+			}
+			if m.hostRows != nil && m.cursor < len(m.filtered) {
+				item := m.items[m.filtered[m.cursor]]
+				host := m.hostRows[item.ID]
+				text := host.Alias + "\n\nAddress: " + host.Hostname + "\nSource: " + host.SourceName + "\nTags: " + strings.Join(host.Tags, ", ") + "\nNotes: " + host.Comment + "\nConnection: " + item.Label + "\n\n" + m.text
+				m.preview.SetContent(ansi.Wrap(cleanLines(text), max(1, m.preview.Width), ""))
 			}
 			m.preview.Height = m.itemRows() + gap
 		}
@@ -175,6 +187,16 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch key {
+		case "tab", "shift+tab":
+			if m.cursor < len(m.filtered) {
+				m.activate(m.cursor)
+				delta := -1
+				if key == "shift+tab" {
+					delta = 1
+				}
+				m.move(delta)
+			}
+			return m, nil
 		case "ctrl+s":
 			if m.sourceSelection {
 				m.action = "save"
@@ -200,6 +222,36 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case tea.MouseMsg:
+		if m.columnDragging {
+			if msg.Action == tea.MouseActionRelease {
+				m.columnDragging = false
+				return m, nil
+			}
+			if msg.Action == tea.MouseActionMotion {
+				width, _ := m.resize.menuPaneWidths()
+				widths := m.columnLayout.columnWidths(width)
+				i := m.columnDrag
+				start := 5
+				for j := 0; j < i; j++ {
+					start += widths[j] + 2
+				}
+				delta := msg.X - start - widths[i]
+				delta = min(widths[i+1]-4, max(4-widths[i], delta))
+				widths[i] += delta
+				widths[i+1] -= delta
+				m.columnLayout.state.ColumnWidths = widths
+			}
+			return m, nil
+		}
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			for _, hit := range m.columnHits {
+				if msg.Y == hit.y && msg.X >= hit.x && msg.X < hit.x+hit.width {
+					m.columnDragging = true
+					m.columnDrag = hit.index
+					return m, nil
+				}
+			}
+		}
 		if m.tooSmall() {
 			return m, nil
 		}
@@ -288,6 +340,7 @@ func (m *multiDialog) View() string {
 		w, _ = m.resize.menuPaneWidths()
 	}
 	m.resize.resizeHits = nil
+	m.columnHits = nil
 	header := m.title
 	if len(menuTrail) > 0 {
 		header = strings.Join(menuTrail, " › ") + " › " + m.title
@@ -306,6 +359,28 @@ func (m *multiDialog) View() string {
 		}
 		return fit("  "+styled, w)
 	}
+	if m.hostRows != nil {
+		if m.cursor < len(m.filtered) {
+			item := m.items[m.filtered[m.cursor]]
+			host := m.hostRows[item.ID]
+			text := host.Alias + "\n\nAddress: " + host.Hostname + "\nSource: " + host.SourceName + "\nTags: " + strings.Join(host.Tags, ", ") + "\nNotes: " + host.Comment + "\nConnection: " + item.Label + "\n\n" + m.text
+			m.preview.SetContent(ansi.Wrap(cleanLines(text), max(1, m.preview.Width), ""))
+		}
+		widths := m.columnLayout.columnWidths(w)
+		heading := renderHostColumns(nil, w, "", widths)
+		// Reuse the spare row immediately above the bottom-anchored list.
+		if len(lines) > 1 {
+			lines[len(lines)-1] = tuiDim.Render(heading)
+		}
+		x := 5
+		for i, width := range widths {
+			x += width
+			if i < len(widths)-1 {
+				m.columnHits = append(m.columnHits, hitRegion{x, m.listStart() - 1, 2, "column", i})
+				x += 2
+			}
+		}
+	}
 	rows, offset := m.itemRows(), m.offset()
 	for slot := rows - 1; slot >= 0; slot-- {
 		i := offset + slot
@@ -323,12 +398,27 @@ func (m *multiDialog) View() string {
 			box = "[✓]"
 		}
 		plain := box + " " + clean(item.Label)
+		if host, ok := m.hostRows[item.ID]; ok {
+			plain = renderHostColumns(&host, w, box, m.columnLayout.columnWidths(w))
+		}
 		styled := plain
-		if item.Note != "" {
+		if item.Note != "" && m.hostRows == nil {
 			plain += "  — " + clean(item.Note)
 			styled += tuiDim.Render("  — " + clean(item.Note))
 		}
-		lines = append(lines, row(i, plain, styled))
+		if m.hostRows != nil {
+			line := plain
+			if i == m.cursor {
+				line = tuiSelected.Render(fit("›"+strings.TrimPrefix(plain, " "), w))
+			}
+			host := m.hostRows[item.ID]
+			if host.Color != "" {
+				line = ansi.Cut(line, 0, 5) + colorSwatch(host.Color) + ansi.Cut(line, 6, w)
+			}
+			lines = append(lines, line)
+		} else {
+			lines = append(lines, row(i, plain, styled))
+		}
 	}
 	done := fmt.Sprintf("│ Done — apply %d selected │", m.checkedCount())
 	manual := "│ Type a name manually… │"
@@ -357,6 +447,9 @@ func (m *multiDialog) View() string {
 		}
 	}
 	footer := menuFooter(m.height, m.width, []string{"Back"}, keyHint(menuHotkeys, "back")+" discard · "+keyHint(menuHotkeys, "select")+"/Space toggle")
+	if m.hostRows != nil {
+		footer = menuFooter(m.height, m.width, []string{"Back"}, keyHint(menuHotkeys, "back")+" Back | Tab/Shift+Tab Mark/move | Space Toggle")
+	}
 	if m.sourceSelection {
 		footer = menuFooter(m.height, m.width, []string{"Back", "Save settings"}, keyHint(menuHotkeys, "menu_save")+" save · "+keyHint(menuHotkeys, "select")+"/Space toggle")
 	}

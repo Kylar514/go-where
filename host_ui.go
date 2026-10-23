@@ -8,6 +8,8 @@ import (
 
 var saveActiveHost func() error
 var hostSaveState func() string
+var saveHostLocalSettings func() error
+var hostLocalSettingsState func() string
 
 func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 	previousKeys := menuHotkeys
@@ -67,6 +69,39 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 	defer func() { saveActiveHost, hostSaveState = previousSave, previousState }()
 	beforeHost := h
 	beforeProfiles := append([]Connection(nil), profiles...)
+	localOriginal, localBefore, localDraft, localErr := settingsDraft(state.ConfigPath)
+	if state.ConfigPath == "" {
+		localBefore = c
+		localDraft = cloneAgentSettings(c)
+		localErr = nil
+	}
+	previousLocalSave, previousLocalState := saveHostLocalSettings, hostLocalSettingsState
+	defer func() { saveHostLocalSettings, hostLocalSettingsState = previousLocalSave, previousLocalState }()
+	saveHostLocalSettings = func() error {
+		if localErr != nil {
+			return localErr
+		}
+		if state.ConfigPath == "" {
+			return fmt.Errorf("settings path required")
+		}
+		if err := saveSettingsDraft(state.ConfigPath, localOriginal, localBefore, localDraft); err != nil {
+			return err
+		}
+		data, err := readSettingsData(state.ConfigPath)
+		if err != nil {
+			return err
+		}
+		localOriginal = data
+		localBefore = cloneAgentSettings(localDraft)
+		c = localDraft
+		return nil
+	}
+	hostLocalSettingsState = func() string {
+		if !reflect.DeepEqual(localBefore, localDraft) {
+			return "Local changes unsaved"
+		}
+		return "Local settings saved"
+	}
 	saved := false
 	saveActiveHost = func() error {
 		if err := saveInventoryHost(s, h, profiles); err != nil {
@@ -109,18 +144,84 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 	}
 	for {
 		options := []choice{{"alias", "Name: " + h.Alias}, {"address", "Address: " + h.Address}, {"tags", "Tags: " + strings.Join(h.Tags, ", ")}, {"notes", "Notes: " + h.Notes}, {"ssh", "SSH profiles: " + hostProfileSummary(profiles, "ssh") + " …"}, {"rdp", "RDP profiles: " + hostProfileSummary(profiles, "rdp") + " …"}, {"tunnels", "Tunnels…"}, {"save", "Save host and profiles"}}
-		options = append(options, choice{"color", "Color: " + h.Color + " …"})
-		if selected != nil {
-			options = append(options, choice{"local-overrides", "Local overrides… (this device only)"})
+		// Direct fields replace the old profile -> identity -> profile menu loop.
+		options = options[:4]
+		localAddress := "Inherit host address"
+		if o := localDraft.HostOverrides[s.ID][h.ID]; o.Address != nil {
+			localAddress = *o.Address
 		}
+		options = append(options, choice{"local-address", "Local address: " + localAddress})
+		options = append(options, directConnectionRows(localDraft, s, profiles)...)
+		options = append(options, choice{"tunnels", "Tunnels…"}, choice{"save", "Save host and profiles"})
+		options = append(options, choice{"color", "Color: " + h.Color + " …"})
 		if selected != nil {
 			options = append(options, choice{"delete", "Delete host and profiles…"})
 		}
-		id, b, e := choose("Host — "+s.Name, options, "Address, tags and notes are shared. SSH/RDP profiles keep independent ports and accounts. Jumps and tunnels reference a specific SSH profile. Changes are saved together; Esc discards this draft.")
+		id, b, e := choose("Host — "+s.Name, options, "Connection selects assigned or available shared profiles. Identity selects your device-local login. Jump selects this host's route.\n\nSave host writes shared fields and routes. Save local settings writes identities and local exceptions separately. Back discards only unsaved changes.")
 		if e != nil || b {
 			return e
 		}
 		switch id {
+		case "local-address":
+			mode, back, err := chooseOne("Local address", []choice{{"inherit", "Inherit host address"}, {"set", "Set device-local address"}}, "Local settings only; shared host address is unchanged.", "inherit")
+			if err != nil {
+				return err
+			}
+			if back {
+				continue
+			}
+			var address *string
+			if mode == "set" {
+				value, b, e := inventoryPrompt("Local address", h.Address)
+				if e != nil {
+					return e
+				}
+				if b {
+					continue
+				}
+				address = &value
+			}
+			if localDraft.HostOverrides == nil {
+				localDraft.HostOverrides = map[string]map[string]HostOverride{}
+			}
+			if localDraft.HostOverrides[s.ID] == nil {
+				localDraft.HostOverrides[s.ID] = map[string]HostOverride{}
+			}
+			localDraft.HostOverrides[s.ID][h.ID] = HostOverride{Address: address}
+		case "ssh-profile", "rdp-profile":
+			kind := strings.Split(id, "-")[0]
+			if e = editHostProfiles(localDraft, s, h, &profiles, kind, state.ConfigPath, &localDraft); e != nil {
+				return e
+			}
+			continue
+		case "ssh-identity", "rdp-identity":
+			kind := strings.Split(id, "-")[0]
+			i := defaultConnectionIndex(profiles, kind)
+			if i < 0 {
+				if e = notice("Select a connection profile first."); e != nil {
+					return e
+				}
+				continue
+			}
+			if e = assignConnectionIdentity(&localDraft, s, profiles[i]); e != nil {
+				return e
+			}
+		case "ssh-jump", "rdp-jump":
+			kind := strings.Split(id, "-")[0]
+			i := defaultConnectionIndex(profiles, kind)
+			if i < 0 {
+				if e = notice("Select a connection profile first."); e != nil {
+					return e
+				}
+				continue
+			}
+			jump, back, err := chooseJump(c, s, profiles[i].JumpID, profiles[i].ID)
+			if err != nil {
+				return err
+			}
+			if !back {
+				profiles[i].JumpID = jump
+			}
 		case "local-overrides":
 			if e = editHostLocalOverrides(state.ConfigPath, s, h); e != nil {
 				return e
@@ -231,9 +332,10 @@ func hostProfileSummary(profiles []Connection, kind string) string {
 	return strings.Join(names, ", ")
 }
 
-func editHostProfiles(c Config, s InventorySource, h InventoryHost, profiles *[]Connection, kind, configPath string) error {
+func editHostProfiles(c Config, s InventorySource, h InventoryHost, profiles *[]Connection, kind, configPath string, localDrafts ...*Config) error {
 	for {
 		options := []choice{{"add", "Add " + strings.ToUpper(kind) + " profile…"}}
+		options = append(options, choice{"none", "None — disable " + strings.ToUpper(kind) + " for this host"})
 		shared, err := sourceProfiles(s)
 		if err != nil {
 			return err
@@ -262,10 +364,48 @@ func editHostProfiles(c Config, s InventorySource, h InventoryHost, profiles *[]
 				label += " ★ default"
 			}
 			options = append(options, choice{p.ID, label})
+			options = append(options, choice{"unassign:" + p.ID, "Unassign: " + p.ProfileName})
 		}
-		id, back, err := choose(strings.ToUpper(kind)+" profiles", options, "All profiles in this source are available here.\n\nSelect an available profile to assign it to this host's draft. Select an assigned profile to edit it or choose the default. Save host persists assignments.\n\nShared edits affect every host using that profile.")
+		var actions, list []choice
+		for _, option := range options {
+			if option.ID == "add" || option.ID == "none" || strings.HasPrefix(option.ID, "unassign:") {
+				actions = append(actions, option)
+			} else {
+				list = append(list, option)
+			}
+		}
+		options = append(actions, list...)
+		id, back, err := choose(strings.ToUpper(kind)+" profiles", options, "Select an available profile to assign it. Select an assigned profile to configure it.\n\nNone clears all assignments for this protocol; Unassign removes only the named connection. Reusable policies remain.\n\nSave host applies the draft and rejects removal of connections referenced by jumps or tunnels.")
 		if err != nil || back {
 			return err
+		}
+		if id == "none" || strings.HasPrefix(id, "unassign:") {
+			var kept []Connection
+			for _, p := range *profiles {
+				if id == "none" && p.kind() == kind {
+					continue
+				}
+				if id == "unassign:"+p.ID {
+					continue
+				}
+				kept = append(kept, p)
+			}
+			defaultFound := false
+			for _, p := range kept {
+				if p.kind() == kind && p.Default {
+					defaultFound = true
+				}
+			}
+			if !defaultFound {
+				for i := range kept {
+					if kept[i].kind() == kind {
+						kept[i].Default = true
+						break
+					}
+				}
+			}
+			*profiles = kept
+			continue
 		}
 		if strings.HasPrefix(id, "available:") {
 			pid := strings.TrimPrefix(id, "available:")
@@ -335,7 +475,11 @@ func editHostProfiles(c Config, s InventorySource, h InventoryHost, profiles *[]
 					}
 				}
 			}
-			action, b, e := choose("Profile — "+p.ProfileName, []choice{{"settings", "Shared connection settings…"}, {"name", "Name: " + p.ProfileName}, {"default", "Make default for this host"}, {"jump", "Host-specific SSH jump…"}, {"duplicate", "Duplicate as independent profile"}, {"remove", "Detach profile from host draft"}}, fmt.Sprintf("Shared profile used by %d saved host attachments. Editing settings updates all users of this profile on Save host. Address, default and jumps remain host-specific. Local overrides belong in the host editor.", uses))
+			options := []choice{{"default", "Default connection: " + fmt.Sprint(p.Default)}, {"exceptions", "Local field exceptions…"}}
+			if p.ProfileID == "" {
+				options = append(options, choice{"settings", "New policy settings…"})
+			}
+			action, b, e := choose("Connection — "+p.ProfileName, options, fmt.Sprintf("Policy settings are shared by %d saved attachments. Manage them in Settings → Connection policies.\n\nJump and default apply only to this host. Local identity belongs to this device. Remove detaches the connection, not the reusable policy.", uses))
 			if e != nil {
 				return e
 			}
@@ -343,6 +487,40 @@ func editHostProfiles(c Config, s InventorySource, h InventoryHost, profiles *[]
 				break
 			}
 			switch action {
+			case "exceptions":
+				if len(localDrafts) == 0 {
+					if e = notice("Open the host editor to change local exceptions."); e != nil {
+						return e
+					}
+					continue
+				}
+				if e = editLocalProfileFields(localDrafts[0], s, p, h.Alias); e != nil {
+					return e
+				}
+			case "policy":
+				shared, e := sourceProfiles(s)
+				if e != nil {
+					return e
+				}
+				options := []choice{}
+				for _, policy := range shared {
+					if policy.kind() == kind {
+						options = append(options, choice{policy.ID, policy.ProfileName})
+					}
+				}
+				pid, b, e := chooseOne("Connection policy", options, "Select shared policy settings for this host connection.", p.ProfileID)
+				if e != nil {
+					return e
+				}
+				if !b {
+					for _, policy := range shared {
+						if policy.ID == pid {
+							a := p
+							a.ProfileID = pid
+							(*profiles)[index] = applyProfile(a, policy)
+						}
+					}
+				}
 			case "duplicate":
 				(*profiles)[index].ProfileID = ""
 				(*profiles)[index].OriginalProfile = nil
@@ -386,6 +564,32 @@ func editHostProfiles(c Config, s InventorySource, h InventoryHost, profiles *[]
 					}
 				}
 			case "local":
+				if kind == "ssh" {
+					if p.ProfileID == "" {
+						if e = notice("Save the host first."); e != nil {
+							return e
+						}
+						continue
+					}
+					original, before, draft, e := settingsDraft(configPath)
+					if e != nil {
+						return e
+					}
+					if e = assignConnectionIdentity(&draft, s, p); e != nil {
+						return e
+					}
+					_, back, e := choose("Save local identity?", []choice{{"save", "Save local assignment separately"}}, "Shared host/profile data is unchanged.")
+					if e != nil {
+						return e
+					}
+					if !back {
+						if e = saveSettingsDraft(configPath, original, before, draft); e != nil {
+							return e
+						}
+						c = draft
+					}
+					continue
+				}
 				if kind != "ssh" || configPath == "" {
 					if e = notice("Local SSH overrides require a saved SSH profile and settings path."); e != nil {
 						return e

@@ -46,7 +46,7 @@ func app(args []string) error {
 	}
 	fs := flag.NewFlagSet("go-where", flag.ContinueOnError)
 	sshConfig := fs.String("ssh-config", filepath.Join(home, ".ssh", "config"), "SSH config to browse and connect with")
-	config := fs.String("config", settings, "settings (JSON with comments / JSONC)")
+	config := fs.String("config", settings, "local settings database (legacy JSONC paths remain supported)")
 	dest := fs.String("destination", "", "override default: tmux-pane, tmux-window, tmux-session, terminal, current")
 	noPopup := fs.Bool("no-popup", false, "run inline instead of opening a tmux popup")
 	popup := fs.Bool("popup", false, "open inside a tmux popup (default: standalone TUI)")
@@ -103,7 +103,7 @@ func app(args []string) error {
 	}
 	c, err := loadConfig(*config)
 	if err != nil {
-		if !editSettings {
+		if !editSettings || databaseSettings(*config) {
 			return err
 		}
 		// A broken settings file must remain editable using safe defaults.
@@ -129,6 +129,10 @@ func app(args []string) error {
 	}
 	if editSettings {
 		if err := ensureConfig(*config); err != nil {
+			return err
+		}
+		if databaseSettings(*config) {
+			_, err := settingsMenu(*config)
 			return err
 		}
 		return editFile(*config, 0, c.EditDestination, false, o, c)
@@ -221,6 +225,13 @@ func app(args []string) error {
 			return err
 		}
 		switch key {
+		case "bulk-edit":
+			if err = bulkEditConnections(c, state, selected); err != nil {
+				if err = notice(err.Error()); err != nil {
+					return err
+				}
+			}
+			continue
 		case "settings", "ctrl-s":
 			raw, e := settingsMenu(*config)
 			if e != nil {
@@ -285,6 +296,13 @@ func app(args []string) error {
 		case "ctrl-r":
 			continue
 		case "ctrl-alt-s":
+			if databaseSettings(*config) {
+				_, err = settingsMenu(*config)
+				if err != nil {
+					return err
+				}
+				continue
+			}
 			if key == "ctrl-alt-s" && o.Pane == "" {
 				return fmt.Errorf("editing in a pane requires tmux; use Ctrl+S for a floating editor")
 			}
@@ -301,7 +319,11 @@ func app(args []string) error {
 				if h.Type == "tunnel" {
 					err = editConnection(c, &state, &h)
 				} else {
-					err = editInventoryHost(c, &state, &h)
+					if databaseSettings(state.ConfigPath) {
+						err = editPersonalHosts(c, state.ConfigPath, selected)
+					} else {
+						err = editInventoryHost(c, &state, &h)
+					}
 				}
 				if err != nil {
 					if err = notice(err.Error()); err != nil {
@@ -325,16 +347,25 @@ func app(args []string) error {
 			continue
 		}
 		if key == "connect-as" {
-			var back bool
-			selected, back, err = chooseHostProfiles(c, selected)
-			if err != nil {
-				if err = notice(err.Error()); err != nil {
-					return err
+			if databaseSettings(state.ConfigPath) {
+				if err = chooseLaunchIdentity(&c, selected); err != nil {
+					if err = notice(err.Error()); err != nil {
+						return err
+					}
+					continue
 				}
-				continue
-			}
-			if back {
-				continue
+			} else {
+				var back bool
+				selected, back, err = chooseHostProfiles(c, selected)
+				if err != nil {
+					if err = notice(err.Error()); err != nil {
+						return err
+					}
+					continue
+				}
+				if back {
+					continue
+				}
 			}
 		}
 		target := destination(c.Destination, o, c)

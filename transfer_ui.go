@@ -158,7 +158,14 @@ func runChoice(m *dialogModel, key string) (string, bool, error) {
 		m.restorePreview = &position.preview
 	}
 	_, err := runTUI(m)
-	for err == nil && (m.result == "__save_settings" || m.result == "__save_host" || m.result == "__save_tunnel") {
+	for err == nil && (m.result == "__save_settings" || m.result == "__save_host" || m.result == "__save_tunnel" || m.result == "__save_host_local") {
+		if m.result == "__save_host_local" && saveHostLocalSettings != nil {
+			if e := saveHostLocalSettings(); e != nil {
+				m.saveMessage = e.Error()
+			} else {
+				m.saveMessage = ""
+			}
+		}
 		if m.result == "__save_tunnel" && saveActiveTunnel != nil {
 			if e := saveActiveTunnel(); e != nil {
 				m.saveMessage = e.Error()

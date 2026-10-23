@@ -55,7 +55,7 @@ func (m *dialogModel) formWidth(width int) int {
 		l = strings.TrimSuffix(l, "…")
 		labelWidth = max(labelWidth, lipgloss.Width(l))
 	}
-	labelWidth = min(22, min(labelWidth, max(8, width/2-3)))
+	labelWidth = min(26, min(labelWidth, max(8, width-18)))
 	if m.layout.labelWidth > 0 {
 		labelWidth = min(m.layout.labelWidth, max(4, width-12))
 	}
@@ -95,6 +95,12 @@ func (m *dialogModel) sourceWidths(width int) (int, int) {
 }
 
 func hostFormGroup(id string) int {
+	if strings.HasPrefix(id, "ssh-") {
+		return 1
+	}
+	if strings.HasPrefix(id, "rdp-") {
+		return 2
+	}
 	switch id {
 	case "alias", "address", "tags", "notes":
 		return 0
@@ -113,6 +119,12 @@ func (m *dialogModel) visualSlots() []int {
 		group := 0
 		if strings.HasPrefix(m.title, "Host — ") && m.query.Value() == "" {
 			group = hostFormGroup(m.options[m.filtered[i]].ID)
+		}
+		if (m.title == "SSH profiles" || m.title == "RDP profiles") && m.query.Value() == "" {
+			id := m.options[m.filtered[i]].ID
+			if id == "add" || id == "none" || strings.HasPrefix(id, "unassign:") {
+				group = 1
+			}
 		}
 		if strings.HasPrefix(m.title, "Tunnel — ") && m.query.Value() == "" {
 			switch m.options[m.filtered[i]].ID {

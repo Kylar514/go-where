@@ -276,6 +276,62 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+The default personal settings store is now `profile.db` in the OS configuration
+directory. Its first open imports a sibling `config.json` transactionally; the
+original JSONC file remains unchanged as a migration backup. Explicit legacy
+`--config settings.json` paths remain supported during the transition. `go-where
+config` opens the settings menu for database-backed settings, not a text editor.
+This stage does not add password storage or encryption.
+
+Database-backed Settings exposes Hosts (including unconfigured hosts), SSH/RDP
+Profiles, SSH/RDP Identities, RDP Session Settings, agents and hotkeys. Local
+profiles and personal host selections live only in the private settings store.
+Ctrl+E and Bulk edit use the same personal profile/identity form; unchanged
+fields are preserved. Profiles can be selected from all enabled sources, and
+identity checklists have a selected default. Connect as selects an identity for
+one launch. Inventory editing remains separately available under Settings → Hosts.
+
+RDP Session Settings applies clipboard/full-screen choices and opt-in folder
+redirection globally on this device. Folder paths remain local. Missing enabled
+folders stop launch with an actionable error. Existing client arguments remain
+supported; additional display/audio controls are not yet exposed.
+
+Migration work is still in progress: existing attachment jump routes are retained
+when selecting profiles; profile-owned cross-source routing, copy-to-local,
+connections for previously unconfigured hosts, and remaining legacy editor paths
+are not yet converted. A source marked `read_only` opens SQLite read-only and
+requires schema 7; personal selections do not write to that source.
+
+Host editing exposes default SSH/RDP **connection profile**, **local identity**
+and **jump host** selectors directly. Manage connections retains multi-connection
+assignment/default controls. Shared policy management stays in Settings.
+Host and local identity edits have separate Save host / Save local settings
+controls; Ctrl+Alt+S saves the local host identity draft. Existing RDP accounts
+are labeled local identities without changing their settings-file format.
+
+Mark hosts and choose **Bulk edit** to assign profiles, local identities or jump
+routes to default/all connections of SSH or RDP. Each batch previews affected
+connections and applies within one source. Shared changes validate jump cycles
+and commit transactionally; local identities save only JSONC settings. Stale
+shared batches are rejected. Password/encryption support remains deferred.
+
+### Device-local SSH identities
+
+**Settings → Local identities** creates reusable username/key/agent profiles and
+assigns them to an entire source, shared SSH profiles, or a checklist of SSH
+connections for bulk assignment. A host's Local overrides → SSH profile also
+offers an individual identity assignment. Assignments are local JSONC settings,
+never shared inventory. Precedence: individual field overrides → connection
+identity → shared-profile identity → source identity → existing explicit settings.
+
+Unassigned connections preserve existing usernames, keys and agents. New blank
+connections use OpenSSH's OS username, normal agent discovery and default key
+files. Explicit **OpenSSH defaults** assignment clears inherited identity fields
+locally without editing the database. Identity profiles apply independently at
+every hop, including SSH used by transfers, RDP jumps and tunnels. RDP accounts
+remain separate. Passwords and encrypted/shared admin credentials are not part
+of this feature. No database migration or schema change is performed.
+
 ### Standalone database tunnel engine
 
 go-where now owns the migrated tunnel lifecycle/registry and Linux/Windows

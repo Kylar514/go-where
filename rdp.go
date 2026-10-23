@@ -32,19 +32,20 @@ type RDPAccount struct {
 }
 
 type RDPConfig struct {
-	User            string           `json:"user"`
-	DefaultDomain   string           `json:"default_domain"`
-	DomainRules     []DomainRule     `json:"domain_rules"`
-	Tags            []string         `json:"tags"`
-	Port            int              `json:"port"`
-	Tunnel          string           `json:"tunnel"`
-	Client          []string         `json:"client"`
-	ClientArgs      []string         `json:"client_args"`
-	PasswordCommand []string         `json:"password_command"`
-	Destination     string           `json:"destination"`
-	Accounts        []RDPAccount     `json:"accounts"`
-	Environments    []RDPEnvironment `json:"environments"`
-	TitleBar        bool             `json:"title_bar"`
+	Session         RDPSessionSettings `json:"session,omitempty"`
+	User            string             `json:"user"`
+	DefaultDomain   string             `json:"default_domain"`
+	DomainRules     []DomainRule       `json:"domain_rules"`
+	Tags            []string           `json:"tags"`
+	Port            int                `json:"port"`
+	Tunnel          string             `json:"tunnel"`
+	Client          []string           `json:"client"`
+	ClientArgs      []string           `json:"client_args"`
+	PasswordCommand []string           `json:"password_command"`
+	Destination     string             `json:"destination"`
+	Accounts        []RDPAccount       `json:"accounts"`
+	Environments    []RDPEnvironment   `json:"environments"`
+	TitleBar        bool               `json:"title_bar"`
 }
 
 func defaultRDPConfig() RDPConfig {
@@ -66,6 +67,9 @@ func defaultRDPConfig() RDPConfig {
 func safeValue(s string) bool { return clean(s) == s && !strings.ContainsAny(s, "\r\n") }
 
 func (r RDPConfig) validate() error {
+	if err := r.Session.validate(); err != nil {
+		return err
+	}
 	if err := validateEnvironments(r.Environments); err != nil {
 		return err
 	}
@@ -277,6 +281,14 @@ func (j rdpJob) validate() error {
 }
 
 func newRDPJob(r RDPConfig, h Host, sshConfig string) (rdpJob, error) {
+	if err := r.Session.validate(); err != nil {
+		return rdpJob{}, err
+	}
+	sessionArgs, err := r.Session.clientArgs()
+	if err != nil {
+		return rdpJob{}, err
+	}
+	r.ClientArgs = append(append([]string(nil), r.ClientArgs...), sessionArgs...)
 	jump := h.JumpHost
 	if strings.EqualFold(jump, "none") {
 		jump = ""

@@ -36,6 +36,30 @@ func chooseAgent(c Config, override bool, current string) (string, bool, error) 
 }
 
 func cloneAgentSettings(c Config) Config {
+	c.LocalProfiles = maps.Clone(c.LocalProfiles)
+	if c.PersonalConnections != nil {
+		next := map[string]map[string]PersonalConnection{}
+		for source, values := range c.PersonalConnections {
+			next[source] = maps.Clone(values)
+		}
+		c.PersonalConnections = next
+	}
+	if c.RDP.Accounts != nil {
+		c.RDP.Accounts = append([]RDPAccount{}, c.RDP.Accounts...)
+	}
+	if c.RDP.Session.Folders != nil {
+		c.RDP.Session.Folders = append([]RDPFolder{}, c.RDP.Session.Folders...)
+	}
+	c.Identities = maps.Clone(c.Identities)
+	if c.IdentityAssignments != nil {
+		assignments := map[string]SourceIdentities{}
+		for source, a := range c.IdentityAssignments {
+			a.Profiles = maps.Clone(a.Profiles)
+			a.Connections = maps.Clone(a.Connections)
+			assignments[source] = a
+		}
+		c.IdentityAssignments = assignments
+	}
 	c.Hotkeys = maps.Clone(c.Hotkeys)
 	if c.HostOverrides != nil {
 		hosts := make(map[string]map[string]HostOverride, len(c.HostOverrides))
@@ -56,13 +80,14 @@ func cloneAgentSettings(c Config) Config {
 }
 
 func settingsDraft(path string) (original []byte, before, draft Config, err error) {
-	original, err = os.ReadFile(path)
+	original, err = readSettingsData(path)
 	if os.IsNotExist(err) {
 		original = []byte{}
 		before = defaultConfig()
 		err = nil
 	} else if err == nil {
 		before, err = decodeConfig(original)
+		before.databaseBacked = databaseSettings(path)
 	}
 	if err != nil {
 		return
@@ -93,7 +118,7 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 		if err := saveSettingsDraft(path, original, before, draft); err != nil {
 			return err
 		}
-		data, err := os.ReadFile(path)
+		data, err := readSettingsData(path)
 		if err != nil {
 			return err
 		}
@@ -121,19 +146,63 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 		if mode == "" {
 			mode = "ssh"
 		}
-		id, back, e := choose("Settings", []choice{
+		options := []choice{
 			{"general", "General — startup mode: " + mode},
 			{"agents", "SSH agents — local socket/pipe profiles"},
+			{"identities", "Local identities — user/key/agent and bulk assignments"},
+			{"policies", "Connection policies — shared SSH/RDP settings"},
 			{"hotkeys", "Hotkeys — configurable action bindings"},
 			{"sources", "Select sources — inventories loaded at launch"},
 			{"overrides", "Connection settings & overrides — SSH agents / compatibility"},
 			{"raw", "Edit raw settings (JSON with comments)"},
 			{"save", "Save settings and return"}, {"cancel", "Cancel changes"},
-		}, "Changes stay in a draft until you save.\n\n• Save applies your changes.\n• Cancel leaves settings unchanged.\n• Raw editing discards the current draft.\n\nJSONC comments and trailing commas are supported.")
+		}
+		if databaseSettings(path) {
+			options = []choice{{"hosts", "Hosts"}, {"ssh-profiles", "SSH Profiles"}, {"identities", "SSH Identities"}, {"rdp-profiles", "RDP Profiles"}, {"rdp-identities", "RDP Identities"}, {"rdp-session", "RDP Session Settings"}, {"agents", "SSH Agents"}, {"sources", "Enabled Sources"}, {"general", "General"}, {"hotkeys", "Hotkeys"}, {"save", "Save settings and return"}, {"cancel", "Cancel changes"}}
+		}
+		id, back, e := choose("Settings", options, "Personal settings stay in a draft until saved. Host and shared profile editors save inventory separately. Password storage is not added in this stage.")
 		if e != nil || back || id == "cancel" {
 			return false, e
 		}
 		switch id {
+		case "hosts":
+			if e = manageInventoryHosts(draft, path); e != nil {
+				return false, e
+			}
+			data, loaded, _, e := settingsDraft(path)
+			if e != nil {
+				return false, e
+			}
+			original = data
+			before.PersonalConnections = loaded.PersonalConnections
+			draft.PersonalConnections = loaded.PersonalConnections
+		case "ssh-profiles", "rdp-profiles":
+			if e = manageConnectionProfiles(draft, path, strings.Split(id, "-")[0]); e != nil {
+				return false, e
+			}
+			data, loaded, _, e := settingsDraft(path)
+			if e != nil {
+				return false, e
+			}
+			original = data
+			before.LocalProfiles = loaded.LocalProfiles
+			draft.LocalProfiles = loaded.LocalProfiles
+		case "rdp-identities":
+			if e = editRDPIdentities(&draft); e != nil {
+				return false, e
+			}
+		case "rdp-session":
+			if e = editRDPSessionSettings(&draft); e != nil {
+				return false, e
+			}
+		case "policies":
+			if e = editSourcePolicies(draft, path); e != nil {
+				return false, e
+			}
+		case "identities":
+			if e = editLocalIdentities(&draft); e != nil {
+				return false, e
+			}
 		case "sources":
 			if e = editSourcePreferences(&draft); e != nil {
 				return false, e

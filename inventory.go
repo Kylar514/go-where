@@ -16,10 +16,11 @@ import (
 )
 
 type InventorySource struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Type string `json:"type"`
-	Path string `json:"path"`
+	ReadOnly bool   `json:"read_only,omitempty"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Path     string `json:"path"`
 }
 
 type Connection struct {
@@ -104,6 +105,9 @@ func openInventory(s InventorySource) (*sql.DB, error) {
 	}
 	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
 	q := url.Values{"mode": {"rw"}, "_pragma": {"busy_timeout(5000)"}}
+	if s.ReadOnly {
+		q.Set("mode", "ro")
+	}
 	u.RawQuery = q.Encode()
 	db, err := sql.Open("sqlite", u.String())
 	if err != nil {
@@ -117,6 +121,9 @@ func openInventory(s InventorySource) (*sql.DB, error) {
 	}
 	if version < 1 || version > 7 {
 		return fail(fmt.Errorf("unsupported inventory schema %d (expected 1 through 7)", version))
+	}
+	if s.ReadOnly && version < 7 {
+		return fail(fmt.Errorf("read-only source needs schema 7; migrate using a writable copy"))
 	}
 	var id string
 	if err = db.QueryRow("SELECT id FROM source").Scan(&id); err != nil {

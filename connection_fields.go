@@ -49,7 +49,7 @@ func connectionFields(r Connection, s InventorySource, c Config) []choice {
 		if r.Account != "" {
 			label = "Saved local — " + r.Account
 		}
-		fields = append(fields, choice{"account", "Account: " + label})
+		fields = append(fields, choice{"account", "Local RDP identity: " + label})
 		if r.Account == "" {
 			fields = append(fields, choice{"user", "Username: " + r.User}, choice{"domain", "Domain: " + domain})
 		} else {

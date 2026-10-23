@@ -28,6 +28,13 @@ func editLocalProfileFields(c *Config, s InventorySource, r Connection, alias st
 		}
 		options := []choice{{"user", "Username: " + localValue(r.User, o.User)}, {"port", "Port: " + port}, {"jump", "Jump connection: " + localValue(r.JumpID, o.JumpID)}, {"variables", "Variables…"}}
 		if r.kind() == "ssh" {
+			identity, origin := identityChoice(*c, s.ID, r)
+			if identity == "" {
+				identity = "Unassigned"
+			}
+			options = append(options, choice{"identity", "Local identity: " + identity + " — " + origin})
+		}
+		if r.kind() == "ssh" {
 			options = append(options, choice{"key", "Identity file: " + localValue(r.IdentityFile, o.IdentityFile)}, choice{"agent", "SSH agent…"}, choice{"compatibility", "SSH compatibility…"})
 		} else {
 			domain := ""
@@ -39,6 +46,31 @@ func editLocalProfileFields(c *Config, s InventorySource, r Connection, alias st
 		id, back, err := choose(strings.ToUpper(r.kind())+" local overrides", options, "Changes remain in the same local-settings draft.\n\nInherit follows the shared profile. Cleared key means no configured identity; cleared jump means direct. Saved RDP accounts take precedence over user/domain fields.\n\nNo passwords are stored here.")
 		if err != nil || back {
 			return err
+		}
+		if id == "identity" {
+			current, _ := identityChoice(*c, s.ID, r)
+			name, b, e := chooseIdentity(*c, current)
+			if e != nil {
+				return e
+			}
+			if b {
+				continue
+			}
+			a := c.IdentityAssignments[s.ID]
+			a.Connections = maps.Clone(a.Connections)
+			if a.Connections == nil {
+				a.Connections = map[string]string{}
+			}
+			if name == "inherit" {
+				delete(a.Connections, r.ID)
+			} else {
+				a.Connections[r.ID] = name
+			}
+			if c.IdentityAssignments == nil {
+				c.IdentityAssignments = map[string]SourceIdentities{}
+			}
+			c.IdentityAssignments[s.ID] = a
+			continue
 		}
 		if id == "agent" || id == "compatibility" {
 			editor := editAgentOverrideDraft

@@ -10,26 +10,31 @@ import (
 )
 
 type Config struct {
-	debugLaunch      bool
-	DisabledSources  []string                           `json:"disabled_sources,omitempty"`
-	StartupSource    string                             `json:"startup_source,omitempty"`
-	Hotkeys          map[string][]string                `json:"hotkeys,omitempty"`
-	HostOverrides    map[string]map[string]HostOverride `json:"host_overrides,omitempty"`
-	StartupMode      string                             `json:"startup_mode,omitempty"`
-	SSHAgents        map[string]SSHAgentProfile         `json:"ssh_agents,omitempty"`
-	activeRDPAccount RDPAccount
-	Sources          []InventorySource                        `json:"sources,omitempty"`
-	Variables        map[string]string                        `json:"variables,omitempty"`
-	Overrides        map[string]map[string]ConnectionOverride `json:"overrides,omitempty"`
-	TunnelsConfig    string                                   `json:"tunnels_config,omitempty"`
-	Destination      string                                   `json:"destination"`
-	Fallback         string                                   `json:"fallback"`
-	Editor           []string                                 `json:"editor"`
-	EditDestination  string                                   `json:"edit_destination"`
-	Terminal         []string                                 `json:"terminal"`
-	FallbackTerminal []string                                 `json:"fallback_terminal"`
-	FloatingTerminal []string                                 `json:"floating_terminal"`
-	RDP              RDPConfig                                `json:"rdp"`
+	databaseBacked      bool
+	PersonalConnections map[string]map[string]PersonalConnection `json:"personal_connections,omitempty"`
+	LocalProfiles       map[string]Connection                    `json:"local_profiles,omitempty"`
+	Identities          map[string]LocalIdentity                 `json:"identities,omitempty"`
+	IdentityAssignments map[string]SourceIdentities              `json:"identity_assignments,omitempty"`
+	debugLaunch         bool
+	DisabledSources     []string                           `json:"disabled_sources,omitempty"`
+	StartupSource       string                             `json:"startup_source,omitempty"`
+	Hotkeys             map[string][]string                `json:"hotkeys,omitempty"`
+	HostOverrides       map[string]map[string]HostOverride `json:"host_overrides,omitempty"`
+	StartupMode         string                             `json:"startup_mode,omitempty"`
+	SSHAgents           map[string]SSHAgentProfile         `json:"ssh_agents,omitempty"`
+	activeRDPAccount    RDPAccount
+	Sources             []InventorySource                        `json:"sources,omitempty"`
+	Variables           map[string]string                        `json:"variables,omitempty"`
+	Overrides           map[string]map[string]ConnectionOverride `json:"overrides,omitempty"`
+	TunnelsConfig       string                                   `json:"tunnels_config,omitempty"`
+	Destination         string                                   `json:"destination"`
+	Fallback            string                                   `json:"fallback"`
+	Editor              []string                                 `json:"editor"`
+	EditDestination     string                                   `json:"edit_destination"`
+	Terminal            []string                                 `json:"terminal"`
+	FallbackTerminal    []string                                 `json:"fallback_terminal"`
+	FloatingTerminal    []string                                 `json:"floating_terminal"`
+	RDP                 RDPConfig                                `json:"rdp"`
 }
 
 func defaultConfig() Config {
@@ -43,11 +48,11 @@ func defaultConfig() Config {
 
 func configPath() (string, error) {
 	dir, err := os.UserConfigDir()
-	return filepath.Join(dir, "go-where", "config.json"), err
+	return filepath.Join(dir, "go-where", "profile.db"), err
 }
 
 func loadConfig(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := readSettingsData(path)
 	if os.IsNotExist(err) {
 		return defaultConfig(), nil
 	}
@@ -58,6 +63,7 @@ func loadConfig(path string) (Config, error) {
 	if err != nil {
 		return c, fmt.Errorf("%s: %w", path, err)
 	}
+	c.databaseBacked = databaseSettings(path)
 	return c, nil
 }
 
@@ -80,6 +86,12 @@ func decodeConfig(data []byte) (Config, error) {
 }
 
 func (c Config) validate() error {
+	if err := validatePersonalConnections(c); err != nil {
+		return err
+	}
+	if err := validateIdentities(c); err != nil {
+		return err
+	}
 	if err := validateSourcePreferences(c); err != nil {
 		return err
 	}
@@ -172,6 +184,13 @@ func (c Config) validate() error {
 }
 
 func ensureConfig(path string) error {
+	if databaseSettings(path) {
+		db, err := openSettingsDB(path)
+		if err != nil {
+			return err
+		}
+		return db.Close()
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}

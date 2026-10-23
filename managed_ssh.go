@@ -37,6 +37,15 @@ func resolveValue(value string, vars map[string]string) (string, error) {
 }
 
 func resolvedConnection(c Config, s InventorySource, r Connection) (Connection, error) {
+	var identityErr error
+	r, identityErr = applyLocalIdentity(c, s.ID, r)
+	if identityErr != nil {
+		return r, identityErr
+	}
+	r, identityErr = applyPersonalConnection(c, s.ID, r)
+	if identityErr != nil {
+		return r, identityErr
+	}
 	if r.HostID != "" {
 		if o := c.HostOverrides[s.ID][r.HostID]; o.Address != nil {
 			r.Address = *o.Address
@@ -341,6 +350,12 @@ func selectedRecord(h Host, c Config) (InventorySource, Connection, error) {
 
 func managedDetails(h Host, c Config) string {
 	metadata := "Source: " + h.SourceName + "\nConnection ID: " + h.ConnectionID + "\nTags: " + strings.Join(h.Tags, ", ") + "\nNotes: " + h.Comment + "\n\n"
+	if _, r, e := storedRecord(h, c); e == nil && r.kind() == "ssh" {
+		identity, origin := identityChoice(c, h.SourceID, r)
+		if identity != "" {
+			metadata += "Local identity: " + identity + " (" + origin + ")\n\n"
+		}
+	}
 	if h.Color != "" {
 		metadata = "■ " + h.Alias + "\n\n" + metadata
 	}

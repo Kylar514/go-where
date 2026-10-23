@@ -18,7 +18,8 @@ func removeSourceRegistration(path string, c Config, state *PickerState, id stri
 	if err != nil {
 		return err
 	}
-	if len(before.Overrides[id]) > 0 || len(before.HostOverrides[id]) > 0 {
+	identities := before.IdentityAssignments[id]
+	if len(before.Overrides[id]) > 0 || len(before.HostOverrides[id]) > 0 || identities.Default != "" || len(identities.Profiles) > 0 || len(identities.Connections) > 0 {
 		_, back, err = choose("Discard source-local overrides?", []choice{{"discard", "Remove registration and its local overrides"}}, "Local profile and host overrides for "+s.Name+" will be removed. Shared inventory remains in the database.")
 		if err != nil || back {
 			return err
@@ -44,6 +45,7 @@ func removeSourceRegistration(path string, c Config, state *PickerState, id stri
 	}
 	delete(draft.Overrides, id)
 	delete(draft.HostOverrides, id)
+	delete(draft.IdentityAssignments, id)
 	if err = saveSettingsDraft(path, original, before, draft); err != nil {
 		return fmt.Errorf("remove source: %w", err)
 	}

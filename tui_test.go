@@ -47,6 +47,9 @@ func scriptTUI(t *testing.T, steps ...string) *[]string {
 			m.search.SetValue(parts[0])
 		case *dialogModel:
 			seen = append(seen, "dialog:"+m.title)
+			if strings.HasPrefix(m.title, "Host — ") && (step == "ssh" || step == "rdp") {
+				step += "-profile"
+			}
 			if step == "save-tunnel" {
 				m.result = "__save_tunnel"
 				return m, nil

@@ -376,10 +376,10 @@ func TestAppCustomConfigAndEditor(t *testing.T) {
 	if string(b) != "-n\n+12\n--\n"+root+"\n" {
 		t.Fatalf("editor position: %q", b)
 	}
-	settings, _ := configPath()
+	settings := filepath.Join(dir, "legacy-settings.json")
 	data, _ := json.Marshal(c)
 	writeTestFile(t, settings, string(data))
-	if err := app([]string{"config"}); err != nil {
+	if err := app([]string{"config", "--config", settings}); err != nil {
 		t.Fatal(err)
 	}
 }

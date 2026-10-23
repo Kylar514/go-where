@@ -78,6 +78,9 @@ func (m *pickerModel) buttons() []pickerButton {
 		return []pickerButton{{primary, "connect"}, {"Debug", "debug"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
 	}
 	buttons := []pickerButton{{primary, "connect"}, {"Debug", "debug"}, {"Connect as", "connect-as"}}
+	if m.markCount() > 0 {
+		buttons = append(buttons, pickerButton{"Bulk edit", "bulk-edit"})
+	}
 	if m.state.Mode == "rdp" {
 		buttons = append(buttons, pickerButton{"Account", "account"})
 	}

@@ -101,6 +101,7 @@ func menuKey(title string) string {
 }
 
 type dialogModel struct {
+	optionDetails  map[string]string
 	saveTunnel     bool
 	layout         menuLayout
 	resizeKind     string
@@ -162,6 +163,16 @@ func (m *dialogModel) refilter() {
 
 func (m *dialogModel) Init() tea.Cmd { return textinput.Blink }
 func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	defer func() {
+		if len(m.optionDetails) > 0 && len(m.filtered) > 0 {
+			index := m.filtered[min(m.cursor, len(m.filtered)-1)]
+			text := m.text
+			if detail := m.optionDetails[m.options[index].ID]; detail != "" {
+				text += "\n\n" + detail
+			}
+			m.preview.SetContent(ansi.Wrap(menuExplanation(text), max(1, m.preview.Width), ""))
+		}
+	}()
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -262,6 +273,10 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.saveHost && saveHostLocalSettings != nil && msg.String() == "ctrl+alt+s" {
+			m.result, m.done = "__save_host_local", true
+			return m, tea.Quit
+		}
 	case tea.MouseMsg:
 		if m.resizeMenuMouse(msg) {
 			return m, nil
@@ -302,6 +317,16 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.deleteHost && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() && msg.X >= 20 && msg.X < 34 {
 			m.result, m.done = "delete", true
 			return m, tea.Quit
+		}
+		if m.saveHost && saveHostLocalSettings != nil && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() {
+			x := 20
+			if m.deleteHost {
+				x = 34
+			}
+			if msg.X >= x && msg.X < x+22 {
+				m.result, m.done = "__save_host_local", true
+				return m, tea.Quit
+			}
 		}
 		if m.sourceActions && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() {
 			settingsX := 39
@@ -416,6 +441,9 @@ func (m *dialogModel) View() string {
 	if m.saveHost && hostSaveState != nil {
 		header += " · " + hostSaveState()
 	}
+	if m.saveHost && hostLocalSettingsState != nil {
+		header += " · " + hostLocalSettingsState()
+	}
 	if m.saveTunnel && tunnelSaveState != nil {
 		header += " · " + tunnelSaveState()
 	}
@@ -517,6 +545,10 @@ func (m *dialogModel) View() string {
 	if m.deleteHost {
 		labels = append(labels, "Delete host")
 		hint += " · " + keyHint(menuHotkeys, "delete_host") + " delete"
+	}
+	if m.saveHost && saveHostLocalSettings != nil {
+		labels = append(labels, "Save local settings")
+		hint += " | ctrl+alt+s Local save"
 	}
 	if m.sourceActions {
 		labels = []string{"Back", "Create source", "Add existing"}
