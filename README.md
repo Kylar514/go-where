@@ -276,6 +276,22 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+RDP identities can store AES-256-GCM encrypted passwords in private profile.db.
+One random 256-bit key is held in the OS credential store (Linux Secret Service
+login collection; Windows Credential Manager). No master password or plaintext
+fallback exists. Each replacement uses a fresh nonce and stable identity binding.
+Missing keys are never automatically replaced. Password entry is masked; Show
+reveals temporarily, Clear removes the draft credential, and Apply/Settings Save
+persist the identity. Key creation can persist before the identity draft is saved.
+Replacing an existing provider requires explicit confirmation.
+
+Linux saved-password launch decrypts inside the launch process and uses the
+existing FreeRDP args-from file-descriptor pipe, never a serialized plaintext
+password. Windows saved-password launch remains blocked: secure client input is
+not yet implemented there. OS keyring and actual FreeRDP login testing remain
+required; builds/unit tests alone do not validate native credential handling.
+Copying profile.db alone does not back up its encryption key.
+
 Transfers navigation now has one method-first menu and a source/destination
 host/path editor. Both host lists include This computer and saved default SSH
 hosts. SCP and Legacy SCP remote-to-remote copies use `scp -3` through this

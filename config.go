@@ -10,6 +10,8 @@ import (
 )
 
 type Config struct {
+	CredentialKeyID     string `json:"credential_key_id,omitempty"`
+	settingsPath        string
 	databaseBacked      bool
 	PersonalConnections map[string]map[string]PersonalConnection `json:"personal_connections,omitempty"`
 	LocalProfiles       map[string]Connection                    `json:"local_profiles,omitempty"`
@@ -64,6 +66,7 @@ func loadConfig(path string) (Config, error) {
 		return c, fmt.Errorf("%s: %w", path, err)
 	}
 	c.databaseBacked = databaseSettings(path)
+	c.settingsPath = path
 	return c, nil
 }
 

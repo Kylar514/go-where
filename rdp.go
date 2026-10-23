@@ -25,27 +25,30 @@ type DomainRule struct {
 }
 
 type RDPAccount struct {
-	Name            string   `json:"name"`
-	User            string   `json:"user"`
-	Domain          *string  `json:"domain,omitempty"`
-	PasswordCommand []string `json:"password_command,omitempty"`
+	ID              string             `json:"id,omitempty"`
+	Password        *EncryptedPassword `json:"password,omitempty"`
+	Name            string             `json:"name"`
+	User            string             `json:"user"`
+	Domain          *string            `json:"domain,omitempty"`
+	PasswordCommand []string           `json:"password_command,omitempty"`
 }
 
 type RDPConfig struct {
-	Session         RDPSessionSettings `json:"session,omitempty"`
-	User            string             `json:"user"`
-	DefaultDomain   string             `json:"default_domain"`
-	DomainRules     []DomainRule       `json:"domain_rules"`
-	Tags            []string           `json:"tags"`
-	Port            int                `json:"port"`
-	Tunnel          string             `json:"tunnel"`
-	Client          []string           `json:"client"`
-	ClientArgs      []string           `json:"client_args"`
-	PasswordCommand []string           `json:"password_command"`
-	Destination     string             `json:"destination"`
-	Accounts        []RDPAccount       `json:"accounts"`
-	Environments    []RDPEnvironment   `json:"environments"`
-	TitleBar        bool               `json:"title_bar"`
+	credentialPath, credentialIdentity string
+	Session                            RDPSessionSettings `json:"session,omitempty"`
+	User                               string             `json:"user"`
+	DefaultDomain                      string             `json:"default_domain"`
+	DomainRules                        []DomainRule       `json:"domain_rules"`
+	Tags                               []string           `json:"tags"`
+	Port                               int                `json:"port"`
+	Tunnel                             string             `json:"tunnel"`
+	Client                             []string           `json:"client"`
+	ClientArgs                         []string           `json:"client_args"`
+	PasswordCommand                    []string           `json:"password_command"`
+	Destination                        string             `json:"destination"`
+	Accounts                           []RDPAccount       `json:"accounts"`
+	Environments                       []RDPEnvironment   `json:"environments"`
+	TitleBar                           bool               `json:"title_bar"`
 }
 
 func defaultRDPConfig() RDPConfig {
@@ -74,7 +77,23 @@ func (r RDPConfig) validate() error {
 		return err
 	}
 	names := map[string]bool{}
+	identityIDs := map[string]bool{}
 	for _, account := range r.Accounts {
+		if account.ID != "" {
+			if !inventoryName(account.ID) || identityIDs[account.ID] {
+				return fmt.Errorf("invalid or duplicate RDP identity ID")
+			}
+			identityIDs[account.ID] = true
+		}
+		if account.Password != nil {
+			p := account.Password
+			if !inventoryName(account.ID) || p.Version != 1 || !inventoryName(p.KeyID) || len(p.Nonce) != 12 || len(p.Ciphertext) < 16 || len(p.Ciphertext) > 1040 {
+				return fmt.Errorf("invalid encrypted RDP credential")
+			}
+			if len(account.PasswordCommand) > 0 {
+				return fmt.Errorf("choose either saved password or credential provider")
+			}
+		}
 		if strings.TrimSpace(account.Name) == "" || !safeValue(account.Name) || names[account.Name] {
 			return fmt.Errorf("rdp accounts must have unique, nonempty names without control characters")
 		}
@@ -246,21 +265,22 @@ func (r RDPConfig) domainFor(hops []hop) string {
 }
 
 type rdpJob struct {
-	Debug           bool
-	Title           string
-	TitleBar        bool
-	Label           string
-	Host            string
-	Port            int
-	Jump            string
-	SSHConfig       string
-	SSHSnapshot     string
-	Tunnel          string
-	Client          []string
-	ClientArgs      []string
-	User            string
-	Domain          string
-	PasswordCommand []string
+	CredentialPath, CredentialIdentity string
+	Debug                              bool
+	Title                              string
+	TitleBar                           bool
+	Label                              string
+	Host                               string
+	Port                               int
+	Jump                               string
+	SSHConfig                          string
+	SSHSnapshot                        string
+	Tunnel                             string
+	Client                             []string
+	ClientArgs                         []string
+	User                               string
+	Domain                             string
+	PasswordCommand                    []string
 }
 
 func (j rdpJob) validate() error {
@@ -303,6 +323,7 @@ func newRDPJob(r RDPConfig, h Host, sshConfig string) (rdpJob, error) {
 	job := rdpJob{Label: "rdp · " + h.Alias, Host: h.Hostname, Port: r.Port, Jump: jump, SSHConfig: sshConfig, Tunnel: r.Tunnel,
 		Client: r.Client, ClientArgs: r.ClientArgs, User: r.User, Domain: r.domainFor(hops), PasswordCommand: r.PasswordCommand}
 	job.Title, job.TitleBar = h.Alias, r.TitleBar
+	job.CredentialPath, job.CredentialIdentity = r.credentialPath, r.credentialIdentity
 	if env := r.environmentFor(h.Alias, hops); env != "" {
 		job.Title = "[" + env + "] " + job.Title
 	}
@@ -521,7 +542,7 @@ func runRDPSession(j rdpJob) error {
 		defer cleanup()
 		j.SSHConfig = path
 	}
-	if runtime.GOOS == "windows" && len(j.PasswordCommand) > 0 {
+	if runtime.GOOS == "windows" && (len(j.PasswordCommand) > 0 || j.CredentialIdentity != "") {
 		return fmt.Errorf("password_command pipe transport is not yet supported on Windows; use a FreeRDP client prompt")
 	}
 	if err := j.validate(); err != nil {
@@ -556,8 +577,22 @@ func runRDPSession(j rdpJob) error {
 	}
 	args := j.clientArgs(mode, port)
 	cmd := exec.Command(client[0], client[1:]...)
-	if len(j.PasswordCommand) > 0 {
-		pw, err := passwordFrom(j.PasswordCommand)
+	if len(j.PasswordCommand) > 0 || j.CredentialIdentity != "" {
+		if j.CredentialIdentity != "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			help, _ := exec.CommandContext(ctx, client[0], append(append([]string{}, client[1:]...), "/help")...).CombinedOutput()
+			cancel()
+			if !strings.Contains(string(help), "args-from") {
+				return fmt.Errorf("RDP client does not advertise secure args-from input; use the client prompt")
+			}
+		}
+		pw := ""
+		var err error
+		if j.CredentialIdentity != "" {
+			pw, err = credentialPassword(j.CredentialPath, j.CredentialIdentity)
+		} else {
+			pw, err = passwordFrom(j.PasswordCommand)
+		}
 		if err != nil {
 			return err
 		}

@@ -88,6 +88,7 @@ func settingsDraft(path string) (original []byte, before, draft Config, err erro
 	} else if err == nil {
 		before, err = decodeConfig(original)
 		before.databaseBacked = databaseSettings(path)
+		before.settingsPath = path
 	}
 	if err != nil {
 		return
@@ -203,6 +204,13 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			if e = editRDPIdentities(&draft); e != nil {
 				return false, e
 			}
+			data, loaded, _, e := settingsDraft(path)
+			if e != nil {
+				return false, e
+			}
+			original = data
+			before.CredentialKeyID = loaded.CredentialKeyID
+			draft.CredentialKeyID = loaded.CredentialKeyID
 		case "rdp-session":
 			if e = editRDPSessionSettings(&draft); e != nil {
 				return false, e

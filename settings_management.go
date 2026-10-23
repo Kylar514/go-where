@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/charmbracelet/bubbles/textinput"
 	"strings"
 )
 
@@ -213,7 +214,7 @@ func editRDPIdentities(c *Config) error {
 		for _, a := range c.RDP.Accounts {
 			options = append(options, choice{a.Name, a.Name})
 		}
-		id, back, err := choose("RDP Identities", options, "Device-local usernames and existing credential providers. New password storage is deferred.")
+		id, back, err := choose("RDP Identities", options, "Device-local usernames and encrypted passwords. The encryption key stays in your OS credential store; no master password.")
 		if err != nil || back {
 			return err
 		}
@@ -236,12 +237,89 @@ func editRDPIdentities(c *Config) error {
 			a.Name = name
 		}
 		for {
-			action, b, e := choose("RDP Identity — "+a.Name, []choice{{"user", "Username: " + a.User}, {"apply", "Apply"}}, "Domain belongs to the connection profile. Existing identity domain and credential-provider settings are preserved during migration.")
+			passwordState := "Not saved"
+			if a.Password != nil {
+				passwordState = "Saved (encrypted)"
+			}
+			options := []choice{{"user", "Username: " + a.User}, {"password", "Password: " + passwordState}, {"apply", "Apply"}}
+			if a.Password != nil {
+				options = append(options, choice{"show-password", "Show password…"}, choice{"clear-password", "Clear password"})
+			}
+			action, b, e := choose("RDP Identity — "+a.Name, options, "Passwords stay encrypted in the private database. Show reveals only in a temporary masked-input screen. Apply updates the draft; Settings Save persists it. Existing domain settings are preserved.")
 			if e != nil {
 				return e
 			}
 			if b {
 				break
+			}
+			if action == "clear-password" {
+				a.Password = nil
+				continue
+			}
+			if action == "password" {
+				if len(a.PasswordCommand) > 0 {
+					_, b, e := choose("Replace credential provider?", []choice{{"replace", "Use an encrypted saved password instead"}}, "Applying this identity will remove its existing password provider. Cancel keeps the provider unchanged.")
+					if e != nil {
+						return e
+					}
+					if b {
+						continue
+					}
+				}
+				m := newPathModel("New password", "", false)
+				m.input.EchoMode = textinput.EchoPassword
+				m.input.EchoCharacter = '•'
+				if _, e = runTUI(m); e != nil {
+					return e
+				}
+				if m.back {
+					continue
+				}
+				password := m.input.Value()
+				m.input.SetValue("")
+				if password == "" {
+					continue
+				}
+				if a.ID == "" {
+					a.ID = inventoryID()
+				}
+				p, e := saveIdentityPassword(c.settingsPath, a.ID, password)
+				password = ""
+				if e != nil {
+					if e = notice(e.Error()); e != nil {
+						return e
+					}
+					continue
+				}
+				a.Password = &p
+				a.PasswordCommand = nil
+				_, loaded, _, e := settingsDraft(c.settingsPath)
+				if e != nil {
+					return e
+				}
+				c.CredentialKeyID = loaded.CredentialKeyID
+				continue
+			}
+			if action == "show-password" {
+				key, e := loadCredentialKey(a.Password.KeyID)
+				if e != nil {
+					if e = notice(e.Error()); e != nil {
+						return e
+					}
+					continue
+				}
+				password, e := decryptIdentityPassword(key, a.ID, *a.Password)
+				clear(key)
+				if e != nil {
+					return e
+				}
+				m := newPathModel("Password — Back to hide", password, false)
+				password = ""
+				if _, e = runTUI(m); e != nil {
+					return e
+				}
+				m.input.SetValue("")
+				continue
 			}
 			if action == "apply" {
 				next := append([]RDPAccount(nil), c.RDP.Accounts...)

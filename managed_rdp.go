@@ -46,6 +46,10 @@ func hostRDPJob(c Config, h Host, sshConfig string) (rdpJob, error) {
 		settings.DomainRules = nil
 	}
 	settings = settings.withAccount(account)
+	if account.Password != nil && !c.debugLaunch {
+		settings.credentialPath = c.settingsPath
+		settings.credentialIdentity = account.ID
+	}
 	h.Hostname = r.Address
 	h.JumpHost = ""
 	var snapshot string
