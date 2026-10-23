@@ -34,19 +34,14 @@ func manageInventoryHosts(c Config, path string) error {
 			h = &value
 		}
 		if h != nil && databaseSettings(path) {
-			action, b, e := choose("Host — "+h.Alias, []choice{{"personal", "Connection profiles and identities"}, {"shared", "Edit inventory host"}}, "Personal selections save locally. Inventory editing changes the source.")
-			if e != nil {
-				return e
+			if err = editPersonalHosts(c, path, []Host{*h}); err != nil {
+				return err
 			}
-			if b {
-				continue
+			c, err = loadConfig(path)
+			if err != nil {
+				return err
 			}
-			if action == "personal" {
-				if e = editPersonalHosts(c, path, []Host{*h}); e != nil {
-					return e
-				}
-				continue
-			}
+			continue
 		}
 		if err = editInventoryHost(c, &state, h); err != nil {
 			return err

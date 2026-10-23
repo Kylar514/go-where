@@ -19,7 +19,11 @@ func (m *pickerModel) markedTunnels() []int {
 
 func (m *pickerModel) bulkTunnels(stop bool) tea.Cmd {
 	var commands []tea.Cmd
-	for _, i := range m.markedTunnels() {
+	ids := m.markedTunnels()
+	if m.hostTunnelTitle != "" && len(ids) == 0 && len(m.visible) > 0 {
+		ids = []int{m.visible[m.cursor]}
+	}
+	for _, i := range ids {
 		c := m.tunnels[i]
 		if m.pending[c.Name] {
 			continue

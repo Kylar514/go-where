@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/tailscale/hujson"
@@ -84,6 +85,32 @@ func openSettingsDB(path string) (*sql.DB, error) {
 		}
 	} else if version != 1 {
 		return fail(fmt.Errorf("unsupported local settings schema %d", version))
+	}
+	var stored string
+	if err = tx.QueryRow("SELECT data FROM app_settings WHERE id=1").Scan(&stored); err != nil {
+		return fail(err)
+	}
+	c, e := decodeConfig([]byte(stored))
+	if e != nil {
+		return fail(e)
+	}
+	r := explicitRDPSession(c.RDP)
+	if !reflect.DeepEqual(r, c.RDP) {
+		v, e := parseSettings([]byte(stored))
+		if e != nil {
+			return fail(e)
+		}
+		for name, value := range map[string]any{"session": r.Session, "client": r.Client, "client_args": r.ClientArgs} {
+			if e = setSetting(&v, []string{"rdp", name}, value); e != nil {
+				return fail(e)
+			}
+		}
+		if _, e = decodeConfig(v.Pack()); e != nil {
+			return fail(e)
+		}
+		if _, e = tx.Exec("UPDATE app_settings SET data=? WHERE id=1", string(v.Pack())); e != nil {
+			return fail(e)
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return fail(err)

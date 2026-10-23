@@ -34,6 +34,8 @@ type hitRegion struct {
 	index       int
 }
 type pickerModel struct {
+	hostTunnelTitle               string
+	hostTunnelRoles               map[string]string
 	hosts                         []Host
 	state                         PickerState
 	config                        Config
@@ -212,7 +214,7 @@ func matchesTags(tags, required []string) bool {
 	return true
 }
 func (m *pickerModel) rows() int {
-	_, _, tabs := m.controls(pickerTabs, 0)
+	_, _, tabs := m.controls(m.tabs(), 0)
 	_, _, buttons := m.controls(m.buttons(), 0)
 	return max(1, min(20, m.height-tabs-buttons-5-2*m.toolbarGap()))
 }
@@ -289,6 +291,9 @@ func (m *pickerModel) scrollToCursor() {
 	m.offset = min(max(0, m.offset), max(0, len(m.visible)-1))
 }
 func (m *pickerModel) switchMode(mode string) {
+	if m.hostTunnelTitle != "" {
+		return
+	}
 	previous := ""
 	if len(m.visible) > 0 {
 		if m.state.Mode == "tunnels" {
@@ -358,6 +363,9 @@ func (m *pickerModel) selection(highlightOnly bool) []Host {
 	return []Host{h}
 }
 func (m *pickerModel) finish(key string) tea.Cmd {
+	if m.hostTunnelTitle != "" && (key == "settings" || key == "sources" || key == "mode") {
+		return nil
+	}
 	if key == "debug" && m.state.Mode == "tunnels" {
 		return m.debugTunnel()
 	}
@@ -376,7 +384,7 @@ func (m *pickerModel) finish(key string) tea.Cmd {
 		return m.toggleTunnel()
 	}
 	if key == "enter" || key == "debug" || key == "connect-as" || strings.HasPrefix(key, "ctrl-alt-") || key == "ctrl-e" {
-		m.selected = m.selection(key == "ctrl-e" || key == "ctrl-alt-e")
+		m.selected = m.selection(key == "ctrl-alt-e")
 		if len(m.selected) == 0 && key != "ctrl-alt-s" {
 			return nil
 		}
@@ -435,7 +443,16 @@ func (m *pickerModel) accountChoices() []choice {
 	return options
 }
 func (m *pickerModel) action(action string) tea.Cmd {
+	if m.hostTunnelTitle != "" && (action == "mode" || action == "target" || action == "sources" || action == "settings") {
+		return nil
+	}
 	switch action {
+	case "back":
+		return m.finish("cancel")
+	case "new-tunnel":
+		return m.finish("new-connection")
+	case "edit-tunnel":
+		return m.finish("ctrl-e")
 	case "help":
 		text := pickerHelp(m.state.Mode)
 		if len(m.config.Hotkeys) > 0 {
@@ -584,6 +601,12 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+n":
 			return m, m.finish("new-connection")
 		case "left", "ctrl+h", "right", "ctrl+l":
+			if m.hostTunnelTitle != "" {
+				if key == "left" || key == "ctrl+h" {
+					return m, m.finish("cancel")
+				}
+				return m, m.finish("enter")
+			}
 			modes := []string{"ssh", "rdp", "tunnels", "scp", "legacy-scp", "rsync"}
 			for i, mode := range modes {
 				if mode == m.state.Mode {
@@ -768,6 +791,9 @@ func (m *pickerModel) updatePreview() {
 			c := m.tunnels[m.visible[m.cursor]]
 			if h, ok := m.tunnelHosts[c.Name]; ok {
 				text = managedDetails(h, m.config) + "\n\n" + m.tunnelLabel(c.Name)
+				if role := m.hostTunnelRoles[hostIdentity(h)]; role != "" {
+					text += "\n\nSelected host role: " + role
+				}
 				if err := m.tunnelErrors[c.Name]; err != nil {
 					text += "\n" + err.Error()
 				}
@@ -850,7 +876,7 @@ func (m *pickerModel) View() string {
 		return fit("Resize terminal (30×12 minimum) · Esc exits", m.width)
 	}
 	width := m.width - 2
-	tabs, tabHits, tabHeight := m.controls(pickerTabs, 0)
+	tabs, tabHits, tabHeight := m.controls(m.tabs(), 0)
 	m.hits = append(m.hits, tabHits...)
 	lines := []string{tabs}
 	if m.toolbarGap() > 0 {

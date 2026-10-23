@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 )
 
@@ -71,39 +72,123 @@ func (s RDPSessionSettings) clientArgs() ([]string, error) {
 }
 
 func boolSettingLabel(value *bool) string {
-	if value == nil {
-		return "Existing client settings"
+	if value != nil && *value {
+		return "Enabled"
 	}
-	if *value {
-		return "On"
+	return "Disabled"
+}
+
+func displayModeLabel(value *bool) string {
+	if value != nil && *value {
+		return "Full screen"
 	}
-	return "Off"
+	return "Windowed"
+}
+
+func editGlobalRDPSession(path string) error {
+	original, before, draft, err := settingsDraft(path)
+	if err != nil {
+		return err
+	}
+	previousSave, previousState := saveActiveSettings, settingsSaveState
+	defer func() { saveActiveSettings, settingsSaveState = previousSave, previousState }()
+	saveActiveSettings = func() error {
+		if err := saveSettingsDraft(path, original, before, draft); err != nil {
+			return err
+		}
+		data, err := readSettingsData(path)
+		if err != nil {
+			return err
+		}
+		original = data
+		before = cloneAgentSettings(draft)
+		return nil
+	}
+	settingsSaveState = func() string {
+		if !reflect.DeepEqual(before, draft) {
+			return "Unsaved global changes"
+		}
+		return "Global settings saved"
+	}
+	return editRDPSessionSettings(&draft)
+}
+
+// Recognized legacy switches become explicit settings. Preserve every other
+// argument, including richer clipboard modes that this UI cannot represent.
+func explicitRDPSession(r RDPConfig) RDPConfig {
+	clipboard, fullscreen := false, false
+	filter := func(args []string) []string {
+		if args == nil {
+			return nil
+		}
+		out := []string{}
+		for _, arg := range args {
+			switch strings.ToLower(arg) {
+			case "+clipboard", "/clipboard":
+				clipboard = true
+			case "-clipboard":
+				clipboard = false
+			case "/f", "+f", "/fullscreen":
+				fullscreen = true
+			case "-f", "-fullscreen":
+				fullscreen = false
+			default:
+				out = append(out, arg)
+			}
+		}
+		return out
+	}
+	r.Client = filter(r.Client)
+	r.ClientArgs = filter(r.ClientArgs)
+	if r.Session.Clipboard == nil {
+		r.Session.Clipboard = &clipboard
+	}
+	if r.Session.Fullscreen == nil {
+		r.Session.Fullscreen = &fullscreen
+	}
+	return r
 }
 
 func editRDPSessionSettings(c *Config) error {
+	c.RDP = explicitRDPSession(c.RDP)
 	for {
 		s := c.RDP.Session
-		options := []choice{{"clipboard", "Clipboard: " + boolSettingLabel(s.Clipboard)}, {"fullscreen", "Full screen: " + boolSettingLabel(s.Fullscreen)}, {"folder-new", "Add shared folder…"}}
+		options := []choice{{"clipboard", "Clipboard: " + boolSettingLabel(s.Clipboard)}, {"fullscreen", "Display mode: " + displayModeLabel(s.Fullscreen)}, {"folder-new", "Add shared folder…"}}
 		for i, f := range s.Folders {
-			options = append(options, choice{fmt.Sprintf("folder:%d", i), fmt.Sprintf("Shared folder %s: %s — %t", f.Name, f.Path, f.Enabled)})
+			options = append(options, choice{fmt.Sprintf("folder:%d", i), fmt.Sprintf("Shared folder %s: %s — %s", f.Name, f.Path, boolSettingLabel(&f.Enabled))})
 		}
-		id, back, err := choose("RDP Session Settings", options, "Applies to every RDP session on this device. Folder paths never enter shared inventory. Sharing is opt-in; unavailable enabled folders stop launch rather than silently substituting paths.")
+		text := "Applies to every RDP session on this device. Folder paths never enter shared inventory. Sharing is opt-in; unavailable enabled folders stop launch rather than silently substituting paths."
+		if len(c.RDP.ClientArgs) > 0 {
+			text += "\n\nPreserved additional client arguments: " + strings.Join(c.RDP.ClientArgs, " ")
+		}
+		id, back, err := choose("RDP Session Settings", options, text)
 		if err != nil || back {
 			return err
 		}
 		if id == "clipboard" || id == "fullscreen" {
-			value, b, e := chooseOne("RDP "+id, []choice{{"keep", "Use existing client settings"}, {"on", "On"}, {"off", "Off"}}, "Personal settings only.", "keep")
+			choices := []choice{{"on", "Enabled"}, {"off", "Disabled"}}
+			title := "Clipboard"
+			current := "off"
+			if s.Clipboard != nil && *s.Clipboard {
+				current = "on"
+			}
+			if id == "fullscreen" {
+				title = "Display mode"
+				choices = []choice{{"off", "Windowed"}, {"on", "Full screen"}}
+				current = "off"
+				if s.Fullscreen != nil && *s.Fullscreen {
+					current = "on"
+				}
+			}
+			value, b, e := chooseOne(title, choices, "Applies to every RDP session on this device.", current)
 			if e != nil {
 				return e
 			}
 			if b {
 				continue
 			}
-			var p *bool
-			if value != "keep" {
-				v := value == "on"
-				p = &v
-			}
+			v := value == "on"
+			p := &v
 			if id == "clipboard" {
 				c.RDP.Session.Clipboard = p
 			} else {
@@ -142,7 +227,7 @@ func editRDPSessionSettings(c *Config) error {
 			continue
 		}
 		f := s.Folders[index]
-		action, b, e := choose("Shared folder — "+f.Name, []choice{{"toggle", fmt.Sprintf("Enabled: %t", f.Enabled)}, {"path", "Local path: " + f.Path}, {"remove", "Remove mapping"}}, "Enabling exposes this directory to the remote session. No directories are created automatically.")
+		action, b, e := choose("Shared folder — "+f.Name, []choice{{"toggle", "Sharing: " + boolSettingLabel(&f.Enabled)}, {"path", "Local path: " + f.Path}, {"remove", "Remove mapping"}}, "Enabling exposes this directory to the remote session. No directories are created automatically.")
 		if e != nil {
 			return e
 		}

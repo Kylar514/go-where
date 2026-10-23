@@ -47,6 +47,12 @@ func scriptTUI(t *testing.T, steps ...string) *[]string {
 			m.search.SetValue(parts[0])
 		case *dialogModel:
 			seen = append(seen, "dialog:"+m.title)
+			for _, action := range m.footerActions {
+				if step == action.ID && action.ID != "select" {
+					m.result = action.ID
+					return m, nil
+				}
+			}
 			if strings.HasPrefix(m.title, "Host — ") && (step == "ssh" || step == "rdp") {
 				step += "-profile"
 			}

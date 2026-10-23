@@ -116,6 +116,9 @@ func runChoice(m *dialogModel, key string) (string, bool, error) {
 	if strings.Contains(m.title, "tunnel") || strings.Contains(m.title, "Tunnel") || strings.Contains(m.title, "Local") || strings.Contains(m.title, "local") || m.title == "Notice" {
 		m.saveHost = false
 	}
+	if len(m.footerActions) > 0 {
+		m.saveHost, m.saveTunnel, m.sourceActions = false, false, false
+	}
 	if m.saveHost && strings.HasPrefix(m.title, "Host — ") {
 		var options []choice
 		for _, option := range m.options {

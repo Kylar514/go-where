@@ -289,10 +289,23 @@ profiles and personal host selections live only in the private settings store.
 Ctrl+E and Bulk edit use the same personal profile/identity form; unchanged
 fields are preserved. Profiles can be selected from all enabled sources, and
 identity checklists have a selected default. Connect as selects an identity for
-one launch. Inventory editing remains separately available under Settings → Hosts.
+one launch. Settings → Hosts opens the same combined editor directly: host metadata
+and personal selections have separate Save host / Save my selections buttons.
+Read-only host metadata is visible but cannot be edited. Bulk editing shows Mixed
+values; Ctrl+E edits marked hosts across sources (or the highlighted host when
+nothing is marked). Marks remain effective when the list is filtered. Host fields
+and profile selections are separated by a blank row; Color shows a swatch and hex.
+Bulk editing preserves untouched fields. Shared saves are atomic per source, not
+across databases. Profile pickers show the resolved host default and selected
+choice, with Back / Select actions rather than a parent Settings save button.
 
 RDP Session Settings applies clipboard/full-screen choices and opt-in folder
-redirection globally on this device. Folder paths remain local. Missing enabled
+redirection with explicit Enabled/Disabled and Windowed/Full screen values.
+Recognized legacy clipboard/full-screen flags are migrated transactionally into
+these settings on opening profile.db; unrelated arguments remain preserved and
+are listed in the session settings Details. Fresh settings use clipboard disabled
+and windowed display. Existing explicit choices take precedence over legacy flags.
+Folder redirection applies globally on this device. Paths remain local. Missing enabled
 folders stop launch with an actionable error. Existing client arguments remain
 supported; additional display/audio controls are not yet exposed.
 

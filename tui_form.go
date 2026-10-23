@@ -22,7 +22,7 @@ func (m *dialogModel) formRows() bool {
 
 func (m *dialogModel) formLabel(option choice, width int) string {
 	label, value, hasValue := strings.Cut(option.Label, ": ")
-	if strings.Contains(option.Label, " — ") {
+	if dash := strings.Index(option.Label, " — "); dash >= 0 && (!hasValue || dash < strings.Index(option.Label, ": ")) {
 		label, value, hasValue = strings.Cut(option.Label, " — ")
 	}
 	if !hasValue {
@@ -117,6 +117,12 @@ func (m *dialogModel) visualSlots() []int {
 	lastGroup := -1
 	for i := range m.filtered {
 		group := 0
+		if (strings.HasPrefix(m.title, "Edit host — ") || strings.HasPrefix(m.title, "Edit hosts — ")) && m.query.Value() == "" {
+			id := m.options[m.filtered[i]].ID
+			if strings.HasPrefix(id, "ssh-") || strings.HasPrefix(id, "rdp-") {
+				group = 1
+			}
+		}
 		if strings.HasPrefix(m.title, "Host — ") && m.query.Value() == "" {
 			group = hostFormGroup(m.options[m.filtered[i]].ID)
 		}

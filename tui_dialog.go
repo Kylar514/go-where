@@ -101,6 +101,7 @@ func menuKey(title string) string {
 }
 
 type dialogModel struct {
+	footerActions  []choice
 	optionDetails  map[string]string
 	saveTunnel     bool
 	layout         menuLayout
@@ -230,6 +231,15 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		case "ctrl+s":
+			if len(m.footerActions) > 0 {
+				for _, a := range m.footerActions {
+					if a.ID == "save-host" || a.ID == "save" {
+						m.result, m.done = a.ID, true
+						return m, tea.Quit
+					}
+				}
+				return m, nil
+			}
 			if m.saveTunnel {
 				m.result, m.done = "__save_tunnel", true
 				return m, tea.Quit
@@ -283,6 +293,28 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.width < 24 || m.height < 9 {
 			return m, nil
+		}
+		if len(m.footerActions) > 0 && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() {
+			x := 8
+			for _, a := range m.footerActions {
+				width := ansi.StringWidth(a.Label) + 3
+				if msg.X >= x && msg.X < x+width {
+					if a.ID == "select" {
+						if len(m.filtered) == 0 {
+							return m, nil
+						}
+						m.result = m.options[m.filtered[m.cursor]].ID
+					} else {
+						m.result = a.ID
+					}
+					m.done = true
+					return m, tea.Quit
+				}
+				x += width
+			}
+			if msg.X >= 8 {
+				return m, nil
+			}
 		}
 		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.footerY() && msg.X >= 0 && msg.X < 8 {
 			m.done, m.back = true, true
@@ -500,6 +532,16 @@ func (m *dialogModel) View() string {
 			// the selected row's reverse video so its color remains visible.
 			label = ansi.Cut(label, 0, 4) + colorSwatch(option.ID) + " " + ansi.Cut(label, 4, listWidth-2)
 		}
+		if option.ID == "color" && m.formRows() {
+			_, hex, _ := strings.Cut(option.Label, ": ")
+			if fields := strings.Fields(hex); len(fields) > 0 {
+				hex = fields[0]
+			}
+			if hostHexColor.MatchString(hex) {
+				x := 2 + m.formWidth(listWidth-2) + lipgloss.Width(menuColumnSeparator())
+				label = ansi.Cut(label, 0, x) + colorSwatch(hex) + " " + ansi.Cut(label, x, listWidth-2)
+			}
+		}
 		rows = append(rows, fit(label, listWidth))
 		if m.sourceActions || m.formRows() {
 			bounds := m.menuColumnBounds(listWidth - 2)
@@ -564,6 +606,19 @@ func (m *dialogModel) View() string {
 		}
 		labels = append(labels, "Settings")
 		hint += " | " + keyHint(menuHotkeys, "source_settings") + " Settings"
+	}
+	if len(m.footerActions) > 0 {
+		labels = []string{"Back"}
+		for _, a := range m.footerActions {
+			labels = append(labels, a.Label)
+		}
+		hint = keyHint(menuHotkeys, "back") + " back | " + keyHint(menuHotkeys, "select") + " select"
+		for _, a := range m.footerActions {
+			if a.ID == "save-host" || a.ID == "save" {
+				hint += " | " + keyHint(menuHotkeys, "menu_save") + " " + a.Label
+				break
+			}
+		}
 	}
 	if m.layout != (menuLayout{}) {
 		x := 1

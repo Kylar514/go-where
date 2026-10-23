@@ -49,7 +49,17 @@ func footerButtonY(height int) int {
 
 var pickerTabs = []pickerButton{{"SSH", "mode:ssh"}, {"RDP", "mode:rdp"}, {"Tunnels", "mode:tunnels"}, {"SCP", "mode:scp"}, {"Legacy SCP", "mode:legacy-scp"}, {"Rsync", "mode:rsync"}}
 
+func (m *pickerModel) tabs() []pickerButton {
+	if m.hostTunnelTitle != "" {
+		return []pickerButton{{m.hostTunnelTitle, "host-tunnels"}}
+	}
+	return pickerTabs
+}
+
 func (m *pickerModel) buttons() []pickerButton {
+	if m.hostTunnelTitle != "" {
+		return []pickerButton{{"Back", "back"}, {"New", "new-tunnel"}, {"Edit", "edit-tunnel"}, {"Start selected", "start-selected"}, {"Stop selected", "stop-selected"}}
+	}
 	source := "All"
 	if m.state.Source == "ssh-config" {
 		source = "SSH config"

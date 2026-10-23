@@ -98,7 +98,7 @@ func TestPersonalSingleAndBulkUseSameEditor(t *testing.T) {
 	for _, r := range rows {
 		hosts = append(hosts, Host{SourceID: s.ID, ConnectionID: r.ID, InventoryHostID: r.HostID})
 	}
-	scriptTUI(t, "ssh-profile", "local:local-profile", "ssh-identities", "toggle:default,done", "default", "save", "save")
+	scriptTUI(t, "ssh-profile", "local:local-profile", "ssh-identities", "toggle:default,done", "default", "save", "save", "back")
 	if err = editPersonalHosts(draft, path, hosts); err != nil {
 		t.Fatal(err)
 	}

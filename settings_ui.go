@@ -147,7 +147,7 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			mode = "ssh"
 		}
 		options := []choice{
-			{"general", "General — startup mode: " + mode},
+			{"general", "Startup tab: " + startupTabLabel(mode)},
 			{"agents", "SSH agents — local socket/pipe profiles"},
 			{"identities", "Local identities — user/key/agent and bulk assignments"},
 			{"policies", "Connection policies — shared SSH/RDP settings"},
@@ -158,9 +158,19 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			{"save", "Save settings and return"}, {"cancel", "Cancel changes"},
 		}
 		if databaseSettings(path) {
-			options = []choice{{"hosts", "Hosts"}, {"ssh-profiles", "SSH Profiles"}, {"identities", "SSH Identities"}, {"rdp-profiles", "RDP Profiles"}, {"rdp-identities", "RDP Identities"}, {"rdp-session", "RDP Session Settings"}, {"agents", "SSH Agents"}, {"sources", "Enabled Sources"}, {"general", "General"}, {"hotkeys", "Hotkeys"}, {"save", "Save settings and return"}, {"cancel", "Cancel changes"}}
+			options = []choice{{"hosts", "Hosts"}, {"ssh-profiles", "SSH Profiles"}, {"identities", "SSH Identities"}, {"rdp-profiles", "RDP Profiles"}, {"rdp-identities", "RDP Identities"}, {"rdp-session", "RDP Session Settings"}, {"agents", "SSH Agents"}, {"sources", "Enabled Sources"}, {"general", "Startup tab"}, {"hotkeys", "Hotkeys"}, {"save", "Save settings and return"}, {"cancel", "Cancel changes"}}
 		}
-		id, back, e := choose("Settings", options, "Personal settings stay in a draft until saved. Host and shared profile editors save inventory separately. Password storage is not added in this stage.")
+		values, details := settingsSummaries(draft)
+		if databaseSettings(path) {
+			for i, o := range options {
+				if value, ok := values[o.ID]; ok {
+					options[i].Label = o.Label + ": " + value
+				}
+			}
+		}
+		m := newDialog("Settings", options, "Personal settings stay in a draft until saved. Host and shared profile editors save inventory separately.")
+		m.optionDetails = details
+		id, back, e := runChoice(m, menuKey(m.title))
 		if e != nil || back || id == "cancel" {
 			return false, e
 		}
@@ -176,6 +186,8 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			original = data
 			before.PersonalConnections = loaded.PersonalConnections
 			draft.PersonalConnections = loaded.PersonalConnections
+			before.RDP.Session = loaded.RDP.Session
+			draft.RDP.Session = loaded.RDP.Session
 		case "ssh-profiles", "rdp-profiles":
 			if e = manageConnectionProfiles(draft, path, strings.Split(id, "-")[0]); e != nil {
 				return false, e
@@ -212,7 +224,17 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 				return false, e
 			}
 		case "general":
-			v, b, e := chooseOne("Startup mode", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnels", "Tunnels"}, {"scp", "Transfers — SCP"}, {"rsync", "Transfers — rsync"}, {"legacy-scp", "Transfers — legacy SCP"}}, "An explicit CLI mode, e.g. go-where rdp, wins over this preference.", mode)
+			m := newDialog("Startup tab", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnels", "Tunnels"}, {"scp", "SCP"}, {"rsync", "Rsync"}, {"legacy-scp", "Legacy SCP"}}, "Choose the tab shown on startup. An explicit command such as go-where rdp takes precedence.")
+			m.singleChoice = true
+			m.current = mode
+			m.footerActions = []choice{{"select", "Select"}}
+			for i, o := range m.options {
+				if o.ID == mode {
+					m.cursor = i
+					break
+				}
+			}
+			v, b, e := runChoice(m, menuKey(m.title))
 			if e != nil {
 				return false, e
 			}

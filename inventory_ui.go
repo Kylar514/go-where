@@ -283,6 +283,19 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 			return parentState()
 		}
 	}
+	if profile != nil && profile.kind() == "tunnel" && saveActiveTunnel != nil {
+		parentSave := saveActiveTunnel
+		defer func() { saveActiveTunnel = parentSave }()
+		saveActiveTunnel = func() error {
+			previous := *profile
+			*profile = r
+			if err := parentSave(); err != nil {
+				*profile = previous
+				return err
+			}
+			return nil
+		}
+	}
 	if r.kind() == "tunnel" && profile == nil {
 		previousSave, previousState := saveActiveTunnel, tunnelSaveState
 		defer func() { saveActiveTunnel, tunnelSaveState = previousSave, previousState }()

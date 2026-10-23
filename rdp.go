@@ -281,6 +281,9 @@ func (j rdpJob) validate() error {
 }
 
 func newRDPJob(r RDPConfig, h Host, sshConfig string) (rdpJob, error) {
+	if r.Session.Clipboard != nil || r.Session.Fullscreen != nil {
+		r = explicitRDPSession(r)
+	}
 	if err := r.Session.validate(); err != nil {
 		return rdpJob{}, err
 	}
