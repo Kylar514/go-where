@@ -136,6 +136,16 @@ func tunnelTick() tea.Cmd {
 }
 
 func (m *pickerModel) refilter() {
+	if m.state.Mode == "transfers" {
+		m.visible = nil
+		for i, method := range transferMethods {
+			if strings.Contains(strings.ToLower(method.Label), strings.ToLower(m.search.Value())) {
+				m.visible = append(m.visible, i)
+			}
+		}
+		m.cursor = min(m.cursor, max(0, len(m.visible)-1))
+		return
+	}
 	var ids []int
 	var labels []string
 	query := m.search.Value()
@@ -296,7 +306,9 @@ func (m *pickerModel) switchMode(mode string) {
 	}
 	previous := ""
 	if len(m.visible) > 0 {
-		if m.state.Mode == "tunnels" {
+		if m.state.Mode == "transfers" {
+			previous = transferMethods[m.visible[m.cursor]].ID
+		} else if m.state.Mode == "tunnels" {
 			previous = m.tunnels[m.visible[m.cursor]].Name
 		} else {
 			previous = hostIdentity(m.hosts[m.visible[m.cursor]])
@@ -315,7 +327,9 @@ func (m *pickerModel) switchMode(mode string) {
 	}
 	for i, id := range m.visible {
 		name := ""
-		if mode == "tunnels" {
+		if mode == "transfers" {
+			name = transferMethods[id].ID
+		} else if mode == "tunnels" {
 			name = m.tunnels[id].Name
 		} else {
 			name = hostIdentity(m.hosts[id])
@@ -330,13 +344,13 @@ func (m *pickerModel) switchMode(mode string) {
 	m.updatePreview()
 }
 func (m *pickerModel) activeHost() (Host, bool) {
-	if m.state.Mode == "tunnels" || len(m.visible) == 0 {
+	if m.state.Mode == "tunnels" || m.state.Mode == "transfers" || len(m.visible) == 0 {
 		return Host{}, false
 	}
 	return m.hosts[m.visible[m.cursor]], true
 }
 func (m *pickerModel) selection(highlightOnly bool) []Host {
-	if m.state.Mode == "tunnels" {
+	if m.state.Mode == "tunnels" || m.state.Mode == "transfers" {
 		return nil
 	}
 	if !highlightOnly {
@@ -363,6 +377,17 @@ func (m *pickerModel) selection(highlightOnly bool) []Host {
 	return []Host{h}
 }
 func (m *pickerModel) finish(key string) tea.Cmd {
+	if m.state.Mode == "transfers" && (key == "enter" || key == "debug") {
+		if len(m.visible) == 0 {
+			return nil
+		}
+		m.key = "transfer-method:" + transferMethods[m.visible[m.cursor]].ID
+		return tea.Quit
+	}
+	if key == "transfers" {
+		m.key = key
+		return tea.Quit
+	}
 	if m.hostTunnelTitle != "" && (key == "settings" || key == "sources" || key == "mode") {
 		return nil
 	}
@@ -447,6 +472,8 @@ func (m *pickerModel) action(action string) tea.Cmd {
 		return nil
 	}
 	switch action {
+	case "mode:transfers":
+		return m.finish("transfers")
 	case "back":
 		return m.finish("cancel")
 	case "new-tunnel":
@@ -463,7 +490,7 @@ func (m *pickerModel) action(action string) tea.Cmd {
 		}
 		m.openDialog("help", "Keyboard & mouse", []choice{{"back", "Return"}}, text)
 	case "mode":
-		m.openDialog("mode", "Choose mode", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnels", "Tunnels"}, {"scp", "SCP"}, {"legacy-scp", "Legacy SCP"}, {"rsync", "rsync"}}, "")
+		m.openDialog("mode", "Choose mode", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnels", "Tunnels"}, {"transfers", "Transfers"}}, "")
 	case "account":
 		if m.state.Mode == "rdp" && len(m.visible) > 0 {
 			m.openDialog("account", "Connect as…", m.accountChoices(), "Applies to this launch only. No automatic credential retries.")
@@ -607,14 +634,15 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, m.finish("enter")
 			}
-			modes := []string{"ssh", "rdp", "tunnels", "scp", "legacy-scp", "rsync"}
+			modes := []string{"ssh", "rdp", "tunnels", "transfers"}
 			for i, mode := range modes {
 				if mode == m.state.Mode {
 					delta := 1
 					if key == "left" || key == "ctrl+h" {
 						delta = -1
 					}
-					m.switchMode(modes[(i+delta+len(modes))%len(modes)])
+					next := modes[(i+delta+len(modes))%len(modes)]
+					m.switchMode(next)
 					break
 				}
 			}
@@ -642,7 +670,7 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.switchMode("tunnels")
 			return m, nil
 		case "alt+4":
-			m.switchMode("scp")
+			m.switchMode("transfers")
 			return m, nil
 		case "alt+5":
 			m.switchMode("legacy-scp")
@@ -739,8 +767,8 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if msg.Y == hit.y && msg.X >= hit.x && msg.X < hit.x+hit.width {
 					if hit.action == "row" {
 						m.cursor = hit.index
-						if msg.X >= 1 && msg.X <= 3 {
-							if m.state.Mode == "tunnels" {
+						if m.state.Mode != "transfers" && msg.X >= 1 && msg.X <= 3 {
+							if m.state.Mode == "tunnels" || m.state.Mode == "transfers" {
 								name := m.tunnels[m.visible[m.cursor]].Name
 								m.marked[name] = !m.marked[name]
 							}
@@ -785,6 +813,14 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *pickerModel) updatePreview() {
+	if m.state.Mode == "transfers" {
+		text := "Choose a transfer method."
+		if len(m.visible) > 0 {
+			text = transferMethodDetails[transferMethods[m.visible[m.cursor]].ID]
+		}
+		m.preview.SetContent(ansi.Wrap(text, max(1, m.preview.Width), ""))
+		return
+	}
 	var text string
 	if m.state.Mode == "tunnels" {
 		if len(m.visible) > 0 {
@@ -886,7 +922,9 @@ func (m *pickerModel) View() string {
 	columns := m.columnWidths(listWidth)
 	var left []string
 	// Fixed column titles; the list scrolls beneath them.
-	if m.state.Mode == "tunnels" {
+	if m.state.Mode == "transfers" {
+		left = append(left, "Transfer method")
+	} else if m.state.Mode == "tunnels" {
 		left = append(left, tuiDim.Render(m.tunnelColumns(-1, listWidth, columns)))
 		x := 7
 		for i, w := range columns {
@@ -921,7 +959,9 @@ func (m *pickerModel) View() string {
 		i := m.offset + occupied - 1 - (row - pad)
 		if i < len(m.visible) {
 			id := m.visible[i]
-			if m.state.Mode == "tunnels" {
+			if m.state.Mode == "transfers" {
+				line = "  " + transferMethods[id].Label
+			} else if m.state.Mode == "tunnels" {
 				line = m.tunnelColumns(id, listWidth, columns)
 			} else {
 				h := m.hosts[id]
@@ -934,7 +974,8 @@ func (m *pickerModel) View() string {
 			if i == m.cursor {
 				line = tuiSelected.Render(fit("›"+strings.TrimPrefix(line, " "), listWidth))
 			}
-			if m.state.Mode != "tunnels" {
+			if m.state.Mode == "transfers" {
+			} else if m.state.Mode != "tunnels" {
 				h := m.hosts[id]
 				if h.Color != "" {
 					line = ansi.Cut(line, 0, 5) + lipgloss.NewStyle().Reverse(false).Foreground(lipgloss.Color(h.Color)).Render("■") + ansi.Cut(line, 6, listWidth)

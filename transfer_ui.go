@@ -62,7 +62,7 @@ Mouse wheel    Scroll list or preview
 }
 
 func validMode(s string) bool {
-	return s == "ssh" || s == "scp" || s == "legacy-scp" || s == "rsync" || s == "rdp" || s == "tunnels"
+	return s == "ssh" || s == "scp" || s == "legacy-scp" || s == "rsync" || s == "rdp" || s == "tunnels" || s == "transfers"
 }
 
 func modeWarning(mode string) string {

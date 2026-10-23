@@ -224,7 +224,7 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 				return false, e
 			}
 		case "general":
-			m := newDialog("Startup tab", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnels", "Tunnels"}, {"scp", "SCP"}, {"rsync", "Rsync"}, {"legacy-scp", "Legacy SCP"}}, "Choose the tab shown on startup. An explicit command such as go-where rdp takes precedence.")
+			m := newDialog("Startup tab", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnels", "Tunnels"}, {"transfers", "Transfers"}}, "Choose the tab shown on startup. An explicit command such as go-where rdp takes precedence.")
 			m.singleChoice = true
 			m.current = mode
 			m.footerActions = []choice{{"select", "Select"}}

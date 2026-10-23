@@ -47,7 +47,7 @@ func footerButtonY(height int) int {
 	return height - 3
 }
 
-var pickerTabs = []pickerButton{{"SSH", "mode:ssh"}, {"RDP", "mode:rdp"}, {"Tunnels", "mode:tunnels"}, {"SCP", "mode:scp"}, {"Legacy SCP", "mode:legacy-scp"}, {"Rsync", "mode:rsync"}}
+var pickerTabs = []pickerButton{{"SSH", "mode:ssh"}, {"RDP", "mode:rdp"}, {"Tunnels", "mode:tunnels"}, {"Transfers", "mode:transfers"}}
 
 func (m *pickerModel) tabs() []pickerButton {
 	if m.hostTunnelTitle != "" {
@@ -57,6 +57,9 @@ func (m *pickerModel) tabs() []pickerButton {
 }
 
 func (m *pickerModel) buttons() []pickerButton {
+	if m.state.Mode == "transfers" {
+		return []pickerButton{{"Select method", "connect"}, {"Settings", "settings"}, {"Help", "help"}}
+	}
 	if m.hostTunnelTitle != "" {
 		return []pickerButton{{"Back", "back"}, {"New", "new-tunnel"}, {"Edit", "edit-tunnel"}, {"Start selected", "start-selected"}, {"Stop selected", "stop-selected"}}
 	}
@@ -131,7 +134,7 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 		x := 0
 		border := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 		for i, button := range group {
-			active := button.action == "mode:"+m.state.Mode
+			active := button.action == "mode:"+m.state.Mode || button.action == "mode:transfers" && isTransferMode(m.state.Mode)
 			style := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 			edge := border
 			if active {
@@ -152,7 +155,7 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 				if i == 0 {
 					leftBottom = "└"
 				}
-				if tabs && i > 0 && group[i-1].action == "mode:"+m.state.Mode {
+				if tabs && i > 0 && (group[i-1].action == "mode:"+m.state.Mode || group[i-1].action == "mode:transfers" && isTransferMode(m.state.Mode)) {
 					leftBottom = "└"
 				}
 				middle.WriteString(edge.Render("│") + style.Render(label))
@@ -186,7 +189,7 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 		if rounded {
 			top.WriteString(edge.Render("╮"))
 			middle.WriteString(edge.Render("│"))
-			if tabs && last.action == "mode:"+m.state.Mode {
+			if tabs && (last.action == "mode:"+m.state.Mode || last.action == "mode:transfers" && isTransferMode(m.state.Mode)) {
 				bottom.WriteString(edge.Render("└"))
 			} else {
 				bottom.WriteString(edge.Render("┴"))

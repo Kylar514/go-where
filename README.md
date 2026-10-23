@@ -276,6 +276,15 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+Transfers navigation now has one method-first menu and a source/destination
+host/path editor. Both host lists include This computer and saved default SSH
+hosts. SCP and Legacy SCP remote-to-remote copies use `scp -3` through this
+computer with separately namespaced private SSH snapshots. Legacy relay requires
+compatible remote shells/scp and noninteractive destination authentication.
+Rsync remote-to-remote is roadmap work and currently rejected. SCP Preview only
+never runs a copy; Rsync Dry run runs with --dry-run after review. All real copies
+require explicit review confirmation. Existing CLI scp/rsync modes remain supported.
+
 Host tunnel management now uses a compact searchable list. Database-backed tunnel
 editing uses Tunnel name, Source host/address/port, Destination address/port and
 Save to; Bridge additionally selects a Destination host. Host selections resolve

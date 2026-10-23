@@ -227,7 +227,22 @@ func app(args []string) error {
 		if err != nil || key == "cancel" {
 			return err
 		}
+		if strings.HasPrefix(key, "transfer-method:") {
+			if err = transferMenu(c, o, exe, strings.TrimPrefix(key, "transfer-method:")); err != nil {
+				if err = notice(err.Error()); err != nil {
+					return err
+				}
+			}
+			continue
+		}
 		switch key {
+		case "transfers":
+			if err = transferMenu(c, o, exe); err != nil {
+				if err = notice(err.Error()); err != nil {
+					return err
+				}
+			}
+			continue
 		case "bulk-edit":
 			if err = bulkEditConnections(c, state, selected); err != nil {
 				if err = notice(err.Error()); err != nil {

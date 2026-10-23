@@ -256,8 +256,7 @@ func TestModeKeysAndFramedLayout(t *testing.T) {
 		key  tea.KeyType
 		mode string
 	}{
-		{tea.KeyRight, "rdp"}, {tea.KeyCtrlL, "tunnels"}, {tea.KeyRight, "scp"},
-		{tea.KeyRight, "legacy-scp"}, {tea.KeyRight, "rsync"}, {tea.KeyRight, "ssh"}, {tea.KeyLeft, "rsync"}, {tea.KeyLeft, "legacy-scp"}, {tea.KeyLeft, "scp"}, {tea.KeyCtrlH, "tunnels"},
+		{tea.KeyRight, "rdp"}, {tea.KeyCtrlL, "tunnels"}, {tea.KeyRight, "transfers"}, {tea.KeyRight, "ssh"},
 	} {
 		m.Update(tea.KeyMsg{Type: step.key})
 		if m.state.Mode != step.mode {
@@ -267,14 +266,14 @@ func TestModeKeysAndFramedLayout(t *testing.T) {
 	m.search.SetValue("abc")
 	m.search.CursorEnd()
 	m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
-	if m.search.Value() != "ab" || m.state.Mode != "tunnels" {
+	if m.search.Value() != "ab" || m.state.Mode != "ssh" {
 		t.Fatal("Backspace must edit search, not switch modes")
 	}
 	view := m.View()
 	lines := strings.Split(view, "\n")
 	_, _, tabHeight := m.controls(pickerTabs, 0)
 	searchRow := tabHeight + m.rows() + 2 + m.toolbarGap()
-	if !strings.Contains(lines[searchRow], "⌕ Search:") || !strings.Contains(lines[searchRow-1], "────") || !strings.Contains(view, "Start") {
+	if !strings.Contains(lines[searchRow], "⌕ Search:") || !strings.Contains(lines[searchRow-1], "────") || !strings.Contains(view, "Connect") {
 		t.Fatal("search must sit between separator and action buttons")
 	}
 	if strings.Contains(view, "connections ·") || !strings.Contains(view, "Settings |") || !strings.Contains(view, "╭─ Details") || !strings.Contains(view, "╰") {

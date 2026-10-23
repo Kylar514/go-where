@@ -64,7 +64,11 @@ func TestClickableControlsAndDoubleClick(t *testing.T) {
 				if hit.action == tab.action {
 					found = true
 					m.Update(tea.MouseMsg{X: hit.x, Y: hit.y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-					if m.state.Mode != strings.TrimPrefix(tab.action, "mode:") {
+					if tab.action == "mode:transfers" {
+						if m.state.Mode != "transfers" {
+							t.Fatal("Transfers did not open method menu")
+						}
+					} else if m.state.Mode != strings.TrimPrefix(tab.action, "mode:") {
 						t.Fatal("tab hit failed", tab)
 					}
 					break
@@ -124,7 +128,7 @@ func TestConnectedStripsHaveSharedBordersAndOpenActiveTab(t *testing.T) {
 	}
 	m.state.Mode = "rsync"
 	strip, _, _ = m.controls(pickerTabs, 0)
-	if !strings.Contains(strings.Split(strip, "\n")[2], "┘       └─") {
+	if !strings.Contains(strings.Split(strip, "\n")[2], "┘           └─") {
 		t.Fatal("last active tab does not join baseline", strip)
 	}
 	m.state.Mode = "ssh"
