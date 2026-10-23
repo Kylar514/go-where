@@ -16,7 +16,7 @@ func defaultTunnelHost(c Config, ref ProfileReference) (Host, error) {
 	if !sourceEnabled(c, s.ID) {
 		return Host{}, fmt.Errorf("host source is disabled")
 	}
-	rows, err := sourceConnections(s)
+	rows, err := effectiveSourceConnections(c, s)
 	if err != nil {
 		return Host{}, err
 	}

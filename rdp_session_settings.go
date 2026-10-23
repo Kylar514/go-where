@@ -41,11 +41,11 @@ func (s RDPSessionSettings) clientArgs() ([]string, error) {
 		args = append(args, flag)
 	}
 	if s.Fullscreen != nil {
-		flag := "-f"
 		if *s.Fullscreen {
-			flag = "/f"
+			args = append(args, "/f")
 		}
-		args = append(args, flag)
+		// Fullscreen is a FreeRDP flag, not a boolean toggle. Windowed uses
+		// its default with all explicit fullscreen flags removed upstream.
 	}
 	for _, f := range s.Folders {
 		if !f.Enabled {

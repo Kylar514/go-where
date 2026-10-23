@@ -175,7 +175,7 @@ func managedJob(h Host, c Config) (managedSSHJob, error) {
 	if err != nil {
 		return managedSSHJob{}, err
 	}
-	records, err := sourceConnections(s)
+	records, err := effectiveSourceConnections(c, s)
 	if err != nil {
 		return managedSSHJob{}, err
 	}
@@ -186,10 +186,10 @@ func managedJob(h Host, c Config) (managedSSHJob, error) {
 	seen := map[string]bool{}
 	var chain []Connection
 	for id := h.ConnectionID; id != ""; {
-		if seen[id] {
+		if seen[s.ID+":"+id] {
 			return managedSSHJob{}, fmt.Errorf("%s: jump cycle", h.Alias)
 		}
-		seen[id] = true
+		seen[s.ID+":"+id] = true
 		r, ok := byID[id]
 		if !ok {
 			return managedSSHJob{}, fmt.Errorf("%s: connection/jump %s no longer exists", h.Alias, id)
@@ -203,6 +203,29 @@ func managedJob(h Host, c Config) (managedSSHJob, error) {
 		}
 		chain = append(chain, r)
 		id = r.JumpID
+		if jump := c.PersonalConnections[s.ID][r.HostID+":route"].Jump; jump != nil {
+			if jump.Source == "direct" {
+				id = ""
+				continue
+			}
+			gateway, e := defaultTunnelHost(c, *jump)
+			if e != nil {
+				return managedSSHJob{}, e
+			}
+			s, e = findSource(c, gateway.SourceID)
+			if e != nil {
+				return managedSSHJob{}, e
+			}
+			rows, e := effectiveSourceConnections(c, s)
+			if e != nil {
+				return managedSSHJob{}, e
+			}
+			byID = map[string]Connection{}
+			for _, row := range rows {
+				byID[row.ID] = row
+			}
+			id = gateway.ConnectionID
+		}
 	}
 	if len(chain) == 0 {
 		return managedSSHJob{}, fmt.Errorf("no managed connection selected")
@@ -327,7 +350,7 @@ func storedRecord(h Host, c Config) (InventorySource, Connection, error) {
 	if err != nil {
 		return s, Connection{}, err
 	}
-	records, err := sourceConnections(s)
+	records, err := effectiveSourceConnections(c, s)
 	if err != nil {
 		return s, Connection{}, err
 	}

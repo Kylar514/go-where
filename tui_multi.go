@@ -346,6 +346,10 @@ func (m *multiDialog) View() string {
 		header = strings.Join(menuTrail, " › ") + " › " + m.title
 	}
 	lines := []string{tuiAccent.Render(fit(header+" — Select several", w))}
+	if m.hostRows == nil && m.cursor < len(m.filtered) {
+		item := m.items[m.filtered[m.cursor]]
+		m.preview.SetContent(ansi.Wrap(item.Label+"\n\n"+item.Note+"\n\n"+m.text, max(1, m.preview.Width), ""))
+	}
 	if m.text != "" && m.width < 90 {
 		lines = append(lines, m.preview.View(), "")
 	}

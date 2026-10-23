@@ -390,15 +390,12 @@ func (j rdpJob) clientArgs(mode string, port int) []string {
 	}
 	// Explicit client settings take precedence over the first-use trust default.
 	explicitCert := false
-	explicitTitle, explicitBar := false, false
+	explicitTitle := false
 	for _, configured := range [][]string{j.Client, j.ClientArgs} {
 		for _, arg := range configured {
 			lower := strings.ToLower(arg)
 			if strings.HasPrefix(lower, "/title:") || strings.HasPrefix(lower, "/t:") {
 				explicitTitle = true
-			}
-			if lower == "/floatbar" || strings.HasPrefix(lower, "/floatbar:") {
-				explicitBar = true
 			}
 			if strings.HasPrefix(lower, "/cert:") || strings.HasPrefix(lower, "/cert-") {
 				explicitCert = true
@@ -411,10 +408,16 @@ func (j rdpJob) clientArgs(mode string, port int) []string {
 	if j.Title != "" && !explicitTitle {
 		args = append(args, "/title:"+j.Title)
 	}
-	if j.TitleBar && !explicitBar {
+	if j.TitleBar {
 		args = append(args, "/floatbar:sticky:on,default:visible,show:always")
 	}
-	return append(args, j.ClientArgs...)
+	for _, arg := range j.ClientArgs {
+		if j.TitleBar && (strings.EqualFold(arg, "/floatbar") || strings.HasPrefix(strings.ToLower(arg), "/floatbar:")) {
+			continue
+		}
+		args = append(args, arg)
+	}
+	return args
 }
 
 var freeRDPClients = []string{"xfreerdp3", "xfreerdp", "sdl-freerdp3", "sdl-freerdp", "wlfreerdp3", "wlfreerdp"}
@@ -551,6 +554,16 @@ func runRDPSession(j rdpJob) error {
 	client, err := resolveClient(j.Client)
 	if err != nil {
 		return err
+	}
+	if j.TitleBar {
+		filtered := client[:1:1]
+		for _, arg := range client[1:] {
+			if strings.EqualFold(arg, "/floatbar") || strings.HasPrefix(strings.ToLower(arg), "/floatbar:") {
+				continue
+			}
+			filtered = append(filtered, arg)
+		}
+		client = filtered
 	}
 	mode, warning := j.mode(client)
 	if warning != "" {

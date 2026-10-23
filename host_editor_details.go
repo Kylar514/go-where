@@ -7,6 +7,7 @@ import (
 
 func hostEditorDetails(options []choice, count int, writable bool) map[string]string {
 	details := map[string]string{
+		"jump":        "Jump host\nOne SSH gateway route for this host's SSH and RDP connections. Direct clears the route. Uses the gateway's default SSH connection and your local identity. Existing routes stay intact until explicitly changed. Save remembers the route locally.",
 		"tunnels":     "Tunnels\nManage tunnels where a selected host is the SSH transport or saved remote target. Start and stop operate locally; tunnel definitions save separately from this host draft. Read-only definitions cannot be edited.",
 		"name":        "Name\nDisplay name used to identify the host. Changing it does not change the connection address.",
 		"address":     "Address\nIP address or DNS name used to connect to this host.",
@@ -25,8 +26,8 @@ func hostEditorDetails(options []choice, count int, writable bool) map[string]st
 			if count > 1 && o.ID != "rdp-session" {
 				details[o.ID] += fmt.Sprintf("\n\nChanging this field applies to all %d selected hosts.", count)
 			}
-		} else if o.ID != "tunnels" {
-			details[o.ID] += "\n\nSave host writes this field to inventory."
+		} else if o.ID != "tunnels" && o.ID != "jump" {
+			details[o.ID] += "\n\nSave writes this field to inventory."
 			if !writable {
 				details[o.ID] += " This field cannot be edited because a selected source is read-only."
 			} else if count > 1 {

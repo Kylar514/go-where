@@ -66,6 +66,9 @@ func TestRDPEnvironmentMetadata(t *testing.T) {
 	if strings.Count(args, "/title:") != 1 || strings.Count(args, "/floatbar:") != 1 || !strings.Contains(args, "/title:custom") {
 		t.Fatalf("explicit title/bar overrides must win: %s", args)
 	}
+	if !strings.Contains(args, "/floatbar:sticky:on,default:visible,show:always") || strings.Contains(args, "default:hidden") {
+		t.Fatal("enabled title bar must remain visible", args)
+	}
 	for _, invalid := range []RDPEnvironment{
 		{Name: "x\n", Jump: "*"},
 		{Name: "", Jump: "*"},

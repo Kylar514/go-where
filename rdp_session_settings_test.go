@@ -97,7 +97,7 @@ func TestExplicitSessionLaunchRemovesCompetingFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := job.ClientArgs
-	if !reflect.DeepEqual(args, []string{"/dynamic-resolution", "-clipboard", "-f"}) {
+	if !reflect.DeepEqual(args, []string{"/dynamic-resolution", "-clipboard"}) {
 		t.Fatal("competing flags reached client", args)
 	}
 }

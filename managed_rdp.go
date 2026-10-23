@@ -22,7 +22,7 @@ func hostRDPJob(c Config, h Host, sshConfig string) (rdpJob, error) {
 	if h.SourceID == "" {
 		return newRDPJob(c.RDP, h, sshConfig)
 	}
-	_, r, err := selectedRecord(h, c)
+	s, r, err := selectedRecord(h, c)
 	if err != nil {
 		return rdpJob{}, err
 	}
@@ -54,6 +54,23 @@ func hostRDPJob(c Config, h Host, sshConfig string) (rdpJob, error) {
 	h.JumpHost = ""
 	var snapshot string
 	var target string
+	if route := c.PersonalConnections[s.ID][r.HostID+":route"].Jump; route != nil {
+		if route.Source == "direct" {
+			r.JumpID = ""
+		} else {
+			gateway, e := defaultTunnelHost(c, *route)
+			if e != nil {
+				return rdpJob{}, e
+			}
+			j, e := managedJob(gateway, c)
+			if e != nil {
+				return rdpJob{}, e
+			}
+			snapshot, target = j.Configuration, j.Target
+			h.JumpHost = gateway.Alias
+			r.JumpID = ""
+		}
+	}
 	if r.JumpID != "" {
 		jump := h
 		jump.ConnectionID = r.JumpID

@@ -28,7 +28,7 @@ func TestCombinedHostFieldsSavePreservesConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := Host{SourceID: s.ID, InventoryHostID: rows[0].HostID}
-	scriptTUI(t, "notes", "ok\nupdated note", "save-host", "back")
+	scriptTUI(t, "notes", "ok\nupdated note", "save", "back")
 	if err = editPersonalHosts(c, path, []Host{h}); err != nil {
 		t.Fatal(err)
 	}

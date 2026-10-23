@@ -452,7 +452,7 @@ func inventoryHosts(c Config) ([]Host, error) {
 		for _, host := range inventory {
 			byID[host.ID] = host
 		}
-		records, err := sourceConnections(s)
+		records, err := effectiveSourceConnections(c, s)
 		if err != nil {
 			return nil, err
 		}

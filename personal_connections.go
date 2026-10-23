@@ -12,6 +12,8 @@ type ProfileReference struct {
 }
 
 type PersonalConnection struct {
+	Disabled        bool              `json:"disabled,omitempty"`
+	Jump            *ProfileReference `json:"jump,omitempty"`
 	Profile         *ProfileReference `json:"profile,omitempty"`
 	Identities      []string          `json:"identities,omitempty"`
 	DefaultIdentity string            `json:"default_identity,omitempty"`
@@ -36,6 +38,9 @@ func validatePersonalConnections(c Config) error {
 		for _, selection := range byHost {
 			if selection.Profile != nil && (!inventoryName(selection.Profile.Source) || !inventoryName(selection.Profile.ID)) {
 				return fmt.Errorf("invalid personal profile reference")
+			}
+			if selection.Jump != nil && (!inventoryName(selection.Jump.Source) || !inventoryName(selection.Jump.ID)) {
+				return fmt.Errorf("invalid host jump reference")
 			}
 			seen := map[string]bool{}
 			for _, id := range selection.Identities {
@@ -121,7 +126,7 @@ func applyPersonalConnection(c Config, source string, r Connection) (Connection,
 }
 
 func profileChoices(c Config, kind string) ([]choice, map[string]ProfileReference, error) {
-	options := []choice{{"existing", "Use host default"}}
+	options := []choice{{"existing", "Use host default"}, {"disabled", "Not configured — disable this protocol"}}
 	refs := map[string]ProfileReference{}
 	var ids []string
 	for id := range c.LocalProfiles {
@@ -162,7 +167,13 @@ func selectPersonalIdentities(c Config, kind string, current PersonalConnection)
 	for _, id := range current.Identities {
 		checked[id] = true
 	}
-	items := []multiItem{{ID: "default", Label: "System / client default", Checked: checked["default"]}}
+	label := "OpenSSH defaults"
+	note := "Uses your OS username and normal OpenSSH key discovery. The agent is selected by the connection profile; this identity supplies no saved username or key."
+	if kind == "rdp" {
+		label = "Client prompt"
+		note = "Uses the connection profile domain and client login defaults. No saved password is supplied."
+	}
+	items := []multiItem{{ID: "default", Label: label, Note: note, Checked: checked["default"]}}
 	if kind == "ssh" {
 		var names []string
 		for name := range c.Identities {
@@ -170,11 +181,16 @@ func selectPersonalIdentities(c Config, kind string, current PersonalConnection)
 		}
 		sort.Strings(names)
 		for _, id := range names {
-			items = append(items, multiItem{ID: id, Label: id, Checked: checked[id]})
+			p := c.Identities[id]
+			items = append(items, multiItem{ID: id, Label: id, Note: "Username: " + p.User + "\nKey: " + p.IdentityFile, Checked: checked[id]})
 		}
 	} else {
 		for _, a := range c.RDP.Accounts {
-			items = append(items, multiItem{ID: a.Name, Label: a.Name, Checked: checked[a.Name]})
+			state := "Client prompt"
+			if a.Password != nil {
+				state = "Encrypted password saved"
+			}
+			items = append(items, multiItem{ID: a.Name, Label: a.Name, Note: "Username: " + a.User + "\nCredentials: " + state, Checked: checked[a.Name]})
 		}
 	}
 	m := newMultiDialog(strings.ToUpper(kind)+" Identities", items, "Tab / Shift+Tab toggle and move. Choose the identities offered at launch; then choose one default. These choices are personal and never edit the source.")
@@ -320,6 +336,9 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 				}
 				value := draft.PersonalConnections[t.source][t.key]
 				p := hostDefault(t)
+				if value.Disabled {
+					p = "Not configured"
+				}
 				if value.Profile != nil {
 					r, e := personalProfile(draft, *value.Profile)
 					if e != nil {
@@ -358,6 +377,54 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 			options = append(options, choice{kind + "-profile", strings.ToUpper(kind) + " profile: " + profile}, choice{kind + "-identities", strings.ToUpper(kind) + " identities: " + identity})
 		}
 		options = append(options, choice{"rdp-session", "RDP session: Global"})
+		jumpLabel := "Existing routes"
+		firstJump := true
+		for _, t := range targets {
+			if t.kind != "ssh" {
+				continue
+			}
+			route := draft.PersonalConnections[t.source][strings.TrimSuffix(t.key, ":ssh")+":route"].Jump
+			label := "Direct"
+			if route == nil {
+				rows, e := sourceConnections(sources[t.source])
+				if e != nil {
+					return e
+				}
+				seen := map[string]bool{}
+				for _, r := range rows {
+					if r.HostID == strings.TrimSuffix(t.key, ":ssh") {
+						seen[r.JumpID] = true
+					}
+				}
+				if len(seen) > 1 {
+					label = "Multiple existing routes"
+				} else {
+					for jump := range seen {
+						if jump != "" {
+							label = sshReferenceLabel(draft, sources[t.source], jump)
+						}
+					}
+				}
+			}
+			if route != nil {
+				label = "Direct"
+				if route.Source != "direct" {
+					h, e := defaultTunnelHost(draft, *route)
+					if e != nil {
+						label = "Unavailable"
+					} else {
+						label = h.Alias
+					}
+				}
+			}
+			if firstJump {
+				jumpLabel = label
+				firstJump = false
+			} else if jumpLabel != label {
+				jumpLabel = "Mixed"
+			}
+		}
+		options = append(options, choice{"jump", "Jump host: " + jumpLabel})
 		if len(hosts) == 1 {
 			tunnels, _, e := hostTunnelEntries(draft, hosts)
 			if e != nil {
@@ -374,7 +441,7 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 		if allWritable {
 			mEditor.footerActions = append(mEditor.footerActions, choice{"save-host", "Save host"})
 		}
-		mEditor.footerActions = append(mEditor.footerActions, choice{"save", "Save my selections"})
+		mEditor.footerActions = []choice{{"save", "Save"}}
 		id, back, err := runChoice(mEditor, menuKey(mEditor.title))
 		if err != nil || back {
 			return err
@@ -382,6 +449,39 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 		if id == "tunnels" {
 			if err = editHostTunnels(draft, path, hosts); err != nil {
 				return err
+			}
+			continue
+		}
+		if id == "jump" {
+			mode, b, e := chooseOne("Jump host", []choice{{"direct", "Direct"}, {"host", "Select gateway host…"}}, "One route for both SSH and RDP. Selecting a route replaces existing routes for this host.", "")
+			if e != nil {
+				return e
+			}
+			if b {
+				continue
+			}
+			ref := &ProfileReference{Source: "direct", ID: "direct"}
+			if mode == "host" {
+				ref, b, e = chooseTunnelHost(draft, nil)
+				if e != nil {
+					return e
+				}
+				if b {
+					continue
+				}
+			}
+			if draft.PersonalConnections == nil {
+				draft.PersonalConnections = map[string]map[string]PersonalConnection{}
+			}
+			for _, t := range targets {
+				if t.kind != "ssh" {
+					continue
+				}
+				if draft.PersonalConnections[t.source] == nil {
+					draft.PersonalConnections[t.source] = map[string]PersonalConnection{}
+				}
+				key := strings.TrimSuffix(t.key, ":ssh") + ":route"
+				draft.PersonalConnections[t.source][key] = PersonalConnection{Jump: ref}
 			}
 			continue
 		}
@@ -398,29 +498,30 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 			draft.RDP.Session = loaded.RDP.Session
 			continue
 		}
-		if id == "save" {
-			mReview := newDialog("Review personal selections", []choice{{"save", "Save local selections"}}, fmt.Sprintf("Save personal profile and identity changes for %d hosts. No shared database is modified.", len(hosts)))
-			mReview.footerActions = []choice{{"select", "Select"}}
-			_, back, err = runChoice(mReview, menuKey(mReview.title))
-			if err != nil || back {
+		if id == "save" || id == "save-host" {
+			if !allWritable && len(fieldEdits) > 0 {
+				return fmt.Errorf("selected sources include read-only hosts")
+			}
+			if err = draft.validate(); err != nil {
+				return err
+			}
+			if err = validateEditedHostRoutes(draft, hosts); err != nil {
 				return err
 			}
 			if err = saveSettingsDraft(path, original, before, draft); err != nil {
-				return err
+				if e := notice(err.Error()); e != nil {
+					return e
+				}
+				continue
 			}
 			original, before, draft, err = settingsDraft(path)
 			if err != nil {
 				return err
 			}
-			continue
-		}
-		if id == "save-host" {
-			if !allWritable {
-				return fmt.Errorf("selected sources include read-only hosts")
-			}
 			if len(fieldEdits) == 0 {
 				continue
 			}
+			failed := false
 			for source, s := range sources {
 				var batch []InventoryHost
 				for _, t := range targets {
@@ -429,7 +530,11 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 					}
 				}
 				if err = saveHostFields(s, batch, fieldEdits); err != nil {
-					return fmt.Errorf("save %s: %w (earlier sources may already be saved)", s.Name, err)
+					if e := notice(fmt.Sprintf("Save %s failed: %v. Personal selections and earlier sources may already be saved; host edits are retained for retry.", s.Name, err)); e != nil {
+						return e
+					}
+					failed = true
+					break
 				}
 				for _, h := range batch {
 					for field, value := range fieldEdits {
@@ -438,7 +543,9 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 					storedHosts[source+":"+h.ID] = h
 				}
 			}
-			fieldEdits = map[string]string{}
+			if !failed {
+				fieldEdits = map[string]string{}
+			}
 			continue
 		}
 		if id == "name" || id == "address" || id == "tags" || id == "notes" || id == "color" {
@@ -495,6 +602,9 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 				label := hostDefault(t)
 				value := draft.PersonalConnections[t.source][t.key]
 				current := "existing"
+				if value.Disabled {
+					current = "disabled"
+				}
 				if value.Profile != nil {
 					current = value.Profile.Source + ":" + value.Profile.ID
 				}
@@ -542,10 +652,11 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 			if b {
 				continue
 			}
-			if selected != "existing" {
+			if selected != "existing" && selected != "disabled" {
 				value := refs[selected]
 				ref = &value
 			}
+			identities.Disabled = selected == "disabled"
 		} else {
 			var b bool
 			current := PersonalConnection{}
@@ -576,6 +687,7 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 			value := draft.PersonalConnections[t.source][t.key]
 			if strings.HasSuffix(id, "-profile") {
 				value.Profile = ref
+				value.Disabled = identities.Disabled
 			} else {
 				value.Identities, value.DefaultIdentity = identities.Identities, identities.DefaultIdentity
 			}
