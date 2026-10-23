@@ -358,11 +358,13 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 			options = append(options, choice{kind + "-profile", strings.ToUpper(kind) + " profile: " + profile}, choice{kind + "-identities", strings.ToUpper(kind) + " identities: " + identity})
 		}
 		options = append(options, choice{"rdp-session", "RDP session: Global"})
-		tunnels, _, e := hostTunnelEntries(draft, hosts)
-		if e != nil {
-			return e
+		if len(hosts) == 1 {
+			tunnels, _, e := hostTunnelEntries(draft, hosts)
+			if e != nil {
+				return e
+			}
+			options = append(options, choice{"tunnels", fmt.Sprintf("Tunnels: %d configured", len(tunnels))})
 		}
-		options = append(options, choice{"tunnels", fmt.Sprintf("Tunnels: %d configured", len(tunnels))})
 		title := fmt.Sprintf("Edit hosts — %d selected", len(hosts))
 		if len(hosts) == 1 {
 			title = "Edit host — " + storedHosts[targets[0].source+":"+strings.TrimSuffix(targets[0].key, ":"+targets[0].kind)].Alias

@@ -29,6 +29,9 @@ func processIdentity(pid int) (uint64, error) {
 	return uint64(created.Nanoseconds()), nil
 }
 func terminateProcess(pid int) error {
+	if err := exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F").Run(); err == nil {
+		return nil
+	}
 	p, err := os.FindProcess(pid)
 	if err != nil {
 		return err

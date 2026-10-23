@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 )
 
 func init() {
@@ -25,6 +26,13 @@ func init() {
 		var spec inventoryTunnelSpec
 		if err = json.Unmarshal(data, &spec); err != nil {
 			return nil, err
+		}
+		if spec.Bridge != nil {
+			exe, err := os.Executable()
+			if err != nil {
+				return nil, err
+			}
+			return exec.Command(exe, "__bridge", c.Resource), nil
 		}
 		if len(spec.Argv) == 0 || (spec.Argv[0] != "ssh" && spec.Argv[0] != "kubectl") {
 			return nil, fmt.Errorf("invalid tunnel command")
@@ -107,6 +115,18 @@ func toggleManagedTunnel(c config.Connection, stop bool) error {
 	_, err := tunnel.Start(c)
 	if err != nil {
 		return err
+	}
+	if c.Supervised {
+		// Startup health is not remote-listener verification; runtime status is
+		// the owned supervisor's liveness until explicit SSH readiness is added.
+		time.Sleep(500 * time.Millisecond)
+		statuses, e := tunnel.Statuses([]config.Connection{c})
+		if e != nil {
+			return e
+		}
+		if statuses[c.Name].PID == 0 {
+			return fmt.Errorf("bridge exited during startup; verify SSH forwarding permissions and connectivity")
+		}
 	}
 	return nil
 }

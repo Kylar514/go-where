@@ -16,6 +16,7 @@ import (
 )
 
 type Connection struct {
+	Supervised                                     bool
 	Bind                                           string
 	Name, TunnelType, Resource, Namespace, SSHHost string
 	LocalPort, RemotePort                          int
@@ -126,6 +127,8 @@ func Statuses(connections []Connection) (map[string]Info, error) {
 			}
 			listening := len(listeners) > 0
 			switch {
+			case owned && c.Supervised:
+				result[c.Name] = Info{Status: 1, PID: entry.PID}
 			case owned && listening && listeners[entry.PID]:
 				result[c.Name] = Info{Status: 2, PID: entry.PID}
 			case owned && listening:
@@ -182,7 +185,7 @@ func Start(c Connection) (int, error) {
 			return false, fmt.Errorf("tunnel already registered")
 		}
 		for _, entry := range state.Tunnels {
-			if endpointsConflict(connectionEndpoint(entry.Connection), connectionEndpoint(c)) {
+			if !c.Supervised && !entry.Connection.Supervised && endpointsConflict(connectionEndpoint(entry.Connection), connectionEndpoint(c)) {
 				return false, fmt.Errorf("port %d already owned", c.LocalPort)
 			}
 		}

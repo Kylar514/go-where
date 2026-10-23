@@ -276,6 +276,22 @@ The test creates its own temporary source/destination directories and checks SCP
 
 ## Settings
 
+Host tunnel management now uses a compact searchable list. Database-backed tunnel
+editing uses Tunnel name, Source host/address/port, Destination address/port and
+Save to; Bridge additionally selects a Destination host. Host selections resolve
+the host's default SSH attachment and personal identity without modifying it.
+Existing pinned SSH connection references remain intact until explicitly changed.
+
+Bridge is an initial implementation: this computer starts a local forward to the
+source service, then a reverse forward on the destination SSH host. Both processes
+are supervised together and terminated when either exits. Listeners remain
+loopback-only; BatchMode requires noninteractive authentication. Neither agent nor
+X11 forwarding is required. Server TCP-forwarding permissions still apply.
+Status indicates an owned running process, not verified remote listener readiness.
+The intermediate OS-selected port has a bind race that fails closed. Native
+two-server and Windows process-tree testing are still required. Tunnel definitions
+save in the selected inventory database, not private profile.db.
+
 The default personal settings store is now `profile.db` in the OS configuration
 directory. Its first open imports a sibling `config.json` transactionally; the
 original JSONC file remains unchanged as a migration backup. Explicit legacy

@@ -15,6 +15,7 @@ import (
 )
 
 type inventoryTunnelSpec struct {
+	Bridge        *bridgeTunnelSpec `json:",omitempty"`
 	Configuration string
 	Argv          []string
 }
@@ -43,12 +44,20 @@ func inventoryTunnel(h Host, c Config) (digletconfig.Connection, error) {
 	}
 	spec := inventoryTunnelSpec{}
 	switch r.TunnelType {
+	case "bridge":
+		return inventoryBridgeTunnel(h, c, r)
 	case "ssh":
 		if !regexp.MustCompile(`^[A-Za-z0-9_.:-]+$`).MatchString(r.RemoteHost) || strings.HasPrefix(r.RemoteHost, "-") {
 			return conn, fmt.Errorf("invalid remote host")
 		}
 		jump := h
 		jump.ConnectionID = r.SSHID
+		if r.SourceHost != nil {
+			jump, err = defaultTunnelHost(c, *r.SourceHost)
+			if err != nil {
+				return conn, err
+			}
+		}
 		j, e := managedJob(jump, c)
 		if e != nil {
 			return conn, e

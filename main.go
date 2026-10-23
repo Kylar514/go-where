@@ -31,6 +31,9 @@ func app(args []string) error {
 		return fmt.Errorf("legacy tunnel probes are no longer supported; use database tunnel status")
 	}
 	if len(args) > 0 && strings.HasPrefix(args[0], "__") {
+		if args[0] == "__bridge" {
+			return runBridgeSupervisor(args[1:])
+		}
 		return transferInternal(args)
 	}
 	if len(args) > 0 && args[0] == "rdm-report" {

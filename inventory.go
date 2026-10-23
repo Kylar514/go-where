@@ -24,38 +24,40 @@ type InventorySource struct {
 }
 
 type Connection struct {
-	OriginalProfile        *Connection `json:"-"`
-	ProfileID              string      `json:"profile_id,omitempty"`
-	HostID                 string      `json:"host_id,omitempty"`
-	ProfileName            string      `json:"profile_name,omitempty"`
-	Default                bool        `json:"default,omitempty"`
-	ExtraHostKeyAlgorithms []string    `json:"extra_host_key_algorithms,omitempty"`
-	ExtraPubkeyAlgorithms  []string    `json:"extra_pubkey_algorithms,omitempty"`
-	IdentitiesOnly         *bool       `json:"identities_only,omitempty"`
-	ExtraKexAlgorithms     []string    `json:"extra_kex_algorithms,omitempty"`
-	SSHAgent               string      `json:"ssh_agent,omitempty"`
-	Type                   string      `json:"type,omitempty"`
-	Domain                 *string     `json:"domain,omitempty"`
-	Account                string      `json:"account,omitempty"`
-	TunnelType             string      `json:"tunnel_type,omitempty"`
-	Bind                   string      `json:"local_bind,omitempty"`
-	LocalPort              int         `json:"local_port,omitempty"`
-	RemoteHost             string      `json:"remote_host,omitempty"`
-	RemoteHostID           string      `json:"remote_host_id,omitempty"`
-	RemotePort             int         `json:"remote_port,omitempty"`
-	SSHID                  string      `json:"ssh_id,omitempty"`
-	Resource               string      `json:"resource,omitempty"`
-	Namespace              string      `json:"namespace,omitempty"`
-	Context                string      `json:"context,omitempty"`
-	ID                     string      `json:"id"`
-	Alias                  string      `json:"alias"`
-	Address                string      `json:"address,omitempty"`
-	Port                   int         `json:"port"`
-	User                   string      `json:"user,omitempty"`
-	IdentityFile           string      `json:"identity_file,omitempty"`
-	JumpID                 string      `json:"jump_id,omitempty"`
-	Tags                   []string    `json:"tags,omitempty"`
-	Notes                  string      `json:"notes,omitempty"`
+	SourceHost             *ProfileReference `json:"source_host,omitempty"`
+	DestinationHost        *ProfileReference `json:"destination_host,omitempty"`
+	OriginalProfile        *Connection       `json:"-"`
+	ProfileID              string            `json:"profile_id,omitempty"`
+	HostID                 string            `json:"host_id,omitempty"`
+	ProfileName            string            `json:"profile_name,omitempty"`
+	Default                bool              `json:"default,omitempty"`
+	ExtraHostKeyAlgorithms []string          `json:"extra_host_key_algorithms,omitempty"`
+	ExtraPubkeyAlgorithms  []string          `json:"extra_pubkey_algorithms,omitempty"`
+	IdentitiesOnly         *bool             `json:"identities_only,omitempty"`
+	ExtraKexAlgorithms     []string          `json:"extra_kex_algorithms,omitempty"`
+	SSHAgent               string            `json:"ssh_agent,omitempty"`
+	Type                   string            `json:"type,omitempty"`
+	Domain                 *string           `json:"domain,omitempty"`
+	Account                string            `json:"account,omitempty"`
+	TunnelType             string            `json:"tunnel_type,omitempty"`
+	Bind                   string            `json:"local_bind,omitempty"`
+	LocalPort              int               `json:"local_port,omitempty"`
+	RemoteHost             string            `json:"remote_host,omitempty"`
+	RemoteHostID           string            `json:"remote_host_id,omitempty"`
+	RemotePort             int               `json:"remote_port,omitempty"`
+	SSHID                  string            `json:"ssh_id,omitempty"`
+	Resource               string            `json:"resource,omitempty"`
+	Namespace              string            `json:"namespace,omitempty"`
+	Context                string            `json:"context,omitempty"`
+	ID                     string            `json:"id"`
+	Alias                  string            `json:"alias"`
+	Address                string            `json:"address,omitempty"`
+	Port                   int               `json:"port"`
+	User                   string            `json:"user,omitempty"`
+	IdentityFile           string            `json:"identity_file,omitempty"`
+	JumpID                 string            `json:"jump_id,omitempty"`
+	Tags                   []string          `json:"tags,omitempty"`
+	Notes                  string            `json:"notes,omitempty"`
 }
 
 func (r Connection) kind() string {
@@ -296,11 +298,19 @@ func validateConnections(records []Connection) error {
 			if c.LocalPort < 1 || c.LocalPort > 65535 || c.RemotePort < 1 || c.RemotePort > 65535 {
 				return fmt.Errorf("%s: valid local and remote ports required", c.Alias)
 			}
-			if c.TunnelType != "ssh" && c.TunnelType != "kubectl" {
+			if c.TunnelType != "ssh" && c.TunnelType != "kubectl" && c.TunnelType != "bridge" {
 				return fmt.Errorf("%s: tunnel type must be ssh or kubectl", c.Alias)
 			}
-			if c.TunnelType == "ssh" && (c.SSHID == "" || (c.RemoteHost == "" && c.RemoteHostID == "")) {
+			if (c.TunnelType == "ssh" || c.TunnelType == "bridge") && ((c.SSHID == "" && c.SourceHost == nil) || (c.RemoteHost == "" && c.RemoteHostID == "")) {
 				return fmt.Errorf("%s: SSH connection and remote host required", c.Alias)
+			}
+			if c.TunnelType == "bridge" && c.DestinationHost == nil {
+				return fmt.Errorf("bridge requires a destination host")
+			}
+			for _, ref := range []*ProfileReference{c.SourceHost, c.DestinationHost} {
+				if ref != nil && (!inventoryName(ref.Source) || !inventoryName(ref.ID)) {
+					return fmt.Errorf("invalid tunnel host reference")
+				}
 			}
 			if c.TunnelType == "kubectl" && c.Resource == "" {
 				return fmt.Errorf("%s: Kubernetes resource required", c.Alias)

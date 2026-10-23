@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	digletconfig "github.com/kylar514/go-where/internal/tunnelcore"
 )
 
 func hostTunnelEntries(c Config, selected []Host) ([]Host, map[string]string, error) {
@@ -45,6 +47,14 @@ func hostTunnelEntries(c Config, selected []Host) ([]Host, map[string]string, er
 				continue
 			}
 			var role []string
+			for _, endpoint := range []struct {
+				ref   *ProfileReference
+				label string
+			}{{r.SourceHost, "Source host"}, {r.DestinationHost, "Destination host"}} {
+				if endpoint.ref != nil && wanted[endpoint.ref.Source+":"+endpoint.ref.ID] {
+					role = append(role, endpoint.label)
+				}
+			}
 			transport := byID[r.SSHID]
 			if wanted[s.ID+":"+transport.HostID] && transport.HostID != "" {
 				role = append(role, "SSH transport: "+byHost[transport.HostID].Alias)
@@ -64,48 +74,105 @@ func hostTunnelEntries(c Config, selected []Host) ([]Host, map[string]string, er
 }
 
 func editHostTunnels(c Config, path string, hosts []Host) error {
+	if len(hosts) != 1 {
+		return fmt.Errorf("tunnel management requires exactly one host")
+	}
+	host := hosts[0]
+	if host.InventoryHostID == "" {
+		_, r, err := storedRecord(host, c)
+		if err != nil {
+			return err
+		}
+		host.InventoryHostID = r.HostID
+	}
+	s, err := findSource(c, host.SourceID)
+	if err != nil {
+		return err
+	}
+	inventory, err := sourceInventoryHosts(s)
+	if err != nil {
+		return err
+	}
+	for _, h := range inventory {
+		if h.ID == host.InventoryHostID {
+			host.Alias = h.Alias
+		}
+	}
+	hosts = []Host{host}
 	previousSettings, previousState := saveActiveSettings, settingsSaveState
 	saveActiveSettings, settingsSaveState = nil, nil
 	defer func() { saveActiveSettings, settingsSaveState = previousSettings, previousState }()
-	query := ""
 	for {
 		entries, roles, err := hostTunnelEntries(c, hosts)
 		if err != nil {
 			return err
 		}
-		m := newPickerModel(entries, query, "current", Origin{}, PickerState{Mode: "tunnels", ConfigPath: path}, c)
-		m.hostTunnelTitle = fmt.Sprintf("Tunnels — %d hosts", len(hosts))
-		if len(hosts) == 1 {
-			m.hostTunnelTitle = "Tunnels — " + hosts[0].Alias
+		options := []choice{{"new", "New tunnel…"}}
+		byID := map[string]Host{}
+		for _, h := range entries {
+			key := hostIdentity(h)
+			byID[key] = h
+			status := "Stopped"
+			conn, e := inventoryTunnel(h, c)
+			if e != nil {
+				status = "Unavailable"
+			} else if statuses, e := tunnelStatuses([]digletconfig.Connection{conn}); e != nil {
+				status = "Status unavailable"
+			} else {
+				info := statuses[conn.Name]
+				if info.pid != 0 {
+					status = "Running"
+				}
+				if info.status == 3 {
+					status = "Port conflict"
+				}
+			}
+			options = append(options, choice{key, h.Alias + " — " + status + " · " + h.SourceName})
 		}
-		m.hostTunnelRoles = roles
-		if _, err = runTUI(m); err != nil {
+		m := newDialog("Tunnels — "+host.Alias, options, "Select a tunnel to open its editor. Tunnel saves are separate from your host draft.")
+		m.footerActions = []choice{{"start", "Start"}, {"stop", "Stop"}}
+		m.optionDetails = map[string]string{"new": "Create a tunnel with " + host.Alias + " prefilled as Source host. Its default SSH connection and your local identity are used. Choose a writable database in Save to."}
+		if len(entries) == 0 {
+			m.optionDetails["new"] = "No tunnels configured for " + host.Alias + ".\n\n" + m.optionDetails["new"]
+		}
+		for key, h := range byID {
+			m.optionDetails[key] = roles[key] + "\n\n" + managedDetails(h, c)
+		}
+		id, back, err := runChoice(m, menuKey(m.title))
+		if err != nil || back {
 			return err
 		}
-		query = m.search.Value()
-		switch m.key {
-		case "cancel", "":
-			return nil
-		case "new-connection":
+		if id == "new" {
 			if err = newHostTunnel(c, path, hosts); err != nil {
 				if err = notice(err.Error()); err != nil {
 					return err
 				}
 			}
-		case "ctrl-e", "ctrl-alt-e":
-			if len(m.selected) == 0 {
+			continue
+		}
+		if id == "start" || id == "stop" {
+			if len(m.filtered) == 0 {
 				continue
 			}
-			h := m.selected[0]
+			h, ok := byID[m.options[m.filtered[m.cursor]].ID]
+			if !ok {
+				continue
+			}
+			conn, e := inventoryTunnel(h, c)
+			if e == nil || id == "stop" {
+				e = toggleManagedTunnel(conn, id == "stop")
+			}
+			if e != nil {
+				if e = notice(e.Error()); e != nil {
+					return e
+				}
+			}
+			continue
+		}
+		if h, ok := byID[id]; ok {
 			s, err := findSource(c, h.SourceID)
 			if err != nil {
 				return err
-			}
-			if s.ReadOnly {
-				if err = notice("This tunnel source is read-only. Start/Stop remains available."); err != nil {
-					return err
-				}
-				continue
 			}
 			state := PickerState{Mode: "tunnels", Source: s.ID, ConfigPath: path}
 			if err = editConnection(c, &state, &h); err != nil {
@@ -118,6 +185,17 @@ func editHostTunnels(c Config, path string, hosts []Host) error {
 }
 
 func newHostTunnel(c Config, path string, hosts []Host) error {
+	if databaseSettings(path) {
+		var ref *ProfileReference
+		if len(hosts) == 1 {
+			id := hosts[0].InventoryHostID
+			if id != "" {
+				value := ProfileReference{hosts[0].SourceID, id}
+				ref = &value
+			}
+		}
+		return editTunnelDefinition(c, &PickerState{Mode: "tunnels", ConfigPath: path}, nil, ref)
+	}
 	wanted := map[string]bool{}
 	for _, h := range hosts {
 		id := h.InventoryHostID

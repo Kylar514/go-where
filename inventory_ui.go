@@ -206,6 +206,9 @@ func writableSource(c Config, preferred string, settings ...string) (InventorySo
 }
 
 func editConnection(c Config, state *PickerState, h *Host) error {
+	if databaseSettings(state.ConfigPath) && ((h != nil && h.Type == "tunnel") || h == nil && state.Mode == "tunnels") {
+		return editTunnelDefinition(c, state, h, nil)
+	}
 	return editConnectionDraft(c, state, h, nil)
 }
 
