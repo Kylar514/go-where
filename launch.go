@@ -103,6 +103,8 @@ func launchCommand(dest string, argv []string, o Origin, c Config, floating bool
 		return spawnTerminal(c, argv, false)
 	case "tmux-pane":
 		return run([]string{"tmux", "split-window", "-h", "-t", paneTarget(o), shellCommand(argv)})
+	case "tmux-pane-below":
+		return run([]string{"tmux", "split-window", "-v", "-t", paneTarget(o), shellCommand(argv)})
 	case "tmux-window":
 		return run([]string{"tmux", "new-window", "-t", o.Session + ":", shellCommand(argv)})
 	default:

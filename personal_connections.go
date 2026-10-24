@@ -275,7 +275,10 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 			}
 		}
 		if _, ok := storedHosts[s.ID+":"+hostID]; !ok {
-			return fmt.Errorf("host no longer exists")
+			if h.Type != "new-host" {
+				return fmt.Errorf("host no longer exists")
+			}
+			storedHosts[s.ID+":"+hostID] = InventoryHost{ID: hostID}
 		}
 		for _, kind := range []string{"ssh", "rdp"} {
 			key := hostID + ":" + kind
@@ -287,6 +290,7 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 		}
 	}
 	fieldEdits := map[string]string{}
+	newHost := len(hosts) == 1 && hosts[0].Type == "new-host"
 	allWritable := true
 	for _, s := range sources {
 		if s.ReadOnly {
@@ -501,6 +505,23 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 			continue
 		}
 		if id == "save" || id == "save-host" {
+			if newHost {
+				t := targets[0]
+				key := t.source + ":" + strings.TrimSuffix(t.key, ":ssh")
+				h := storedHosts[key]
+				for field, value := range fieldEdits {
+					setInventoryHostField(&h, field, value)
+				}
+				if err = saveInventoryHost(sources[t.source], h, nil); err != nil {
+					if e := notice(err.Error()); e != nil {
+						return e
+					}
+					continue
+				}
+				storedHosts[key] = h
+				newHost = false
+				fieldEdits = map[string]string{}
+			}
 			if !allWritable && len(fieldEdits) > 0 {
 				return fmt.Errorf("selected sources include read-only hosts")
 			}
@@ -704,6 +725,23 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 			draft.PersonalConnections[t.source][t.key] = value
 		}
 	}
+}
+
+func createUnifiedHost(c Config, state *PickerState) error {
+	s, back, err := writableSource(c, state.Source, state.ConfigPath)
+	if err != nil || back {
+		return err
+	}
+	if _, e := findSource(c, s.ID); e != nil {
+		c.Sources = append(c.Sources, s)
+	}
+	h := Host{SourceID: s.ID, InventoryHostID: inventoryID(), Type: "new-host"}
+	if err = editPersonalHosts(c, state.ConfigPath, []Host{h}); err != nil {
+		return err
+	}
+	state.Source = s.ID
+	state.Focus = s.ID + ":" + h.InventoryHostID
+	return nil
 }
 
 func chooseLaunchIdentity(c *Config, hosts []Host) error {

@@ -277,7 +277,7 @@ func app(args []string) error {
 			if state.Mode == "tunnels" {
 				err = editConnection(c, &state, nil)
 			} else {
-				err = editInventoryHost(c, &state, nil)
+				err = createUnifiedHost(c, &state)
 			}
 			if err != nil {
 				if err = notice(err.Error()); err != nil {
@@ -337,7 +337,7 @@ func app(args []string) error {
 				if h.Type == "tunnel" {
 					err = editConnection(c, &state, &h)
 				} else {
-					if databaseSettings(state.ConfigPath) {
+					if state.ConfigPath != "" {
 						err = editPersonalHosts(c, state.ConfigPath, selected)
 					} else {
 						err = editInventoryHost(c, &state, &h)

@@ -94,6 +94,25 @@ func (m *dialogModel) sourceWidths(width int) (int, int) {
 	return a, b
 }
 
+func (m *dialogModel) anchorColumns(values []string, width int) string {
+	widths := []int{10, 16, 10, 8}
+	for _, row := range m.columnRows {
+		for i, v := range row {
+			widths[i] = max(widths[i], lipgloss.Width(v))
+		}
+	}
+	widths[0] = min(widths[0], max(4, width/4))
+	widths[1] = min(widths[1], max(5, width/3))
+	widths[2] = min(widths[2], max(4, width/5))
+	widths[3] = max(0, width-widths[0]-widths[1]-widths[2]-6)
+	var cells []string
+	for i, v := range values {
+		v = fit(clean(v), widths[i])
+		cells = append(cells, v+strings.Repeat(" ", max(0, widths[i]-lipgloss.Width(v))))
+	}
+	return strings.Join(cells, " │ ")
+}
+
 func hostFormGroup(id string) int {
 	if strings.HasPrefix(id, "ssh-") {
 		return 1

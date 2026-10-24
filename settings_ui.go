@@ -162,6 +162,20 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 		if databaseSettings(path) {
 			options = []choice{{"hosts", "Hosts"}, {"ssh-profiles", "SSH Profiles"}, {"identities", "SSH Identities"}, {"rdp-profiles", "RDP Profiles"}, {"rdp-identities", "RDP Identities"}, {"rdp-session", "RDP Session Settings"}, {"agents", "SSH Agents"}, {"sources", "Enabled Sources"}, {"general", "Startup tab"}, {"hotkeys", "Hotkeys"}, {"save", "Save settings and return"}, {"cancel", "Cancel changes"}}
 		}
+		if !databaseSettings(path) {
+			var active []choice
+			for _, o := range options {
+				if o.ID == "overrides" {
+					continue
+				}
+				if o.ID == "policies" {
+					active = append(active, choice{"ssh-profiles", "SSH Profiles"}, choice{"rdp-profiles", "RDP Profiles"})
+					continue
+				}
+				active = append(active, o)
+			}
+			options = active
+		}
 		values, details := settingsSummaries(draft)
 		if databaseSettings(path) {
 			for i, o := range options {

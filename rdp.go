@@ -138,7 +138,7 @@ func (r RDPConfig) validate() error {
 		r.Destination = "background"
 	}
 	switch r.Destination {
-	case "background", "tmux-pane", "tmux-window", "tmux-session", "terminal", "floating-terminal", "current":
+	case "background", "tmux-pane", "tmux-pane-below", "tmux-window", "tmux-session", "terminal", "floating-terminal", "current":
 	default:
 		return fmt.Errorf("rdp destination must be one of: background, tmux-pane, tmux-window, tmux-session, terminal, floating-terminal, current")
 	}

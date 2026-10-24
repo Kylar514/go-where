@@ -83,8 +83,29 @@ type choice struct{ ID, Label string }
 
 func choose(title string, options []choice, text string) (string, bool, error) {
 	m := newDialog(title, options, text)
+	if strings.Contains(title, "?") || strings.HasPrefix(title, "Review ") || strings.HasPrefix(title, "Confirm ") {
+		for _, o := range options {
+			if o.ID == "no" || o.ID == "cancel" || o.ID == "back" {
+				m.current = o.ID
+				break
+			}
+		}
+		if m.current == "" {
+			m.options = append([]choice{{"cancel", "Cancel"}}, m.options...)
+			m.current = "cancel"
+		}
+		m.singleChoice = true
+		m.footerActions = []choice{{"select", "Select"}}
+		for i, o := range m.options {
+			if o.ID == m.current {
+				m.cursor = i
+				break
+			}
+		}
+	}
 	key := menuKey(title)
-	return runChoice(m, key)
+	id, back, err := runChoice(m, key)
+	return id, back || id == "cancel", err
 }
 
 func chooseOne(title string, options []choice, text, current string) (string, bool, error) {
@@ -101,6 +122,12 @@ func chooseOne(title string, options []choice, text, current string) (string, bo
 }
 
 func runChoice(m *dialogModel, key string) (string, bool, error) {
+	if m.screenID != "" {
+		key = m.screenID
+	} else {
+		title, _, _ := strings.Cut(m.title, " — ")
+		key = "dialog:" + title
+	}
 	m.saveTunnel = saveActiveTunnel != nil
 	if m.title == "Sources" {
 		m.sourceActions = true

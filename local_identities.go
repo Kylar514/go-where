@@ -97,9 +97,7 @@ func chooseIdentity(c Config, current string) (string, bool, error) {
 func editLocalIdentities(c *Config) error {
 	for {
 		options := []choice{{"add", "Create local identity…"}, {"assign", "Assign identity to source/profiles/connections…"}}
-		if c.databaseBacked {
-			options = options[:1]
-		}
+		options = options[:1]
 		names := []string{}
 		for name := range c.Identities {
 			names = append(names, name)

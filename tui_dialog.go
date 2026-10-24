@@ -101,6 +101,8 @@ func menuKey(title string) string {
 }
 
 type dialogModel struct {
+	columnRows     map[string][]string
+	screenID       string
 	optionGroups   map[string]int
 	readingScreen  bool
 	footerActions  []choice
@@ -537,6 +539,13 @@ func (m *dialogModel) View() string {
 	for lipgloss.Height(strings.Join(lines, "\n")) < m.listStart() {
 		lines = append(lines, "")
 	}
+	if m.columnRows != nil && len(lines) > 1 {
+		listWidth := m.width - 2
+		if m.width >= 90 {
+			listWidth, _ = m.menuPaneWidths()
+		}
+		lines[len(lines)-1] = tuiDim.Render("    " + m.anchorColumns([]string{"Session", "Window", "Command", "Folder"}, listWidth-4))
+	}
 	var rows []string
 	listWidth := m.width - 2
 	if m.width >= 90 {
@@ -558,6 +567,9 @@ func (m *dialogModel) View() string {
 		}
 		if m.sourceActions {
 			value = m.sourceLabel(option, listWidth-2)
+		}
+		if m.columnRows != nil {
+			value = m.anchorColumns(m.columnRows[option.ID], listWidth-4)
 		}
 		if m.singleChoice {
 			marker := "○ "

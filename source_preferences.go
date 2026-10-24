@@ -92,7 +92,33 @@ func editSourcePreferences(c *Config) error {
 			c.Sources = loaded.Sources
 			c.DisabledSources = loaded.DisabledSources
 			c.StartupSource = loaded.StartupSource
-			return editSourcePreferences(c)
+			selected := ""
+			if m.cursor < len(m.filtered) {
+				selected = m.items[m.filtered[m.cursor]].ID
+			}
+			checked := map[string]bool{}
+			for _, item := range m.items {
+				checked[item.ID] = item.Checked
+			}
+			m.items = []multiItem{{ID: "ssh-config", Label: "SSH config", Note: "OpenSSH", Checked: checked["ssh-config"]}}
+			for _, s := range c.Sources {
+				value, ok := checked[s.ID]
+				if !ok {
+					value = sourceEnabled(*c, s.ID)
+				}
+				m.items = append(m.items, multiItem{ID: s.ID, Label: s.Name, Note: "SQLite", Checked: value})
+				m.itemDetails[s.ID] = "Source: " + s.Name + "\nDatabase: " + s.Path
+			}
+			m.refilter()
+			for i, index := range m.filtered {
+				if m.items[index].ID == selected {
+					m.cursor = i
+					break
+				}
+			}
+			m.done, m.back = false, false
+			m.action = ""
+			continue
 		}
 		if m.back || m.action == "done" {
 			return nil

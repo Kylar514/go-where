@@ -59,7 +59,7 @@ func manageInventoryHosts(c Config, path string) error {
 			value := byID[id]
 			h = &value
 		}
-		if h != nil && databaseSettings(path) {
+		if h != nil {
 			if err = editPersonalHosts(c, path, []Host{*h}); err != nil {
 				return err
 			}
@@ -69,7 +69,7 @@ func manageInventoryHosts(c Config, path string) error {
 			}
 			continue
 		}
-		if err = editInventoryHost(c, &state, h); err != nil {
+		if err = createUnifiedHost(c, &state); err != nil {
 			return err
 		}
 	}

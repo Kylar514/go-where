@@ -167,7 +167,7 @@ func (c Config) validate() error {
 	}
 	for _, dest := range []string{c.Destination, c.EditDestination} {
 		switch dest {
-		case "tmux-pane", "tmux-window", "tmux-session", "terminal", "current":
+		case "tmux-pane", "tmux-pane-below", "tmux-window", "tmux-session", "terminal", "current":
 		default:
 			return fmt.Errorf("unknown destination %q", dest)
 		}

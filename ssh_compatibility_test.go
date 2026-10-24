@@ -165,8 +165,15 @@ func TestSSHCompatibilityEditorAndLocalSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Override editing must not require resolving unrelated user/key variables.
-	scriptTUI(t, "overrides", hostIdentity(h), "compatibility", "identities", "no", "kex", "custom", "toggle:diffie-hellman-group1-sha1,done", "save", "save")
-	if _, err := settingsMenu(path); err != nil {
+	scriptTUI(t, "identities", "no", "kex", "custom", "toggle:diffie-hellman-group1-sha1,done", "save")
+	original, before, draft, err := settingsDraft(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = editCompatibilityOverrideDraft(&draft, h); err != nil {
+		t.Fatal(err)
+	}
+	if err = saveSettingsDraft(path, original, before, draft); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := loadConfig(path)
@@ -181,8 +188,12 @@ func TestSSHCompatibilityEditorAndLocalSettings(t *testing.T) {
 	if !bytes.Contains(data, []byte("// keep me")) || !bytes.Contains(data, []byte(`"extra_kex_algorithms":[]`)) {
 		t.Fatalf("lost comments/explicit empty list: %s", data)
 	}
-	scriptTUI(t, "overrides", hostIdentity(h), "compatibility", "identities", "inherit", "kex", "inherit", "save", "cancel")
-	if _, err = settingsMenu(path); err != nil {
+	scriptTUI(t, "identities", "inherit", "kex", "inherit", "back")
+	_, _, draft, err = settingsDraft(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = editCompatibilityOverrideDraft(&draft, h); err != nil {
 		t.Fatal(err)
 	}
 	if after, _ := os.ReadFile(path); !bytes.Equal(data, after) {

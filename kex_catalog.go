@@ -222,7 +222,7 @@ func chooseAlgorithms(directive, title, intro string, current []string) ([]strin
 		m.refilter()
 		m.cursor = min(position.cursor, len(m.filtered)+1)
 		m.restorePreview = &position.preview
-		if _, err := runTUI(m); err != nil {
+		if _, err := runIdentityChecklist(m); err != nil {
 			return nil, false, err
 		}
 		if m.back {
