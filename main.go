@@ -406,8 +406,6 @@ func app(args []string) error {
 			connectionConfig = *sshConfig
 		}
 		if state.Mode == "rdp" {
-			c.activeRDPAccount = state.Account
-			c.RDP = c.RDP.withAccount(state.Account)
 			err = launchRDP(selected, o, c, connectionConfig, exe, state.Debug)
 		} else if state.Mode != "ssh" {
 			draft.Mode = state.Mode

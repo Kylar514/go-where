@@ -82,6 +82,14 @@ func decodeConfig(data []byte) (Config, error) {
 	if err := d.Decode(&c); err != nil {
 		return c, err
 	}
+	// Retired Account overrides cannot take priority over Connect as. Preserve
+	// any intentional Connect as customization, including its old Alt+P binding.
+	if keys, ok := c.Hotkeys["account"]; ok {
+		if _, custom := c.Hotkeys["profile"]; !custom {
+			c.Hotkeys["profile"] = keys
+		}
+		delete(c.Hotkeys, "account")
+	}
 	if err := d.Decode(new(any)); err != io.EOF {
 		return c, fmt.Errorf("expected one JSON object")
 	}

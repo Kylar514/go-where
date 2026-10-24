@@ -481,20 +481,13 @@ func (m *pickerModel) action(action string) tea.Cmd {
 	case "edit-tunnel":
 		return m.finish("ctrl-e")
 	case "help":
-		text := pickerHelp(m.state.Mode)
-		if len(m.config.Hotkeys) > 0 {
-			text = configuredHelp(m.config) + "\n\n" + modeWarning(m.state.Mode)
-		}
-		if m.state.Mode == "tunnels" {
-			text = "TUNNELS\nEnter / Toggle  Start or stop the highlighted tunnel\nCtrl+N          New connection (choose Type in the editor)\nCtrl+E          Edit database tunnel, or legacy connections.yaml\nCtrl+B          Choose inventory source\nCtrl+R          Reload config\nTunnels remain running when this TUI closes.\nOnly owned processes can be stopped.\n"
-		}
-		m.openDialog("help", "Keyboard & mouse", []choice{{"back", "Return"}}, text)
+		text := configuredHelp(m.config) + "\n\n" + modeWarning(m.state.Mode) + "\n\nMouse: click to select, double-click to activate. Tab / Shift+Tab mark and move. Marks survive filtering. Edit uses marked hosts or the highlighted host.\n\nNormal keys navigate the list; Shift+Up/Down scroll Details and Shift+PgUp/PgDn scroll Details by a page. Help also accepts plain arrows and page keys. Drag the pane divider to resize."
+		m.openDialog("help", "Keyboard & mouse", nil, text)
+		m.dialog.readingScreen = true
+		m.dialog.layout.listPercent = 20
+		m.dialog.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 	case "mode":
 		m.openDialog("mode", "Choose mode", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnels", "Tunnels"}, {"transfers", "Transfers"}}, "")
-	case "account":
-		if m.state.Mode == "rdp" && len(m.visible) > 0 {
-			m.openDialog("account", "Connect as…", m.accountChoices(), "Applies to this launch only. No automatic credential retries.")
-		}
 	case "target":
 		return m.finish("target")
 	case "sources":
@@ -605,12 +598,6 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch kind {
 		case "mode":
 			m.switchMode(d.result)
-		case "account":
-			i, _ := strconv.Atoi(d.result)
-			if i > 0 {
-				m.state.Account = m.config.RDP.Accounts[i-1]
-			}
-			return m, m.finish("enter")
 		}
 		return m, nil
 	}
@@ -659,7 +646,10 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resetLayout()
 			return m, nil
 		case "alt+a":
-			return m, m.action("account")
+			if m.state.Mode != "tunnels" && m.state.Mode != "transfers" {
+				return m, m.finish("connect-as")
+			}
+			return m, nil
 		case "alt+1":
 			m.switchMode("ssh")
 			return m, nil
@@ -694,6 +684,12 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "shift+down":
 			m.preview.ScrollDown(1)
 			return m, nil
+		case "shift+pgup":
+			m.preview.HalfPageUp()
+			return m, nil
+		case "shift+pgdown":
+			m.preview.HalfPageDown()
+			return m, nil
 		case "tab", "shift+tab":
 			if m.state.Mode == "tunnels" && len(m.visible) > 0 {
 				name := m.tunnels[m.visible[m.cursor]].Name
@@ -715,10 +711,6 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "ctrl+e":
 			return m, m.finish("ctrl-e")
-		case "alt+p":
-			if m.state.Mode != "tunnels" {
-				return m, m.finish("connect-as")
-			}
 		case "enter", "ctrl+r", "ctrl+s", "ctrl+alt+p", "ctrl+alt+w", "ctrl+alt+n", "ctrl+alt+t", "ctrl+alt+s", "ctrl+alt+e":
 			return m, m.finish(strings.ReplaceAll(key, "+", "-"))
 		default:
@@ -999,14 +991,6 @@ func (m *pickerModel) View() string {
 			m.hits = append(m.hits, hitRegion{listWidth, tabHeight + row, 1, "resize-pane", 0})
 		}
 	}
-	legend := "Click to select · Double-click to connect · ? Help"
-	if m.state.Mode == "tunnels" {
-		legend = "Click to select · Double-click to start/stop · ? Help"
-	} else if m.state.Mode == "scp" || m.state.Mode == "legacy-scp" || m.state.Mode == "rsync" {
-		legend = "Click to select · Double-click to review transfer · ? Help"
-	}
-	legend = strings.Replace(legend, "? Help", keyHint(m.config, "help")+" Help", 1)
-	legend = keyHint(m.config, "launch") + " Launch | " + keyHint(m.config, "debug") + " Debug | " + keyHint(m.config, "settings") + " Settings | " + keyHint(m.config, "sources") + " Sources | " + keyHint(m.config, "help") + " Help"
 	// Separate the search input from results without adding another row.
 	lines = append(lines, body, strings.Repeat("─", width), m.search.View())
 	if m.toolbarGap() > 0 {
@@ -1018,7 +1002,10 @@ func (m *pickerModel) View() string {
 	if m.statusError {
 		status = tuiError.Render(clean(m.status))
 	}
-	lines = append(lines, buttons, fit(tuiDim.Render(fmt.Sprintf("%d results · %d marked │ %s", len(m.visible), m.markCount(), legend)), width), fit(status, width))
+	lines = append(lines, buttons, fit(tuiDim.Render(fmt.Sprintf("%d results · %d marked", len(m.visible), m.markCount())), width))
+	if m.height >= 14 || m.status != "" {
+		lines = append(lines, fit(status, width))
+	}
 	return strings.Join(lines, "\n")
 }
 func (m *pickerModel) markCount() int {

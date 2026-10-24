@@ -31,6 +31,9 @@ func (m *dialogModel) refreshMenuLayout() {
 
 func (m *dialogModel) resetMenuLayout() {
 	m.layout = menuLayout{}
+	if m.readingScreen {
+		m.layout.listPercent = 20
+	}
 	m.resizeKind = ""
 	m.refreshMenuLayout()
 }

@@ -90,6 +90,7 @@ func choose(title string, options []choice, text string) (string, bool, error) {
 func chooseOne(title string, options []choice, text, current string) (string, bool, error) {
 	m := newDialog(title, options, text)
 	m.singleChoice, m.current = true, current
+	m.footerActions = []choice{{"select", "Select"}}
 	for i, option := range options {
 		if option.ID == current {
 			m.cursor = i

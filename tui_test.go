@@ -130,9 +130,9 @@ func TestUnifiedPicker(t *testing.T) {
 	if m.state.Mode != "rdp" || len(m.visible) != 1 || !m.marked["web"] {
 		t.Fatal("mode switch lost marks or RDP filtering")
 	}
-	m.action("account")
-	if m.dialog == nil || !strings.Contains(m.dialog.options[0].Label, "Default") {
-		t.Fatal("missing native account dialog")
+	m.action("help")
+	if m.dialog == nil || !m.dialog.readingScreen {
+		t.Fatal("missing reading-oriented help dialog")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if m.dialog != nil || m.key != "" || !m.marked["web"] {
@@ -276,7 +276,7 @@ func TestModeKeysAndFramedLayout(t *testing.T) {
 	if !strings.Contains(lines[searchRow], "⌕ Search:") || !strings.Contains(lines[searchRow-1], "────") || !strings.Contains(view, "Connect") {
 		t.Fatal("search must sit between separator and action buttons")
 	}
-	if strings.Contains(view, "connections ·") || !strings.Contains(view, "Settings |") || !strings.Contains(view, "╭─ Details") || !strings.Contains(view, "╰") {
+	if strings.Contains(view, "connections ·") || !strings.Contains(view, "ctrl+s") || !strings.Contains(view, "╭─ Details") || !strings.Contains(view, "╰") {
 		t.Fatalf("unexpected layout: %s", view)
 	}
 	if lipgloss.Width(view) > 148 || lipgloss.Height(view) != 28 {

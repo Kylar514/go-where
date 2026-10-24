@@ -101,6 +101,7 @@ func menuKey(title string) string {
 }
 
 type dialogModel struct {
+	readingScreen  bool
 	footerActions  []choice
 	optionDetails  map[string]string
 	saveTunnel     bool
@@ -264,15 +265,43 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.done, m.back = true, true
 			return m, tea.Quit
 		case "up", "ctrl+k":
+			if m.readingScreen {
+				m.preview.ScrollUp(1)
+				return m, nil
+			}
 			m.cursor = cycleCursor(m.cursor, 1, len(m.filtered))
 			return m, nil
 		case "down", "ctrl+j":
+			if m.readingScreen {
+				m.preview.ScrollDown(1)
+				return m, nil
+			}
 			m.cursor = cycleCursor(m.cursor, -1, len(m.filtered))
 			return m, nil
-		case "ctrl+u":
+		case "ctrl+u", "pgup":
+			if m.readingScreen {
+				m.preview.HalfPageUp()
+			} else {
+				m.cursor = min(max(0, len(m.filtered)-1), m.cursor+max(1, m.optionRows()/2))
+			}
+			return m, nil
+		case "ctrl+d", "pgdown":
+			if m.readingScreen {
+				m.preview.HalfPageDown()
+			} else {
+				m.cursor = max(0, m.cursor-max(1, m.optionRows()/2))
+			}
+			return m, nil
+		case "shift+up":
+			m.preview.ScrollUp(1)
+			return m, nil
+		case "shift+down":
+			m.preview.ScrollDown(1)
+			return m, nil
+		case "shift+pgup":
 			m.preview.HalfPageUp()
 			return m, nil
-		case "ctrl+d":
+		case "shift+pgdown":
 			m.preview.HalfPageDown()
 			return m, nil
 		case "enter", "ctrl+l":
@@ -530,7 +559,7 @@ func (m *dialogModel) View() string {
 		if m.colorChoices && hostHexColor.MatchString(option.ID) {
 			// The radio marker is two cells; put the swatch after it, outside
 			// the selected row's reverse video so its color remains visible.
-			label = ansi.Cut(label, 0, 4) + colorSwatch(option.ID) + " " + ansi.Cut(label, 4, listWidth-2)
+			label = ansi.Cut(label, 0, 4) + paletteSwatch(option.ID) + " " + ansi.Cut(label, 4, listWidth-4)
 		}
 		if option.ID == "color" && m.formRows() {
 			_, hex, _ := strings.Cut(option.Label, ": ")
@@ -561,7 +590,7 @@ func (m *dialogModel) View() string {
 	}
 	lines = append(lines, body)
 	labels := []string{"Back"}
-	hint := "Ctrl+H/← back · Ctrl+L/Enter select · ↑/↓ move · Ctrl+U/D details"
+	hint := "Ctrl+H/← back · Ctrl+L/Enter select · ↑/↓ move · Shift+↑/↓ details"
 	if len(menuHotkeys.Hotkeys) > 0 {
 		hint = keyHint(menuHotkeys, "back") + " back · " + keyHint(menuHotkeys, "select") + " select"
 	}
@@ -612,15 +641,21 @@ func (m *dialogModel) View() string {
 		for _, a := range m.footerActions {
 			labels = append(labels, a.Label)
 		}
-		hint = keyHint(menuHotkeys, "back") + " back | " + keyHint(menuHotkeys, "select") + " select"
+		hint = primaryMenuHint(menuHotkeys, "back") + " Back"
 		for _, a := range m.footerActions {
-			if a.ID == "save-host" || a.ID == "save" {
-				hint += " | " + keyHint(menuHotkeys, "menu_save") + " " + a.Label
-				break
+			id := ""
+			if a.ID == "select" {
+				id = "select"
+			}
+			if a.ID == "save" || a.ID == "save-host" {
+				id = "menu_save"
+			}
+			if id != "" {
+				hint += " │ " + primaryMenuHint(menuHotkeys, id) + " " + a.Label
 			}
 		}
 	}
-	if m.layout != (menuLayout{}) {
+	if m.layout != (menuLayout{}) || m.readingScreen {
 		x := 1
 		for _, label := range labels {
 			x += lipgloss.Width(label) + 3
@@ -629,8 +664,27 @@ func (m *dialogModel) View() string {
 		labels = append(labels, "Reset layout")
 	}
 	hint = strings.ReplaceAll(hint, " · ", " | ")
+	if m.readingScreen {
+		hint = buttonPrimaryHint(menuHotkeys, "back") + " Back │ " + buttonPrimaryHint(menuHotkeys, "reset-layout") + " Reset layout"
+	}
 	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), menuFooter(m.height, m.width, labels, hint))
 	return strings.Join(lines, "\n")
+}
+
+func primaryMenuHint(c Config, id string) string {
+	for _, a := range hotkeyActions {
+		if a.id == id {
+			keys := effectiveKeys(c, a)
+			if len(keys) == 0 {
+				return ""
+			}
+			if keys[0] == "enter" {
+				return "↵"
+			}
+			return keys[0]
+		}
+	}
+	return ""
 }
 
 func menuExplanation(text string) string {

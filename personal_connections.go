@@ -441,7 +441,7 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 		if allWritable {
 			mEditor.footerActions = append(mEditor.footerActions, choice{"save-host", "Save host"})
 		}
-		mEditor.footerActions = []choice{{"save", "Save"}}
+		mEditor.footerActions = []choice{{"select", "Edit field"}, {"save", "Save"}}
 		id, back, err := runChoice(mEditor, menuKey(mEditor.title))
 		if err != nil || back {
 			return err

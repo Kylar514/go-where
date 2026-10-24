@@ -83,22 +83,14 @@ func TestRDPAccountChooser(t *testing.T) {
 	c.RDP.Accounts = []RDPAccount{{Name: "Admin", User: "operator"}}
 	hosts := []Host{{Alias: "web", Hostname: "192.0.2.1", Notes: []string{"RDP"}}}
 	m := newPickerModel(hosts, "", "terminal", Origin{}, PickerState{Mode: "rdp"}, c)
-	m.action("account")
-	m.dialog.cursor = 1
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if m.state.Account.User != "operator" || m.key != "enter" {
-		t.Fatal("chosen account not applied to this launch")
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}, Alt: true})
+	if m.key != "connect-as" || m.dialog != nil {
+		t.Fatal("Alt+A did not use unified Connect as")
 	}
-	m = newPickerModel(hosts, "", "terminal", Origin{}, m.state, c)
-	m.action("account")
-	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.key != "" || m.state.Account.User != "" {
-		t.Fatal("cancel or reopening retained a previous account")
-	}
-	m.switchMode("ssh")
-	m.action("account")
-	if m.dialog != nil {
-		t.Fatal("account chooser active outside RDP")
+	for _, b := range m.buttons() {
+		if b.action == "account" {
+			t.Fatal("retired Account button present")
+		}
 	}
 }
 

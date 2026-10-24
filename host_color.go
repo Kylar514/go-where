@@ -23,6 +23,21 @@ func colorSwatch(color string) string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render("■")
 }
 
+func paletteSwatch(color string) string {
+	border := ""
+	if strings.EqualFold(color, "#000000") {
+		border = "#ffffff"
+	}
+	if strings.EqualFold(color, "#ffffff") {
+		border = "#000000"
+	}
+	if border == "" {
+		return " " + colorSwatch(color) + " "
+	}
+	edge := lipgloss.NewStyle().Reverse(false).Foreground(lipgloss.Color(border))
+	return edge.Render("[") + lipgloss.NewStyle().Reverse(false).Foreground(lipgloss.Color(color)).Render("■") + edge.Render("]")
+}
+
 func (m *pickerModel) setHostPreview(text string, h Host) {
 	text = ansi.Wrap(cleanLines(text), max(1, m.preview.Width), "")
 	if h.Color != "" {
@@ -32,7 +47,7 @@ func (m *pickerModel) setHostPreview(text string, h Host) {
 }
 func chooseHostColor(current string) (string, bool, error) {
 	for {
-		options := []choice{{"custom", "Enter hex color…"}, {"", "Clear color"}, {"#ef4444", "Red"}, {"#f59e0b", "Amber"}, {"#22c55e", "Green"}, {"#3b82f6", "Blue"}, {"#a855f7", "Purple"}, {"#06b6d4", "Cyan"}}
+		options := []choice{{"custom", "Custom hex…"}, {"", "Clear color"}, {"#ef4444", "Red"}, {"#f97316", "Orange"}, {"#f59e0b", "Amber"}, {"#eab308", "Yellow"}, {"#84cc16", "Lime"}, {"#22c55e", "Green"}, {"#10b981", "Emerald"}, {"#14b8a6", "Teal"}, {"#06b6d4", "Cyan"}, {"#0ea5e9", "Sky"}, {"#3b82f6", "Blue"}, {"#6366f1", "Indigo"}, {"#8b5cf6", "Violet"}, {"#a855f7", "Purple"}, {"#d946ef", "Magenta"}, {"#ec4899", "Pink"}, {"#ffffff", "White"}, {"#c0c0c0", "Silver"}, {"#808080", "Gray"}, {"#000000", "Black"}}
 		for i := range options {
 			if hostHexColor.MatchString(options[i].ID) {
 				options[i].Label += "  " + options[i].ID
@@ -40,6 +55,7 @@ func chooseHostColor(current string) (string, bool, error) {
 		}
 		menu := newDialog("Host color", options, "Current: "+current+"\n\nColors mark hosts, not access permissions. Dark colors may be difficult to see. Limited-color terminals approximate RGB colors.")
 		menu.singleChoice, menu.current, menu.colorChoices = true, current, true
+		menu.footerActions = []choice{{"select", "Select"}}
 		for i, option := range options {
 			if option.ID == current {
 				menu.cursor = i

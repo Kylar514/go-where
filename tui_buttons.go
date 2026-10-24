@@ -75,11 +75,11 @@ func (m *pickerModel) buttons() []pickerButton {
 		primary = "Review transfer"
 	}
 	if m.height < 16 {
-		return []pickerButton{{"Go", "connect"}, {"Settings", "settings"}, {"Help", "help"}}
+		return []pickerButton{{"Go", "connect"}, {"Edit", "edit-tunnel"}, {"Settings", "settings"}, {"Help", "help"}}
 	}
 	if m.state.Mode == "tunnels" {
 		if len(m.markedTunnels()) > 0 {
-			return []pickerButton{{"Start selected", "start-selected"}, {"Stop selected", "stop-selected"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
+			return []pickerButton{{"Start selected", "start-selected"}, {"Stop selected", "stop-selected"}, {"Edit", "edit-tunnel"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
 		}
 		primary = "Start"
 		if len(m.visible) > 0 {
@@ -88,15 +88,10 @@ func (m *pickerModel) buttons() []pickerButton {
 				primary = "Stop"
 			}
 		}
-		return []pickerButton{{primary, "connect"}, {"Debug", "debug"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
+		return []pickerButton{{primary, "connect"}, {"Debug", "debug"}, {"Edit", "edit-tunnel"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
 	}
 	buttons := []pickerButton{{primary, "connect"}, {"Debug", "debug"}, {"Connect as", "connect-as"}}
-	if m.markCount() > 0 {
-		buttons = append(buttons, pickerButton{"Bulk edit", "bulk-edit"})
-	}
-	if m.state.Mode == "rdp" {
-		buttons = append(buttons, pickerButton{"Account", "account"})
-	}
+	buttons = append(buttons, pickerButton{"Edit", "edit-tunnel"})
 	dest := m.dest
 	if m.state.Mode == "rdp" {
 		dest = rdpDestination(m.config, false)
@@ -241,5 +236,60 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 		used += w
 	}
 	flush()
+	if !rounded {
+		for _, line := range buttonLegend(m.config, buttons, width) {
+			lines = append(lines, tuiDim.Render(line))
+		}
+	}
 	return strings.Join(lines, "\n"), hits, len(lines)
+}
+
+func buttonLegend(c Config, buttons []pickerButton, width int) []string {
+	var lines []string
+	line := ""
+	for _, button := range buttons {
+		key := buttonPrimaryHint(c, button.action)
+		if key == "" {
+			continue
+		}
+		if key == "enter" {
+			key = "↵"
+		}
+		label := button.label
+		if button.action == "target" {
+			label = "Launch location"
+		}
+		entry := key + " " + label
+		if line != "" && lipgloss.Width(line+" │ "+entry) > width {
+			lines = append(lines, line)
+			line = ""
+		}
+		if line != "" {
+			line += " │ "
+		}
+		line += entry
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func buttonPrimaryHint(c Config, action string) string {
+	id := map[string]string{"connect": "launch", "debug": "debug", "connect-as": "profile", "edit-tunnel": "edit", "settings": "settings", "sources": "sources", "help": "help", "target": "target", "account": "account", "reset-layout": "reset_layout", "back": "back", "new-tunnel": "new"}[action]
+	if id == "" {
+		return ""
+	}
+	for _, spec := range hotkeyActions {
+		if spec.id == id {
+			keys := spec.keys
+			if override, ok := c.Hotkeys[id]; ok {
+				keys = override
+			}
+			if len(keys) > 0 {
+				return keys[0]
+			}
+		}
+	}
+	return ""
 }

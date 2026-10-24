@@ -214,10 +214,22 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case " ", "enter", "ctrl+l":
 			return m, m.activate(m.cursor)
-		case "ctrl+u":
+		case "ctrl+u", "pgup":
+			m.cursor = min(len(m.filtered), m.cursor+max(1, (m.height-8)/2))
+			return m, nil
+		case "ctrl+d", "pgdown":
+			m.cursor = max(0, m.cursor-max(1, (m.height-8)/2))
+			return m, nil
+		case "shift+up":
+			m.preview.ScrollUp(1)
+			return m, nil
+		case "shift+down":
+			m.preview.ScrollDown(1)
+			return m, nil
+		case "shift+pgup":
 			m.preview.HalfPageUp()
 			return m, nil
-		case "ctrl+d":
+		case "shift+pgdown":
 			m.preview.HalfPageDown()
 			return m, nil
 		}

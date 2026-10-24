@@ -29,8 +29,8 @@ var hotkeyActions = []hotkeyAction{
 	{"modes", "Mode chooser", "picker", []string{"ctrl+o"}},
 	{"target", "Launch location", "picker", []string{"ctrl+g"}},
 	{"reset_layout", "Reset layout", "picker", []string{"ctrl+z"}},
-	{"account", "RDP account override", "picker", []string{"alt+a"}},
-	{"profile", "Connect as", "picker", []string{"alt+p"}},
+	{"account", "Retired RDP account binding", "picker", nil},
+	{"profile", "Connect as", "picker", []string{"alt+a"}},
 	{"previous_mode", "Previous tab", "picker", []string{"left", "ctrl+h"}},
 	{"next_mode", "Next tab", "picker", []string{"right", "ctrl+l"}},
 	{"ssh_mode", "SSH tab", "picker", []string{"alt+1"}},
@@ -41,10 +41,12 @@ var hotkeyActions = []hotkeyAction{
 	{"rsync_mode", "Rsync tab", "picker", []string{"alt+6"}},
 	{"up", "Move up", "both", []string{"up", "ctrl+k"}},
 	{"down", "Move down", "both", []string{"down", "ctrl+j"}},
-	{"page_up", "Picker page up", "picker", []string{"ctrl+u", "pgup"}},
-	{"page_down", "Picker page down", "picker", []string{"ctrl+d", "pgdown"}},
-	{"details_up", "Picker Details up", "picker", []string{"shift+up"}},
-	{"details_down", "Picker Details down", "picker", []string{"shift+down"}},
+	{"page_up", "List page up", "both", []string{"ctrl+u", "pgup"}},
+	{"page_down", "List page down", "both", []string{"ctrl+d", "pgdown"}},
+	{"details_up", "Details up", "both", []string{"shift+up"}},
+	{"details_down", "Details down", "both", []string{"shift+down"}},
+	{"details_page_up", "Details page up", "both", []string{"shift+pgup"}},
+	{"details_page_down", "Details page down", "both", []string{"shift+pgdown"}},
 	{"mark", "Mark and move up", "picker", []string{"tab"}},
 	{"mark_previous", "Mark and move down", "picker", []string{"shift+tab"}},
 	{"pane", "Launch in pane", "picker", []string{"ctrl+alt+p"}},
@@ -56,8 +58,8 @@ var hotkeyActions = []hotkeyAction{
 	{"back", "Menu back/discard", "menu", []string{"esc", "ctrl+c", "ctrl+h", "left"}},
 	{"select", "Menu select/toggle", "menu", []string{"enter", "ctrl+l"}},
 	{"menu_save", "Save Settings", "menu", []string{"ctrl+s"}},
-	{"menu_details_up", "Menu Details up", "menu", []string{"ctrl+u"}},
-	{"menu_details_down", "Menu Details down", "menu", []string{"ctrl+d"}},
+	{"menu_details_up", "Legacy menu Details up", "menu", nil},
+	{"menu_details_down", "Legacy menu Details down", "menu", nil},
 }
 
 var menuHotkeys Config
@@ -174,6 +176,9 @@ func configuredHelp(c Config) string {
 	var lines []string
 	for _, a := range hotkeyActions {
 		if a.scope != "menu" {
+			if a.id == "account" {
+				continue
+			}
 			lines = append(lines, fmt.Sprintf("%-24s %s", keyHint(c, a.id), a.label))
 		}
 	}

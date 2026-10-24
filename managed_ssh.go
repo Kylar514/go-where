@@ -372,7 +372,7 @@ func selectedRecord(h Host, c Config) (InventorySource, Connection, error) {
 }
 
 func managedDetails(h Host, c Config) string {
-	metadata := "Source: " + h.SourceName + "\nConnection ID: " + h.ConnectionID + "\nTags: " + strings.Join(h.Tags, ", ") + "\nNotes: " + h.Comment + "\n\n"
+	metadata := "Source: " + h.SourceName + "\nTags: " + strings.Join(h.Tags, ", ") + "\nNotes: " + h.Comment + "\n\n"
 	if _, r, e := storedRecord(h, c); e == nil && r.kind() == "ssh" {
 		identity, origin := identityChoice(c, h.SourceID, r)
 		if identity != "" {
@@ -387,7 +387,17 @@ func managedDetails(h Host, c Config) string {
 		if err != nil {
 			return metadata + err.Error()
 		}
-		return metadata + fmt.Sprintf("RDP\nAddress: %s:%d\nUser: %s\nDomain: %s\nTitle: %s\nSSH jump: %s\n", j.Host, j.Port, j.User, j.Domain, j.Title, j.Jump)
+		var folders []string
+		for _, f := range c.RDP.Session.Folders {
+			if f.Enabled {
+				folders = append(folders, f.Name)
+			}
+		}
+		folderText := "None"
+		if len(folders) > 0 {
+			folderText = strings.Join(folders, ", ")
+		}
+		return metadata + fmt.Sprintf("RDP\nAddress: %s:%d\nUser: %s\nDomain: %s\nTitle: %s\nSSH jump: %s\n\nRDP session — global on this device\nDisplay: %s\nClipboard: %s\nShared folders: %s\n", j.Host, j.Port, j.User, j.Domain, j.Title, j.Jump, displayModeLabel(c.RDP.Session.Fullscreen), boolSettingLabel(c.RDP.Session.Clipboard), folderText)
 	}
 	if h.Type == "tunnel" {
 		_, r, err := selectedRecord(h, c)
@@ -417,7 +427,7 @@ func managedDetails(h Host, c Config) string {
 		return metadata + "Managed SSH: " + err.Error()
 	}
 	if s, r, e := storedRecord(h, c); e == nil {
-		metadata += "Profile: " + r.ProfileName + "\nHost ID: " + r.HostID + "\nSource: " + s.Name + "\n\n"
+		metadata += "Profile: " + r.ProfileName + "\nSource: " + s.Name + "\n\n"
 	}
 	return metadata + "Resolved SSH settings (personal SSH config is not read):\n\n" + j.Configuration
 }

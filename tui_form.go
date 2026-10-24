@@ -117,6 +117,11 @@ func (m *dialogModel) visualSlots() []int {
 	lastGroup := -1
 	for i := range m.filtered {
 		group := 0
+		if m.colorChoices && m.query.Value() == "" {
+			if i >= 2 {
+				group = 1 + (i-2)/4
+			}
+		}
 		if (strings.HasPrefix(m.title, "Edit host — ") || strings.HasPrefix(m.title, "Edit hosts — ")) && m.query.Value() == "" {
 			id := m.options[m.filtered[i]].ID
 			if strings.HasPrefix(id, "ssh-") || strings.HasPrefix(id, "rdp-") {
