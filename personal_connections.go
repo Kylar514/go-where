@@ -195,7 +195,8 @@ func selectPersonalIdentities(c Config, kind string, current PersonalConnection)
 	}
 	m := newMultiDialog(strings.ToUpper(kind)+" Identities", items, "Tab / Shift+Tab toggle and move. Choose the identities offered at launch; then choose one default. These choices are personal and never edit the source.")
 	m.allowManual = false
-	if _, err := runTUI(m); err != nil {
+	m.identitySelection = true
+	if _, err := runIdentityChecklist(m); err != nil {
 		return current, false, err
 	}
 	if m.back {
@@ -227,6 +228,7 @@ func selectPersonalIdentities(c Config, kind string, current PersonalConnection)
 // Single and bulk edits share this form. Host fields and personal selections
 // have separate saves; changing a profile never edits its shared definition.
 func editPersonalHosts(c Config, path string, hosts []Host) error {
+	defer menuSession()()
 	if len(hosts) == 0 {
 		return nil
 	}

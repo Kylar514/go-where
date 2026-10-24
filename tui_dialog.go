@@ -798,7 +798,7 @@ func (m *pathModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
 			if msg.Y == footerButtonY(m.height) && msg.X >= 0 && msg.X < 25 {
 				m.done = true
-				m.back = msg.X >= 17
+				m.back = msg.X < 8
 				return m, tea.Quit
 			}
 			i := msg.Y - 1 + max(0, m.cursor-m.inputRows()+1)
@@ -848,7 +848,13 @@ func (m *pathModel) View() string {
 	} else {
 		lines = append(lines, "")
 	}
-	lines = append(lines, strings.Repeat("─", m.width), tuiAccent.Render(fit(m.label, m.width)), m.input.View(), menuFooter(m.height, m.width, []string{"Use typed path", "Back"}, "Enter accept · Tab complete · Esc back"))
+	accept := "Accept"
+	hint := "↵ Accept │ Esc Back"
+	if m.local {
+		accept = "Use path"
+		hint = "↵ Use path │ Tab Complete │ Esc Back"
+	}
+	lines = append(lines, strings.Repeat("─", m.width), tuiAccent.Render(fit(m.label, m.width)), m.input.View(), menuFooter(m.height, m.width, []string{"Back", accept}, hint))
 	return strings.Join(lines, "\n")
 }
 

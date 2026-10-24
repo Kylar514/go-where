@@ -13,7 +13,8 @@ import (
 )
 
 func inventoryPrompt(label, value string) (string, bool, error) {
-	return pathPrompt(label, value, false, "")
+	local := label == "key" || label == "Local folder path" || label == "Identity file" || label == "Database path" || label == "Source path"
+	return pathPrompt(label, value, local, "")
 }
 
 func registerSource(settings string, s InventorySource) error {

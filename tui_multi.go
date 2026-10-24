@@ -20,26 +20,27 @@ type multiItem struct {
 // multiDialog is a searchable checklist. Two pinned rows sit under the list so
 // "Done" and "Type a name manually" stay reachable however long it is.
 type multiDialog struct {
-	itemDetails     map[string]string
-	hostRows        map[string]Host
-	columnLayout    pickerModel
-	columnHits      []hitRegion
-	columnDrag      int
-	columnDragging  bool
-	resize          dialogModel
-	sourceSelection bool
-	allowManual     bool
-	title           string
-	items           []multiItem
-	filtered        []int
-	cursor          int // over filtered items, then Done, then manual entry
-	query           textinput.Model
-	preview         viewport.Model
-	text            string
-	width, height   int
-	done, back      bool
-	action          string // "done" or "manual"
-	restorePreview  *int
+	identitySelection bool
+	itemDetails       map[string]string
+	hostRows          map[string]Host
+	columnLayout      pickerModel
+	columnHits        []hitRegion
+	columnDrag        int
+	columnDragging    bool
+	resize            dialogModel
+	sourceSelection   bool
+	allowManual       bool
+	title             string
+	items             []multiItem
+	filtered          []int
+	cursor            int // over filtered items, then Done, then manual entry
+	query             textinput.Model
+	preview           viewport.Model
+	text              string
+	width, height     int
+	done, back        bool
+	action            string // "done" or "manual"
+	restorePreview    *int
 }
 
 func newMultiDialog(title string, items []multiItem, text string) *multiDialog {
@@ -48,6 +49,31 @@ func newMultiDialog(title string, items []multiItem, text string) *multiDialog {
 	m.allowManual = true
 	m.refilter()
 	return m
+}
+
+func runIdentityChecklist(m *multiDialog) (tea.Model, error) {
+	key := "checklist:" + m.title
+	if p, ok := menuPositions[key]; ok {
+		m.query.SetValue(p.query)
+		m.refilter()
+		m.cursor = min(p.cursor, max(0, len(m.filtered)-1))
+		for i, index := range m.filtered {
+			if m.items[index].ID == p.selected {
+				m.cursor = i
+				break
+			}
+		}
+		m.restorePreview = &p.preview
+	}
+	model, err := runTUI(m)
+	if menuPositions != nil {
+		p := menuPosition{query: m.query.Value(), cursor: m.cursor, preview: m.preview.YOffset}
+		if m.cursor < len(m.filtered) {
+			p.selected = m.items[m.filtered[m.cursor]].ID
+		}
+		menuPositions[key] = p
+	}
+	return model, err
 }
 
 func (m *multiDialog) refilter() {
@@ -65,7 +91,11 @@ func (m *multiDialog) refilter() {
 			m.filtered = append(m.filtered, match.Index)
 		}
 	}
-	m.cursor = min(max(0, m.cursor), len(m.filtered)+m.manualCount())
+	limit := len(m.filtered) + m.manualCount()
+ if m.identitySelection {
+		limit = max(0, len(m.filtered)-1)
+	}
+	m.cursor = min(max(0, m.cursor), limit)
 }
 
 func (m *multiDialog) toggleID(id string) bool {
@@ -131,6 +161,10 @@ func (m *multiDialog) itemRows() int {
 }
 
 func (m *multiDialog) move(delta int) {
+	if m.identitySelection {
+		m.cursor = cycleCursor(m.cursor, -delta, len(m.filtered))
+		return
+	}
 	n := len(m.filtered)
 	position := m.cursor
 	if position < n {
@@ -189,7 +223,7 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch key {
 		case "tab", "shift+tab":
-			if m.cursor < len(m.filtered) {
+  if m.cursor < len(m.filtered) {
 				m.activate(m.cursor)
 				delta := -1
 				if key == "shift+tab" {
@@ -199,6 +233,11 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "ctrl+s":
+			if m.identitySelection {
+				m.action = "done"
+				m.done = true
+				return m, tea.Quit
+			}
 			if m.sourceSelection {
 				m.action = "save"
 				m.done = true
@@ -235,6 +274,16 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case tea.MouseMsg:
+		if m.identitySelection && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == footerButtonY(m.height) {
+			if msg.X >= 8 && msg.X < 17 {
+				return m, m.activate(m.cursor)
+			}
+			if msg.X >= 17 && msg.X < 25 {
+				m.action = "done"
+				m.done = true
+				return m, tea.Quit
+			}
+		}
 		if m.columnDragging {
 			if msg.Action == tea.MouseActionRelease {
 				m.columnDragging = false
@@ -432,7 +481,7 @@ func (m *multiDialog) View() string {
 			plain = renderHostColumns(&host, w, box, m.columnLayout.columnWidths(w))
 		}
 		styled := plain
-		if item.Note != "" && m.hostRows == nil {
+		if item.Note != "" && m.hostRows == nil && !m.identitySelection {
 			plain += "  — " + clean(item.Note)
 			styled += tuiDim.Render("  — " + clean(item.Note))
 		}
@@ -459,7 +508,11 @@ func (m *multiDialog) View() string {
 	if m.sourceSelection {
 		lines = append(lines, "")
 	}
-	lines = append(lines, row(len(m.filtered), done, done))
+	if !m.identitySelection {
+		lines = append(lines, row(len(m.filtered), done, done))
+	} else {
+		lines = append(lines, "")
+	}
 	if m.allowManual {
 		lines = append(lines, row(len(m.filtered)+1, manual, manual))
 	} else {
@@ -477,6 +530,9 @@ func (m *multiDialog) View() string {
 		}
 	}
 	footer := menuFooter(m.height, m.width, []string{"Back"}, keyHint(menuHotkeys, "back")+" discard · "+keyHint(menuHotkeys, "select")+"/Space toggle")
+	if m.identitySelection {
+		footer = menuFooter(m.height, m.width, []string{"Back", "Toggle", "Apply"}, primaryMenuHint(menuHotkeys, "back")+" Back │ "+primaryMenuHint(menuHotkeys, "select")+" Toggle │ "+primaryMenuHint(menuHotkeys, "menu_save")+" Apply")
+	}
 	if m.hostRows != nil {
 		footer = menuFooter(m.height, m.width, []string{"Back"}, keyHint(menuHotkeys, "back")+" Back | Tab/Shift+Tab Mark/move | Space Toggle")
 	}
