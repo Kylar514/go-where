@@ -70,6 +70,7 @@ func chooseTunnelHost(c Config, current *ProfileReference) (*ProfileReference, b
 }
 
 func editTunnelDefinition(c Config, state *PickerState, h *Host, source *ProfileReference) error {
+	defer menuSession()()
 	var s InventorySource
 	var err error
 	var r Connection

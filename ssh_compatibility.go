@@ -118,13 +118,16 @@ func editSSHCompatibility(r *Connection) error {
 	defer menuSession()()
 	draft := *r
 	for {
-		id, back, err := choose("SSH compatibility", []choice{
+		fields := []choice{
 			{"identities", "Identities only: " + identitiesOnlyLabel(draft.IdentitiesOnly)},
 			{"kex", "Additional key exchanges: " + kexLabel(draft.ExtraKexAlgorithms)},
 			{"hostkey", "Additional host-key algorithms: " + kexLabel(draft.ExtraHostKeyAlgorithms)},
 			{"pubkey", "Additional public-key signature algorithms: " + kexLabel(draft.ExtraPubkeyAlgorithms)},
-			{"save", "Apply compatibility to connection draft"},
-		}, "Compatibility exceptions apply only to this SSH record; local overrides take precedence. Add only what this server requires: legacy algorithms can be weak. Additions preserve OpenSSH defaults. Host-key algorithms verify the server; public-key signatures authenticate you. Host-key verification remains enabled. Save the connection afterward to persist.")
+		}
+		m := newDialog("SSH compatibility", fields, "Apply updates the profile draft; save the profile afterward. Enable legacy algorithms only when required.")
+		m.footerActions = []choice{{"select", "Edit field"}, {"save", "Apply"}}
+		m.optionDetails = map[string]string{"identities": "Identities only\nRestricts the identities offered by SSH to configured keys. Default retains OpenSSH behavior.", "kex": "Key exchanges\nAlgorithms negotiating session encryption keys. Additions preserve OpenSSH defaults.", "hostkey": "Host-key algorithms\nSignatures verifying server identity. Host-key verification stays enabled.", "pubkey": "Public-key signatures\nAlgorithms authenticating your login. Enable legacy SHA-1 signatures only when required."}
+		id, back, err := runChoice(m, menuKey(m.title))
 		if err != nil || back {
 			return err
 		}

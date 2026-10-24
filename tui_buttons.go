@@ -75,11 +75,11 @@ func (m *pickerModel) buttons() []pickerButton {
 		primary = "Review transfer"
 	}
 	if m.height < 16 {
-		return []pickerButton{{"Go", "connect"}, {"Edit", "edit-tunnel"}, {"Settings", "settings"}, {"Help", "help"}}
+		return []pickerButton{{"Go", "connect"}, {"New", "new-tunnel"}, {"Edit", "edit-tunnel"}, {"Settings", "settings"}, {"Help", "help"}}
 	}
 	if m.state.Mode == "tunnels" {
 		if len(m.markedTunnels()) > 0 {
-			return []pickerButton{{"Start selected", "start-selected"}, {"Stop selected", "stop-selected"}, {"Edit", "edit-tunnel"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
+			return []pickerButton{{"Start selected", "start-selected"}, {"Stop selected", "stop-selected"}, {"New", "new-tunnel"}, {"Edit", "edit-tunnel"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
 		}
 		primary = "Start"
 		if len(m.visible) > 0 {
@@ -88,10 +88,10 @@ func (m *pickerModel) buttons() []pickerButton {
 				primary = "Stop"
 			}
 		}
-		return []pickerButton{{primary, "connect"}, {"Debug", "debug"}, {"Edit", "edit-tunnel"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
+		return []pickerButton{{primary, "connect"}, {"Debug", "debug"}, {"New", "new-tunnel"}, {"Edit", "edit-tunnel"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
 	}
 	buttons := []pickerButton{{primary, "connect"}, {"Debug", "debug"}, {"Connect as", "connect-as"}}
-	buttons = append(buttons, pickerButton{"Edit", "edit-tunnel"})
+	buttons = append(buttons, pickerButton{"New", "new-tunnel"}, pickerButton{"Edit", "edit-tunnel"})
 	dest := m.dest
 	if m.state.Mode == "rdp" {
 		dest = rdpDestination(m.config, false)

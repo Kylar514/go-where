@@ -55,6 +55,9 @@ func TestClickableControlsAndDoubleClick(t *testing.T) {
 		if lipgloss.Width(view) > size[0] || lipgloss.Height(view) > size[1] {
 			t.Fatalf("overflow %v: %dx%d", size, lipgloss.Width(view), lipgloss.Height(view))
 		}
+		if size[0] < 55 && size[1] < 16 {
+			continue
+		}
 		if size[0] >= 90 && !strings.Contains(view, "│ SSH │ RDP │") {
 			t.Fatal("missing outlined tabs")
 		}
@@ -123,7 +126,7 @@ func TestConnectedStripsHaveSharedBordersAndOpenActiveTab(t *testing.T) {
 	}
 	strip, _, _ = m.controls(m.buttons(), 0)
 	lines = strings.Split(strip, "\n")
-	if len(lines) < 4 || !strings.Contains(lines[1], "│ Connect │ Debug │ Connect as │ Edit │") || strings.Contains(lines[1], "││") || !strings.Contains(lines[0], "┬") || !strings.Contains(lines[2], "┴") {
+	if len(lines) < 4 || !strings.Contains(lines[1], "│ Connect │ Debug │ Connect as │ New │ Edit │") || strings.Contains(lines[1], "││") || !strings.Contains(lines[0], "┬") || !strings.Contains(lines[2], "┴") {
 		t.Fatal("action bar disconnected", strip)
 	}
 	m.state.Mode = "rsync"

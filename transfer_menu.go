@@ -134,6 +134,7 @@ var transferMethodDetails = map[string]string{
 }
 
 func transferMenu(c Config, o Origin, exe string, selected ...string) error {
+	defer menuSession()()
 	previousSave, previousState := saveActiveSettings, settingsSaveState
 	saveActiveSettings, settingsSaveState = nil, nil
 	defer func() { saveActiveSettings, settingsSaveState = previousSave, previousState }()
@@ -171,7 +172,7 @@ func transferMenu(c Config, o Origin, exe string, selected ...string) error {
 			}
 			options := []choice{{"method", "Transfer method: " + startupTabLabel(t.Mode)}, {"source", "Source host: " + label(t.Source)}, {"source-path", "Source location: " + t.SourcePath}, {"destination", "Destination host: " + label(t.Destination)}, {"destination-path", "Destination location: " + t.DestinationPath}, {"preview", previewLabel + ": " + boolSettingLabel(&t.Preview)}}
 			m := newDialog("Transfer", options, "")
-			m.footerActions = []choice{{"review", "Review transfer"}}
+			m.footerActions = []choice{{"select", "Edit field"}, {"review", "Review transfer"}}
 			m.optionDetails = map[string]string{
 				"method":           "Choose SCP (SFTP), Legacy SCP (remote scp and compatible shell), or Rsync. Existing destination files may be overwritten. Rsync does not delete files.",
 				"source":           "Where the files come from. Select This computer or a saved SSH host. Its default SSH connection and your identity are used.",

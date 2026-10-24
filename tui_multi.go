@@ -20,6 +20,7 @@ type multiItem struct {
 // multiDialog is a searchable checklist. Two pinned rows sit under the list so
 // "Done" and "Type a name manually" stay reachable however long it is.
 type multiDialog struct {
+	sourceManagement  bool
 	identitySelection bool
 	itemDetails       map[string]string
 	hostRows          map[string]Host
@@ -92,7 +93,7 @@ func (m *multiDialog) refilter() {
 		}
 	}
 	limit := len(m.filtered) + m.manualCount()
- if m.identitySelection {
+	if m.identitySelection {
 		limit = max(0, len(m.filtered)-1)
 	}
 	m.cursor = min(max(0, m.cursor), limit)
@@ -217,13 +218,23 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.restorePreview = nil
 		}
 	case tea.KeyMsg:
-		key := canonicalKey(menuHotkeys, msg.String(), "menu")
+		scope := "menu"
+		if m.sourceManagement {
+			scope = "sources"
+		}
+		key := canonicalKey(menuHotkeys, msg.String(), scope)
 		if m.width > 0 && m.tooSmall() && key != "esc" {
 			return m, nil
 		}
 		switch key {
+		case "ctrl+n", "ctrl+o", "ctrl+alt+d":
+			if m.sourceManagement {
+				m.action = map[string]string{"ctrl+n": "create", "ctrl+o": "attach", "ctrl+alt+d": "remove"}[key]
+				m.done = true
+				return m, tea.Quit
+			}
 		case "tab", "shift+tab":
-  if m.cursor < len(m.filtered) {
+			if m.cursor < len(m.filtered) {
 				m.activate(m.cursor)
 				delta := -1
 				if key == "shift+tab" {
@@ -274,6 +285,18 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case tea.MouseMsg:
+		if m.sourceManagement && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == footerButtonY(m.height) {
+			x := 17
+			for _, a := range []string{"create", "attach", "remove", "save"} {
+				width := map[string]int{"create": 9, "attach": 15, "remove": 9, "save": 7}[a]
+				if msg.X >= x && msg.X < x+width {
+					m.action = a
+					m.done = true
+					return m, tea.Quit
+				}
+				x += width
+			}
+		}
 		if m.identitySelection && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == footerButtonY(m.height) {
 			if msg.X >= 8 && msg.X < 17 {
 				return m, m.activate(m.cursor)
@@ -538,6 +561,9 @@ func (m *multiDialog) View() string {
 	}
 	if m.sourceSelection {
 		footer = menuFooter(m.height, m.width, []string{"Back", "Toggle", "Save"}, primaryMenuHint(menuHotkeys, "back")+" Back │ "+primaryMenuHint(menuHotkeys, "select")+" Toggle │ "+primaryMenuHint(menuHotkeys, "menu_save")+" Save")
+		if m.sourceManagement {
+			footer = menuFooter(m.height, m.width, []string{"Back", "Toggle", "Create", "Add existing", "Remove", "Save"}, primaryMenuHint(menuHotkeys, "back")+" Back │ "+primaryMenuHint(menuHotkeys, "select")+" Toggle │ "+primaryMenuHint(menuHotkeys, "source_create")+" Create │ "+primaryMenuHint(menuHotkeys, "source_attach")+" Add existing │ "+primaryMenuHint(menuHotkeys, "source_remove")+" Remove │ "+primaryMenuHint(menuHotkeys, "menu_save")+" Save")
+		}
 	}
 	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), footer)
 	return strings.Join(lines, "\n")

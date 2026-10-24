@@ -95,6 +95,8 @@ func newPickerModel(hosts []Host, query, dest string, o Origin, state PickerStat
 			if h, ok := m.tunnelHosts[m.tunnels[id].Name]; ok {
 				identity = hostIdentity(h)
 			}
+		} else if m.state.Mode == "transfers" {
+			identity = transferMethods[id].ID
 		} else {
 			identity = hostIdentity(hosts[id])
 		}
@@ -900,8 +902,8 @@ func (m *pickerModel) View() string {
 		return "Loading go-where…"
 	}
 	m.hits = nil
-	if m.width < 30 || m.height < 12 {
-		return fit("Resize terminal (30×12 minimum) · Esc exits", m.width)
+	if m.width < 30 || m.height < 12 || m.width < 55 && m.height < 16 {
+		return fit("Resize terminal (55×12 or 30×16) · Esc exits", m.width)
 	}
 	width := m.width - 2
 	tabs, tabHits, tabHeight := m.controls(m.tabs(), 0)

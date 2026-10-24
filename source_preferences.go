@@ -44,6 +44,8 @@ func editSourcePreferences(c *Config) error {
 		m.itemDetails[s.ID] = "Source: " + s.Name + "\nType: SQLite\nLocation: " + s.Path + "\nAccess: " + permission + "\nEnabling loads its hosts and profiles at launch."
 	}
 	m.sourceSelection = true
+	m.title = "Sources"
+	m.sourceManagement = c.settingsPath != ""
 	apply := func() {
 		c.DisabledSources = nil
 		c.StartupSource = ""
@@ -58,6 +60,40 @@ func editSourcePreferences(c *Config) error {
 			return err
 		}
 		apply()
+		if m.action == "create" || m.action == "attach" || m.action == "remove" {
+			if m.action == "remove" {
+				if m.cursor >= len(m.filtered) {
+					continue
+				}
+				id := m.items[m.filtered[m.cursor]].ID
+				if id == "ssh-config" {
+					if err := notice("OpenSSH config can be disabled but not unregistered."); err != nil {
+						return err
+					}
+				} else {
+					s, err := findSource(*c, id)
+					if err != nil {
+						return err
+					}
+					if err = removeSourceRegistration(c.settingsPath, *c, &PickerState{}, s.ID); err != nil {
+						return err
+					}
+				}
+			} else {
+				state := PickerState{}
+				if err := addInventorySource(c.settingsPath, *c, &state, m.action); err != nil {
+					return err
+				}
+			}
+			loaded, err := loadConfig(c.settingsPath)
+			if err != nil {
+				return err
+			}
+			c.Sources = loaded.Sources
+			c.DisabledSources = loaded.DisabledSources
+			c.StartupSource = loaded.StartupSource
+			return editSourcePreferences(c)
+		}
 		if m.back || m.action == "done" {
 			return nil
 		}

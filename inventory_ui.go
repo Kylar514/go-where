@@ -179,7 +179,13 @@ func writableSource(c Config, preferred string, settings ...string) (InventorySo
 		if path != "" {
 			options = append(options, choice{"create", "Create new source…"})
 		}
-		id, back, err := choose("Save connection in…", options, "")
+		m := newDialog("Save to", options, "")
+		m.footerActions = []choice{{"select", "Select"}}
+		m.optionDetails = map[string]string{"create": "Create a separate SQLite inventory database. Existing files are never overwritten. Registration requires confirmation."}
+		for _, s := range c.Sources {
+			m.optionDetails[s.ID] = "Source: " + s.Name + "\nDatabase: " + s.Path + "\nAccess: Read-write\nSelected objects save to this inventory."
+		}
+		id, back, err := runChoice(m, menuKey(m.title))
 		if err != nil || back {
 			return InventorySource{}, back, err
 		}

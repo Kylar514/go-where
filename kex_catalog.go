@@ -217,6 +217,7 @@ func chooseAlgorithms(directive, title, intro string, current []string) ([]strin
 			text += "\n\n" + note
 		}
 		m := newMultiDialog(title, items, text)
+		m.identitySelection = true
 		m.query.SetValue(position.query)
 		m.refilter()
 		m.cursor = min(position.cursor, len(m.filtered)+1)

@@ -259,6 +259,13 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			original = data
 			before.DisabledSources = loaded.DisabledSources
 			before.StartupSource = loaded.StartupSource
+			before.Sources = loaded.Sources
+			before.Overrides = loaded.Overrides
+			before.HostOverrides = loaded.HostOverrides
+			before.IdentityAssignments = loaded.IdentityAssignments
+			draft.Overrides = loaded.Overrides
+			draft.HostOverrides = loaded.HostOverrides
+			draft.IdentityAssignments = loaded.IdentityAssignments
 		case "hotkeys":
 			if e = editHotkeys(&draft); e != nil {
 				return false, e

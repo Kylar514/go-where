@@ -268,20 +268,38 @@ func editRDPSessionSettings(c *Config) error {
 		if _, err = fmt.Sscanf(id, "folder:%d", &index); err != nil || index < 0 || index >= len(s.Folders) {
 			continue
 		}
-		f := s.Folders[index]
-		action, b, e := choose("Shared folder — "+f.Name, []choice{{"toggle", "Sharing: " + boolSettingLabel(&f.Enabled)}, {"path", "Local path: " + f.Path}, {"remove", "Remove mapping"}}, "Enabling exposes this directory to the remote session. No directories are created automatically.")
+		if e := editSharedFolder(&s, index); e != nil {
+			return e
+		}
+		c.RDP.Session = s
+	}
+}
+
+func editSharedFolder(s *RDPSessionSettings, index int) error {
+	f := s.Folders[index]
+	for {
+		m := newDialog("Shared folder — "+f.Name, []choice{{"toggle", "Sharing: " + boolSettingLabel(&f.Enabled)}, {"path", "Local path: " + f.Path}, {"remove", "Remove mapping"}}, "Apply updates the session draft; Session Save persists it.")
+		m.footerActions = []choice{{"select", "Edit field"}, {"save", "Apply"}}
+		m.optionDetails = map[string]string{"toggle": "Sharing\nEnabling exposes this directory to every RDP session on this device.", "path": "Local path\nDirectory on this computer redirected to Windows. Tab completes local paths. No directories are created.", "remove": "Remove mapping\nRemoves this redirection after confirmation. Never deletes the directory or files."}
+		action, b, e := runChoice(m, menuKey(m.title))
 		if e != nil {
 			return e
 		}
 		if b {
-			continue
+			return nil
 		}
-		next := append([]RDPFolder(nil), s.Folders...)
 		switch action {
 		case "toggle":
-			next[index].Enabled = !f.Enabled
+			f.Enabled = !f.Enabled
 		case "remove":
-			next = append(next[:index], next[index+1:]...)
+			yes, e := confirmSettingsDelete(f.Name, "RDP folder mappings (files are not deleted)")
+			if e != nil {
+				return e
+			}
+			if yes {
+				s.Folders = append(append([]RDPFolder(nil), s.Folders[:index]...), s.Folders[index+1:]...)
+				return nil
+			}
 		case "path":
 			v, b, e := inventoryPrompt("Local folder path", f.Path)
 			if e != nil {
@@ -290,16 +308,19 @@ func editRDPSessionSettings(c *Config) error {
 			if b {
 				continue
 			}
-			next[index].Path = v
-		}
-		candidate := s
-		candidate.Folders = next
-		if e = candidate.validate(); e != nil {
-			if e = notice(e.Error()); e != nil {
-				return e
+			f.Path = v
+		case "save":
+			candidate := *s
+			candidate.Folders = append([]RDPFolder(nil), s.Folders...)
+			candidate.Folders[index] = f
+			if e = candidate.validate(); e != nil {
+				if e = notice(e.Error()); e != nil {
+					return e
+				}
+				continue
 			}
-			continue
+			*s = candidate
+			return nil
 		}
-		c.RDP.Session = candidate
 	}
 }
