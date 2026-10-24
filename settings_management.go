@@ -20,11 +20,36 @@ func manageInventoryHosts(c Config, path string) error {
 			}
 			for _, h := range hosts {
 				key := s.ID + ":" + h.ID
-				byID[key] = Host{SourceID: s.ID, SourceName: s.Name, InventoryHostID: h.ID, Alias: h.Alias, Hostname: h.Address}
+				byID[key] = Host{SourceID: s.ID, SourceName: s.Name, InventoryHostID: h.ID, Alias: h.Alias, Hostname: h.Address, Tags: h.Tags, Comment: h.Notes}
 				options = append(options, choice{key, h.Alias + " — " + s.Name})
 			}
 		}
-		id, back, err := choose("Hosts", options, "All inventory hosts, including hosts with no SSH or RDP connection.")
+		m := newDialog("Hosts", options, "")
+		m.footerActions = []choice{{"select", "Open host"}}
+		m.optionDetails = map[string]string{"new": "New host\nCreate a host in a writable inventory database. You will choose its save destination. Profiles and identities can be configured in its editor."}
+		connections := map[string][]Connection{}
+		for id, h := range byID {
+			protocols := []string{}
+			s, e := findSource(c, h.SourceID)
+			if e != nil {
+				return e
+			}
+			rows, ok := connections[s.ID]
+			if !ok {
+				rows, e = effectiveSourceConnections(c, s)
+				if e != nil {
+					return e
+				}
+				connections[s.ID] = rows
+			}
+			for _, r := range rows {
+				if r.HostID == h.InventoryHostID && r.Default {
+					protocols = append(protocols, strings.ToUpper(r.kind()))
+				}
+			}
+			m.optionDetails[id] = fmt.Sprintf("Host: %s\nAddress: %s\nSource: %s\nTags: %s\nNotes: %s\nConfigured: %s\nOpen to edit metadata, profiles, identities and routing. Read-only inventory fields stay protected.", h.Alias, h.Hostname, h.SourceName, strings.Join(h.Tags, ", "), h.Comment, strings.Join(protocols, ", "))
+		}
+		id, back, err := runChoice(m, menuKey(m.title))
 		if err != nil || back {
 			return err
 		}

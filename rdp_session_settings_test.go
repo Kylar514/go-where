@@ -7,6 +7,21 @@ import (
 	"testing"
 )
 
+func TestLegacyDriveMigratesWithoutOverridingDisabledMapping(t *testing.T) {
+	r := defaultRDPConfig()
+	r.ClientArgs = []string{"/drive:transfer,/home/example/share", "/dynamic-resolution"}
+	r.Session.Folders = []RDPFolder{{Name: "RDP", Path: "/home/example/share", Enabled: false}}
+	next := explicitRDPSession(r)
+	if len(next.Session.Folders) != 1 || next.Session.Folders[0].Enabled || len(next.ClientArgs) != 1 {
+		t.Fatal(next.Session, next.ClientArgs)
+	}
+	r.Session.Folders = nil
+	next = explicitRDPSession(r)
+	if len(next.Session.Folders) != 1 || !next.Session.Folders[0].Enabled {
+		t.Fatal("legacy enabled share lost")
+	}
+}
+
 func TestRDPSessionFoldersOptInAndValidation(t *testing.T) {
 	on := true
 	s := RDPSessionSettings{Clipboard: &on, Folders: []RDPFolder{{Name: "Files", Path: filepath.Join(t.TempDir(), "missing")}}}

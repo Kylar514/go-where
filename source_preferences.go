@@ -34,7 +34,15 @@ func editSourcePreferences(c *Config) error {
 	for _, s := range c.Sources {
 		items = append(items, multiItem{ID: s.ID, Label: s.Name, Note: "SQLite", Checked: sourceEnabled(*c, s.ID)})
 	}
-	m := newMultiDialog("Select sources", items, "Checked sources load at launch.\n\nSelect all / Deselect all includes hidden filtered sources. No selection is valid. Source files remain untouched.\n\nSave settings persists the entire Settings draft. Back applies checks to the draft without saving.")
+	m := newMultiDialog("Enabled Sources", items, "Checked sources load at launch. Select all / Deselect all includes hidden filtered sources. No selection is valid. Source files remain untouched. Save commits enablement only.")
+	m.itemDetails = map[string]string{"ssh-config": "OpenSSH inventory\nLocation: ~/.ssh/config\nDisabling stops loading this source; it does not edit the file."}
+	for _, s := range c.Sources {
+		permission := "Read-write"
+		if s.ReadOnly {
+			permission = "Read-only"
+		}
+		m.itemDetails[s.ID] = "Source: " + s.Name + "\nType: SQLite\nLocation: " + s.Path + "\nAccess: " + permission + "\nEnabling loads its hosts and profiles at launch."
+	}
 	m.sourceSelection = true
 	apply := func() {
 		c.DisabledSources = nil
@@ -53,8 +61,14 @@ func editSourcePreferences(c *Config) error {
 		if m.back || m.action == "done" {
 			return nil
 		}
-		if m.action == "save" && saveActiveSettings != nil {
-			if err := saveActiveSettings(); err != nil {
+		if m.action == "save" && c.settingsPath != "" {
+			original, before, draft, err := settingsDraft(c.settingsPath)
+			if err != nil {
+				return err
+			}
+			draft.DisabledSources = c.DisabledSources
+			draft.StartupSource = c.StartupSource
+			if err := saveSettingsDraft(c.settingsPath, original, before, draft); err != nil {
 				if err = notice(err.Error()); err != nil {
 					return err
 				}

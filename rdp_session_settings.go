@@ -123,6 +123,23 @@ func explicitRDPSession(r RDPConfig) RDPConfig {
 		}
 		out := []string{}
 		for _, arg := range args {
+			if strings.HasPrefix(strings.ToLower(arg), "/drive:") {
+				name, path, ok := strings.Cut(arg[len("/drive:"):], ",")
+				folder := RDPFolder{Name: name, Path: path, Enabled: true}
+				if ok && (RDPSessionSettings{Folders: []RDPFolder{folder}}).validate() == nil {
+					found := false
+					for _, f := range r.Session.Folders {
+						if f.Name == name || f.Path == path {
+							found = true
+							break
+						}
+					}
+					if !found {
+						r.Session.Folders = append(append([]RDPFolder(nil), r.Session.Folders...), folder)
+					}
+					continue
+				}
+			}
 			switch strings.ToLower(arg) {
 			case "+clipboard", "/clipboard":
 				clipboard = true
@@ -161,9 +178,34 @@ func editRDPSessionSettings(c *Config) error {
 		if len(c.RDP.ClientArgs) > 0 {
 			text += "\n\nPreserved additional client arguments: " + strings.Join(c.RDP.ClientArgs, " ")
 		}
-		id, back, err := choose("RDP Session Settings", options, text)
+		m := newDialog("RDP Session Settings", options, text)
+		m.footerActions = []choice{{"select", "Edit field"}, {"save", "Save"}}
+		m.optionDetails = map[string]string{
+			"clipboard":  "Clipboard\nEnabled shares clipboard data with the remote session. Disabled prevents clipboard redirection. Applies globally on this device.",
+			"fullscreen": "Display mode\nChoose Windowed or Full screen for every RDP session on this device.",
+			"folder-new": "Add shared folder\nRedirect a local directory as a named drive inside Windows. New mappings start Disabled; local paths never enter shared inventory.",
+		}
+		for i, f := range s.Folders {
+			m.optionDetails[fmt.Sprintf("folder:%d", i)] = fmt.Sprintf("Shared folder: %s\nLocal path: %s\nSharing: %s\nEnabling exposes this directory to every RDP session on this device. Missing enabled directories stop launch.", f.Name, f.Path, boolSettingLabel(&f.Enabled))
+		}
+		id, back, err := runChoice(m, menuKey(m.title))
 		if err != nil || back {
 			return err
+		}
+		if id == "save" {
+			if c.settingsPath != "" {
+				original, before, draft, e := settingsDraft(c.settingsPath)
+				if e != nil {
+					return e
+				}
+				draft.RDP.Session = c.RDP.Session
+				draft.RDP.Client = c.RDP.Client
+				draft.RDP.ClientArgs = c.RDP.ClientArgs
+				if e = saveSettingsDraft(c.settingsPath, original, before, draft); e != nil {
+					return e
+				}
+			}
+			continue
 		}
 		if id == "clipboard" || id == "fullscreen" {
 			choices := []choice{{"on", "Enabled"}, {"off", "Disabled"}}

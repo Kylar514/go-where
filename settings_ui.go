@@ -224,6 +224,14 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			if e = editRDPSessionSettings(&draft); e != nil {
 				return false, e
 			}
+			data, loaded, _, e := settingsDraft(path)
+			if e != nil {
+				return false, e
+			}
+			original = data
+			before.RDP.Session = loaded.RDP.Session
+			before.RDP.Client = loaded.RDP.Client
+			before.RDP.ClientArgs = loaded.RDP.ClientArgs
 		case "policies":
 			if e = editSourcePolicies(draft, path); e != nil {
 				return false, e
@@ -244,6 +252,13 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			if e = editSourcePreferences(&draft); e != nil {
 				return false, e
 			}
+			data, loaded, _, e := settingsDraft(path)
+			if e != nil {
+				return false, e
+			}
+			original = data
+			before.DisabledSources = loaded.DisabledSources
+			before.StartupSource = loaded.StartupSource
 		case "hotkeys":
 			if e = editHotkeys(&draft); e != nil {
 				return false, e

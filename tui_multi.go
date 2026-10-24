@@ -20,6 +20,7 @@ type multiItem struct {
 // multiDialog is a searchable checklist. Two pinned rows sit under the list so
 // "Done" and "Type a name manually" stay reachable however long it is.
 type multiDialog struct {
+	itemDetails     map[string]string
 	hostRows        map[string]Host
 	columnLayout    pickerModel
 	columnHits      []hitRegion
@@ -281,6 +282,9 @@ func (m *multiDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if m.sourceSelection && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == footerButtonY(m.height) && msg.X >= 8 && msg.X < 24 {
+			if msg.X < 17 {
+				return m, m.activate(m.cursor)
+			}
 			m.action = "save"
 			m.done = true
 			return m, tea.Quit
@@ -358,7 +362,17 @@ func (m *multiDialog) View() string {
 		header = strings.Join(menuTrail, " › ") + " › " + m.title
 	}
 	lines := []string{tuiAccent.Render(fit(header+" — Select several", w))}
-	if m.hostRows == nil && m.cursor < len(m.filtered) {
+	if m.itemDetails != nil {
+		text := "Select all\nEnable every registered source, including sources hidden by the filter."
+		if m.cursor == len(m.filtered)+1 {
+			text = "Deselect all\nDisable every registered source, including hidden sources."
+		} else if m.cursor < len(m.filtered) {
+			item := m.items[m.filtered[m.cursor]]
+			text = m.itemDetails[item.ID] + "\nEnabled: " + boolSettingLabel(&item.Checked)
+		}
+		m.preview.SetContent(ansi.Wrap(text+"\n\n"+m.text, max(1, m.preview.Width), ""))
+	}
+	if m.itemDetails == nil && m.hostRows == nil && m.cursor < len(m.filtered) {
 		item := m.items[m.filtered[m.cursor]]
 		m.preview.SetContent(ansi.Wrap(item.Label+"\n\n"+item.Note+"\n\n"+m.text, max(1, m.preview.Width), ""))
 	}
@@ -467,7 +481,7 @@ func (m *multiDialog) View() string {
 		footer = menuFooter(m.height, m.width, []string{"Back"}, keyHint(menuHotkeys, "back")+" Back | Tab/Shift+Tab Mark/move | Space Toggle")
 	}
 	if m.sourceSelection {
-		footer = menuFooter(m.height, m.width, []string{"Back", "Save settings"}, keyHint(menuHotkeys, "menu_save")+" save · "+keyHint(menuHotkeys, "select")+"/Space toggle")
+		footer = menuFooter(m.height, m.width, []string{"Back", "Toggle", "Save"}, primaryMenuHint(menuHotkeys, "back")+" Back │ "+primaryMenuHint(menuHotkeys, "select")+" Toggle │ "+primaryMenuHint(menuHotkeys, "menu_save")+" Save")
 	}
 	lines = append(lines, strings.Repeat("─", m.width), m.query.View(), footer)
 	return strings.Join(lines, "\n")
