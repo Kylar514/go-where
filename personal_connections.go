@@ -443,6 +443,17 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 			title = "Edit host — " + storedHosts[targets[0].source+":"+strings.TrimSuffix(targets[0].key, ":"+targets[0].kind)].Alias
 		}
 		mEditor := newDialog(title, options, "Untouched fields stay unchanged.")
+		for _, t := range targets {
+			if t.kind == "ssh" {
+				h := storedHosts[t.source+":"+strings.TrimSuffix(t.key, ":ssh")]
+				bracket := h.BracketColor
+				if edit, ok := fieldEdits["bracket_color"]; ok {
+					bracket = edit
+				}
+				mEditor.colorBrackets = map[string]string{"color": bracket}
+				break
+			}
+		}
 		mEditor.optionDetails = hostEditorDetails(options, len(hosts), allWritable)
 		if allWritable {
 			mEditor.footerActions = append(mEditor.footerActions, choice{"save-host", "Save host"})
@@ -585,21 +596,73 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 					break
 				}
 			}
-			if value == "Mixed" {
+			if value == "Mixed" && id != "color" {
 				value = ""
 			}
 			var v string
 			var b bool
 			var e error
 			if id == "color" {
-				v, b, e = chooseHostColor(value)
+				bracket := ""
+				first := true
+				for _, t := range targets {
+					if t.kind != "ssh" {
+						continue
+					}
+					h := storedHosts[t.source+":"+strings.TrimSuffix(t.key, ":ssh")]
+					if first {
+						bracket = h.BracketColor
+						first = false
+					} else if bracket != h.BracketColor {
+						bracket = "Mixed"
+					}
+				}
+				if edit, ok := fieldEdits["bracket_color"]; ok {
+					bracket = edit
+				}
+				_, _, _, e = editHostColors(value, bracket, func(block, bracket string) error {
+					if newHost {
+						return fmt.Errorf("Save the new host's name and address before saving colors.")
+					}
+					edits := map[string]string{}
+					if block != "Mixed" {
+						edits["color"] = block
+					}
+					if bracket != "Mixed" {
+						edits["bracket_color"] = bracket
+					}
+					for source, s := range sources {
+						var batch []InventoryHost
+						for _, t := range targets {
+							if t.source == source && t.kind == "ssh" {
+								batch = append(batch, storedHosts[source+":"+strings.TrimSuffix(t.key, ":ssh")])
+							}
+						}
+						if err := saveHostFields(s, batch, edits); err != nil {
+							return fmt.Errorf("Save colors in %s: %w. Earlier sources may already be saved; retry to finish.", s.Name, err)
+						}
+						for _, h := range batch {
+							for field, v := range edits {
+								setInventoryHostField(&h, field, v)
+							}
+							storedHosts[source+":"+h.ID] = h
+						}
+					}
+					delete(fieldEdits, "color")
+					delete(fieldEdits, "bracket_color")
+					return nil
+				})
+				if e != nil {
+					return e
+				}
+				continue
 			} else {
 				v, b, e = inventoryPrompt(id, value)
 			}
 			if e != nil {
 				return e
 			}
-			if !b {
+			if !b && v != "Mixed" {
 				fieldEdits[id] = v
 			}
 			continue

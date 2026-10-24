@@ -37,7 +37,7 @@ func TestPickerEditAndDescriptivePrimaryHints(t *testing.T) {
 	view := strings.Split(ansi.Strip(m.View()), "\n")
 	for i, line := range view {
 		if strings.Contains(line, "results ·") {
-			if strings.Contains(line, "ctrl+") || i == 0 || !strings.Contains(view[i-1], "f2") {
+			if strings.Contains(line, "ctrl+") || i == 0 || !strings.Contains(strings.Join(view[:i], "\n"), "f2 Edit") {
 				t.Fatal(view)
 			}
 		}

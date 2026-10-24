@@ -9,12 +9,13 @@ import (
 const hostTableSQL = "CREATE TABLE hosts (id TEXT PRIMARY KEY NOT NULL, alias TEXT UNIQUE NOT NULL, data TEXT NOT NULL)"
 
 type InventoryHost struct {
-	Color   string   `json:"color,omitempty"`
-	ID      string   `json:"id"`
-	Alias   string   `json:"alias"`
-	Address string   `json:"address"`
-	Tags    []string `json:"tags,omitempty"`
-	Notes   string   `json:"notes,omitempty"`
+	BracketColor string   `json:"bracket_color,omitempty"`
+	Color        string   `json:"color,omitempty"`
+	ID           string   `json:"id"`
+	Alias        string   `json:"alias"`
+	Address      string   `json:"address"`
+	Tags         []string `json:"tags,omitempty"`
+	Notes        string   `json:"notes,omitempty"`
 }
 
 type HostOverride struct {
@@ -48,6 +49,9 @@ func readInventoryHosts(db inventoryReader) ([]InventoryHost, error) {
 		if err = validateHostColor(h.Color); err != nil {
 			return nil, err
 		}
+		if err = validateBracketColor(h.BracketColor); err != nil {
+			return nil, err
+		}
 		if h.ID != id || h.Alias != alias || !inventoryName(id) || !inventoryName(alias) || h.Address == "" || clean(h.Address) != h.Address || clean(h.Notes) != h.Notes {
 			return nil, fmt.Errorf("invalid host %s", id)
 		}
@@ -63,6 +67,9 @@ func readInventoryHosts(db inventoryReader) ([]InventoryHost, error) {
 
 func writeInventoryHost(tx *sql.Tx, h InventoryHost) error {
 	if err := validateHostColor(h.Color); err != nil {
+		return err
+	}
+	if err := validateBracketColor(h.BracketColor); err != nil {
 		return err
 	}
 	if !inventoryName(h.ID) || !inventoryName(h.Alias) || h.Address == "" || clean(h.Address) != h.Address || clean(h.Notes) != h.Notes {

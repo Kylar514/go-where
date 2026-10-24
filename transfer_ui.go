@@ -178,6 +178,7 @@ func runChoice(m *dialogModel, key string) (string, bool, error) {
 		m.breadcrumb = strings.Join(menuTrail, " › ")
 	}
 	if position, ok := menuPositions[key]; ok {
+		m.paletteSort = position.paletteSort
 		m.layout = position.layout
 		m.query.SetValue(position.query)
 		m.refilter()
@@ -229,7 +230,7 @@ func runChoice(m *dialogModel, key string) (string, bool, error) {
 		menuTrail = menuTrail[:len(menuTrail)-1]
 	}
 	if menuPositions != nil {
-		position := menuPosition{layout: m.layout, query: m.query.Value(), cursor: m.cursor, preview: m.preview.YOffset}
+		position := menuPosition{paletteSort: m.paletteSort, layout: m.layout, query: m.query.Value(), cursor: m.cursor, preview: m.preview.YOffset}
 		if len(m.filtered) > 0 {
 			position.selected = m.options[m.filtered[m.cursor]].ID
 		}

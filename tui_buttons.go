@@ -57,6 +57,21 @@ func (m *pickerModel) tabs() []pickerButton {
 }
 
 func (m *pickerModel) buttons() []pickerButton {
+	buttons := m.baseButtons()
+	if m.state.Mode == "ssh" || m.state.Mode == "rdp" || m.state.Mode == "tunnels" {
+		label := "Select all"
+		if m.hasModeMarks() {
+			label = "Deselect all"
+		}
+		index := min(1, len(buttons))
+		buttons = append(buttons, pickerButton{})
+		copy(buttons[index+1:], buttons[index:])
+		buttons[index] = pickerButton{label, "select-all"}
+	}
+	return buttons
+}
+
+func (m *pickerModel) baseButtons() []pickerButton {
 	if m.state.Mode == "transfers" {
 		return []pickerButton{{"Select method", "connect"}, {"Settings", "settings"}, {"Help", "help"}}
 	}
@@ -113,7 +128,7 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 		if m.height < 16 {
 			height = 2
 		}
-	} else if m.height >= 16 {
+	} else if m.height >= 20 {
 		height = 3
 	}
 	var lines []string
@@ -276,6 +291,9 @@ func buttonLegend(c Config, buttons []pickerButton, width int) []string {
 }
 
 func buttonPrimaryHint(c Config, action string) string {
+	if action == "select-all" {
+		return primaryMenuHint(c, "select_all")
+	}
 	id := map[string]string{"connect": "launch", "debug": "debug", "connect-as": "profile", "edit-tunnel": "edit", "settings": "settings", "sources": "sources", "help": "help", "target": "target", "account": "account", "reset-layout": "reset_layout", "back": "back", "new-tunnel": "new"}[action]
 	if id == "" {
 		return ""

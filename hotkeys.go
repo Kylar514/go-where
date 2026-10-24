@@ -48,6 +48,7 @@ var hotkeyActions = []hotkeyAction{
 	{"details_page_up", "Details page up", "both", []string{"shift+pgup"}},
 	{"details_page_down", "Details page down", "both", []string{"shift+pgdown"}},
 	{"mark", "Mark and move up", "picker", []string{"tab"}},
+	{"select_all", "Select all / deselect all", "picker", []string{"ctrl+a"}},
 	{"mark_previous", "Mark and move down", "picker", []string{"shift+tab"}},
 	{"pane", "Launch in pane", "picker", []string{"ctrl+alt+p"}},
 	{"window", "Launch in window", "picker", []string{"ctrl+alt+w"}},

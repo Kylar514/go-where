@@ -59,9 +59,18 @@ func (m *dialogModel) resizeMenuMouse(msg tea.MouseMsg) bool {
 			m.layout.listPercent = (list*100 + total/2) / total
 		case "column":
 			m.layout.labelWidth = min(max(4, msg.X-2), max(4, width-12))
+			if m.palette {
+				m.layout.labelWidth = min(max(4, msg.X-4), max(4, width-14))
+			}
 		case "type":
 			a, _ := m.sourceWidths(width)
+			if m.palette {
+				a = m.paletteWidths(width - 2)[0]
+			}
 			m.layout.typeWidth = min(max(4, msg.X-2-a-4), max(4, width-a-12))
+			if m.palette {
+				m.layout.typeWidth = min(max(4, msg.X-4-a-4), max(4, width-a-14))
+			}
 		}
 		m.refreshMenuLayout()
 		return true
@@ -71,6 +80,25 @@ func (m *dialogModel) resizeMenuMouse(msg tea.MouseMsg) bool {
 	}
 	for _, hit := range m.resizeHits {
 		if msg.Y == hit.y && msg.X >= hit.x && msg.X < hit.x+hit.width {
+			if hit.action == "palette-sort" {
+				selected := ""
+				if len(m.filtered) > 0 {
+					selected = m.options[m.filtered[m.cursor]].ID
+				}
+				if m.paletteSort.Column == hit.index {
+					m.paletteSort.Descending = !m.paletteSort.Descending
+				} else {
+					m.paletteSort = pickerSort{Column: hit.index}
+				}
+				m.sortPalette()
+				for i, index := range m.filtered {
+					if m.options[index].ID == selected {
+						m.cursor = i
+						break
+					}
+				}
+				return true
+			}
 			if hit.action == "reset" {
 				m.resetMenuLayout()
 				return true

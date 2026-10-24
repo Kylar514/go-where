@@ -126,7 +126,7 @@ func TestConnectedStripsHaveSharedBordersAndOpenActiveTab(t *testing.T) {
 	}
 	strip, _, _ = m.controls(m.buttons(), 0)
 	lines = strings.Split(strip, "\n")
-	if len(lines) < 4 || !strings.Contains(lines[1], "│ Connect │ Debug │ Connect as │ New │ Edit │") || strings.Contains(lines[1], "││") || !strings.Contains(lines[0], "┬") || !strings.Contains(lines[2], "┴") {
+	if len(lines) < 4 || !strings.Contains(lines[1], "│ Connect │ Select all │ Debug │ Connect as │ New │ Edit │") || strings.Contains(lines[1], "││") || !strings.Contains(lines[0], "┬") || !strings.Contains(lines[2], "┴") {
 		t.Fatal("action bar disconnected", strip)
 	}
 	m.state.Mode = "rsync"

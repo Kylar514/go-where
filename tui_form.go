@@ -139,10 +139,13 @@ func (m *dialogModel) visualSlots() []int {
 		if m.optionGroups != nil && m.query.Value() == "" {
 			group = m.optionGroups[m.options[m.filtered[i]].ID]
 		}
-		if m.colorChoices && m.query.Value() == "" {
+		if m.colorChoices && !m.palette && m.query.Value() == "" {
 			if i >= 2 {
 				group = 1 + (i-2)/4
 			}
+		}
+		if m.palette && m.query.Value() == "" && hostHexColor.MatchString(m.options[m.filtered[i]].ID) {
+			group = 1
 		}
 		if (strings.HasPrefix(m.title, "Edit host — ") || strings.HasPrefix(m.title, "Edit hosts — ")) && m.query.Value() == "" {
 			id := m.options[m.filtered[i]].ID

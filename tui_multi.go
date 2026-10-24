@@ -515,7 +515,7 @@ func (m *multiDialog) View() string {
 			}
 			host := m.hostRows[item.ID]
 			if host.Color != "" {
-				line = ansi.Cut(line, 0, 5) + colorSwatch(host.Color) + ansi.Cut(line, 6, w)
+				line = ansi.Cut(line, 0, 5) + hostColorMarker(host.Color, host.BracketColor) + ansi.Cut(line, 8, w)
 			}
 			lines = append(lines, line)
 		} else {

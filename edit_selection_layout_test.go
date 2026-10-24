@@ -36,7 +36,7 @@ func TestCombinedEditorGroupGapAndColorSwatch(t *testing.T) {
 	d.cursor = 1
 	d.Update(tea.WindowSizeMsg{Width: 110, Height: 24})
 	view := ansi.Strip(d.View())
-	if !strings.Contains(view, ansi.Strip(colorSwatch("#06b6d4"))+" #06b6d4") {
+	if !strings.Contains(view, "[■] #06b6d4") {
 		t.Fatal(view)
 	}
 }

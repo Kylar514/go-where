@@ -5,6 +5,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -16,6 +17,13 @@ func validateHostColor(color string) error {
 	}
 	return nil
 }
+
+func validateBracketColor(color string) error {
+	if color == "same" || color == "none" {
+		return nil
+	}
+	return validateHostColor(color)
+}
 func colorSwatch(color string) string {
 	if color == "" {
 		return " "
@@ -24,15 +32,33 @@ func colorSwatch(color string) string {
 }
 
 func paletteSwatch(color string) string {
-	border := ""
-	if strings.EqualFold(color, "#000000") {
-		border = "#ffffff"
+	border := color
+	if strings.EqualFold(color, "#000000") || strings.EqualFold(color, "#ffffff") {
+		border = contrastingBracket(color)
 	}
-	if strings.EqualFold(color, "#ffffff") {
-		border = "#000000"
+	return hostColorMarker(color, border)
+}
+
+func contrastingBracket(color string) string {
+	n, _ := strconv.ParseUint(strings.TrimPrefix(color, "#"), 16, 24)
+	if 299*(n>>16)+587*((n>>8)&255)+114*(n&255) >= 160000 {
+		return "#000000"
+	}
+	return "#ffffff"
+}
+
+func hostColorMarker(color, border string) string {
+	if color == "" {
+		return "   "
+	}
+	if border == "none" {
+		return " " + lipgloss.NewStyle().Reverse(false).Foreground(lipgloss.Color(color)).Render("■") + " "
+	}
+	if border == "same" {
+		border = color
 	}
 	if border == "" {
-		return " " + colorSwatch(color) + " "
+		border = contrastingBracket(color)
 	}
 	edge := lipgloss.NewStyle().Reverse(false).Foreground(lipgloss.Color(border))
 	return edge.Render("[") + lipgloss.NewStyle().Reverse(false).Foreground(lipgloss.Color(color)).Render("■") + edge.Render("]")
@@ -41,35 +67,50 @@ func paletteSwatch(color string) string {
 func (m *pickerModel) setHostPreview(text string, h Host) {
 	text = ansi.Wrap(cleanLines(text), max(1, m.preview.Width), "")
 	if h.Color != "" {
-		text = strings.Replace(text, "■", colorSwatch(h.Color), 1)
+		text = strings.Replace(text, "[■]", hostColorMarker(h.Color, h.BracketColor), 1)
 	}
 	m.preview.SetContent(text)
 }
 func chooseHostColor(current string) (string, bool, error) {
+	return choosePaletteColor(current, false)
+}
+
+func choosePaletteColor(current string, brackets bool) (string, bool, error) {
+	title := "Block color"
+	if brackets {
+		title = "Bracket color"
+	}
 	for {
-		options := []choice{{"custom", "Custom hex…"}, {"", "Clear color"}, {"#ef4444", "Red"}, {"#f97316", "Orange"}, {"#f59e0b", "Amber"}, {"#eab308", "Yellow"}, {"#84cc16", "Lime"}, {"#22c55e", "Green"}, {"#10b981", "Emerald"}, {"#14b8a6", "Teal"}, {"#06b6d4", "Cyan"}, {"#0ea5e9", "Sky"}, {"#3b82f6", "Blue"}, {"#6366f1", "Indigo"}, {"#8b5cf6", "Violet"}, {"#a855f7", "Purple"}, {"#d946ef", "Magenta"}, {"#ec4899", "Pink"}, {"#ffffff", "White"}, {"#c0c0c0", "Silver"}, {"#808080", "Gray"}, {"#000000", "Black"}}
+		options := paletteOptions(brackets)
 		for i := range options {
 			if hostHexColor.MatchString(options[i].ID) {
 				options[i].Label += "  " + options[i].ID
 			}
 		}
-		menu := newDialog("Host color", options, "Current: "+current+"\n\nColors mark hosts, not access permissions. Dark colors may be difficult to see. Limited-color terminals approximate RGB colors.")
+		menu := newDialog(title, options, "Colors mark hosts, not access permissions. Dark colors may be difficult to see. Limited-color terminals approximate RGB colors.\n\nClick Swatch for hue order, Name for A–Z, or Hex for value order. Click again to reverse.")
 		menu.singleChoice, menu.current, menu.colorChoices = true, current, true
+		menu.palette = true
+		menu.screenID = "palette:" + title
 		menu.footerActions = []choice{{"select", "Select"}}
-		for i, option := range options {
-			if option.ID == current {
+		menu.refilter()
+		for i, index := range menu.filtered {
+			if menu.options[index].ID == current {
 				menu.cursor = i
 				break
 			}
 		}
-		id, back, err := runChoice(menu, menuKey("Host color"))
+		id, back, err := runChoice(menu, menu.screenID)
 		if err != nil || back {
 			return current, back, err
 		}
 		if id != "custom" {
 			return id, false, nil
 		}
-		value, b, err := inventoryPrompt("Color (#RRGGBB)", current)
+		custom := current
+		if !hostHexColor.MatchString(custom) {
+			custom = ""
+		}
+		value, b, err := inventoryPrompt("Color (#RRGGBB)", custom)
 		if err != nil {
 			return current, false, err
 		}

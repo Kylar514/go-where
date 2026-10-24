@@ -70,6 +70,7 @@ func menuSearch() textinput.Model {
 }
 
 type menuPosition struct {
+	paletteSort     pickerSort
 	layout          menuLayout
 	query, selected string
 	cursor, preview int
@@ -101,6 +102,10 @@ func menuKey(title string) string {
 }
 
 type dialogModel struct {
+	colorBrackets  map[string]string
+	palette        bool
+	paletteSort    pickerSort
+	swatchBracket  string
 	columnRows     map[string][]string
 	screenID       string
 	optionGroups   map[string]int
@@ -163,6 +168,7 @@ func (m *dialogModel) refilter() {
 			m.filtered = append(m.filtered, match.Index)
 		}
 	}
+	m.sortPalette()
 	m.cursor = min(max(0, m.cursor), max(0, len(m.filtered)-1))
 }
 
@@ -231,6 +237,10 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "delete":
 			for _, a := range m.footerActions {
+				if a.ID == "clear" {
+					m.result, m.done = "clear", true
+					return m, tea.Quit
+				}
 				if a.ID == "delete" {
 					if len(m.filtered) > 0 {
 						m.result = "delete:" + m.options[m.filtered[m.cursor]].ID
@@ -531,7 +541,7 @@ func (m *dialogModel) View() string {
 	}
 	lines := []string{tuiAccent.Render(fit(header, m.width))}
 	if m.swatch != "" {
-		lines[0] += " " + colorSwatch(m.swatch)
+		lines[0] = fit(lines[0]+" "+hostColorMarker(m.swatch, m.swatchBracket), m.width)
 	}
 	if m.text != "" && m.width < 90 {
 		lines = append(lines, m.preview.View(), "")
@@ -545,6 +555,28 @@ func (m *dialogModel) View() string {
 			listWidth, _ = m.menuPaneWidths()
 		}
 		lines[len(lines)-1] = tuiDim.Render("    " + m.anchorColumns([]string{"Session", "Window", "Command", "Folder"}, listWidth-4))
+	}
+	if m.palette && len(lines) > 1 {
+		lw := m.width - 2
+		if m.width >= 90 {
+			lw, _ = m.menuPaneWidths()
+		}
+		values := []string{"Swatch", "Name", "Hex"}
+		arrow := " ▲"
+		if m.paletteSort.Descending {
+			arrow = " ▼"
+		}
+		values[m.paletteSort.Column] += arrow
+		lines[len(lines)-1] = tuiDim.Render("    " + m.paletteLine(values, lw-4))
+		x := 4
+		for i, w := range m.paletteWidths(lw - 4) {
+			m.resizeHits = append(m.resizeHits, hitRegion{x, m.listStart() - 1, w, "palette-sort", i})
+			x += w
+			if i < 2 {
+				m.resizeHits = append(m.resizeHits, hitRegion{x, m.listStart() - 1, 2, "column", i})
+				x += 4
+			}
+		}
 	}
 	var rows []string
 	listWidth := m.width - 2
@@ -571,6 +603,10 @@ func (m *dialogModel) View() string {
 		if m.columnRows != nil {
 			value = m.anchorColumns(m.columnRows[option.ID], listWidth-4)
 		}
+		if m.palette && hostHexColor.MatchString(option.ID) {
+			name, _, _ := strings.Cut(option.Label, "  #")
+			value = m.paletteLine([]string{"[■]", name, option.ID}, listWidth-4)
+		}
 		if m.singleChoice {
 			marker := "○ "
 			if option.ID == m.current {
@@ -587,7 +623,11 @@ func (m *dialogModel) View() string {
 		if m.colorChoices && hostHexColor.MatchString(option.ID) {
 			// The radio marker is two cells; put the swatch after it, outside
 			// the selected row's reverse video so its color remains visible.
-			label = ansi.Cut(label, 0, 4) + paletteSwatch(option.ID) + " " + ansi.Cut(label, 4, listWidth-4)
+			if m.palette {
+				label = ansi.Cut(label, 0, 4) + paletteSwatch(option.ID) + ansi.Cut(label, 7, listWidth)
+			} else {
+				label = ansi.Cut(label, 0, 4) + paletteSwatch(option.ID) + " " + ansi.Cut(label, 4, listWidth-4)
+			}
 		}
 		if option.ID == "color" && m.formRows() {
 			_, hex, _ := strings.Cut(option.Label, ": ")
@@ -596,7 +636,11 @@ func (m *dialogModel) View() string {
 			}
 			if hostHexColor.MatchString(hex) {
 				x := 2 + m.formWidth(listWidth-2) + lipgloss.Width(menuColumnSeparator())
-				label = ansi.Cut(label, 0, x) + colorSwatch(hex) + " " + ansi.Cut(label, x, listWidth-2)
+				bracket := m.colorBrackets[option.ID]
+				if bracket == "Mixed" {
+					bracket = ""
+				}
+				label = ansi.Cut(label, 0, x) + hostColorMarker(hex, bracket) + " " + ansi.Cut(label, x, listWidth-4)
 			}
 		}
 		rows = append(rows, fit(label, listWidth))
@@ -678,7 +722,7 @@ func (m *dialogModel) View() string {
 			if a.ID == "save" || a.ID == "save-host" {
 				id = "menu_save"
 			}
-			if a.ID == "delete" {
+			if a.ID == "delete" || a.ID == "clear" {
 				id = "delete_host"
 			}
 			if id != "" {

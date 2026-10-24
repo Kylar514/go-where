@@ -32,7 +32,7 @@ func TestExpandedColorPaletteAndSelectorFooter(t *testing.T) {
 				}
 			}
 		}
-		if count != 20 {
+		if count != 25 {
 			t.Fatal(count)
 		}
 		if len(d.footerActions) != 1 || d.footerActions[0].Label != "Select" {

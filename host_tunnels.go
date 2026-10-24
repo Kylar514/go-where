@@ -65,7 +65,7 @@ func hostTunnelEntries(c Config, selected []Host) ([]Host, map[string]string, er
 			if len(role) == 0 {
 				continue
 			}
-			h := Host{SourceID: s.ID, SourceName: s.Name, ConnectionID: r.ID, Alias: r.Alias, Type: "tunnel", Color: byHost[transport.HostID].Color, Comment: r.Notes, Tags: r.Tags}
+			h := Host{SourceID: s.ID, SourceName: s.Name, ConnectionID: r.ID, Alias: r.Alias, Type: "tunnel", Color: byHost[transport.HostID].Color, BracketColor: byHost[transport.HostID].BracketColor, Comment: r.Notes, Tags: r.Tags}
 			result = append(result, h)
 			roles[hostIdentity(h)] = strings.Join(role, "; ")
 		}

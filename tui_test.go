@@ -84,6 +84,12 @@ func scriptTUI(t *testing.T, steps ...string) *[]string {
 					return m, nil
 				}
 			}
+			for _, a := range m.footerActions {
+				if a.ID == id {
+					m.result = id
+					return m, nil
+				}
+			}
 			return m, fmt.Errorf("invalid scripted choice %q for %s", id, m.title)
 		case *multiDialog:
 			// Comma-separated: toggle:ID..., then exactly one of done, manual, back.

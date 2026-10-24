@@ -157,7 +157,9 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 		if selected != nil {
 			options = append(options, choice{"delete", "Delete host and profiles…"})
 		}
-		id, b, e := choose("Host — "+s.Name, options, "Connection selects assigned or available shared profiles. Identity selects your device-local login. Jump selects this host's route.\n\nSave host writes shared fields and routes. Save local settings writes identities and local exceptions separately. Back discards only unsaved changes.")
+		menu := newDialog("Host — "+s.Name, options, "Connection selects assigned or available shared profiles. Identity selects your device-local login. Jump selects this host's route.\n\nSave host writes shared fields and routes. Save local settings writes identities and local exceptions separately. Back discards only unsaved changes.")
+		menu.colorBrackets = map[string]string{"color": h.BracketColor}
+		id, b, e := runChoice(menu, menuKey(menu.title))
 		if e != nil || b {
 			return e
 		}
@@ -232,12 +234,23 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 			}
 			continue
 		case "color":
-			value, back, err := chooseHostColor(h.Color)
+			value, bracket, back, err := editHostColors(h.Color, h.BracketColor, func(block, bracket string) error {
+				if selected == nil {
+					return fmt.Errorf("Save the new host's name and address before saving colors.")
+				}
+				if err := saveHostFields(s, []InventoryHost{beforeHost}, map[string]string{"color": block, "bracket_color": bracket}); err != nil {
+					return err
+				}
+				beforeHost.Color, beforeHost.BracketColor = block, bracket
+				saved = true
+				return nil
+			})
 			if err != nil {
 				return err
 			}
 			if !back {
 				h.Color = value
+				h.BracketColor = bracket
 			}
 		case "ssh", "rdp":
 			if e = editHostProfiles(c, s, h, &profiles, id, state.ConfigPath); e != nil {

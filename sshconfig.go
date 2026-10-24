@@ -10,6 +10,7 @@ import (
 )
 
 type Host struct {
+	BracketColor    string
 	Color           string
 	InventoryHostID string
 	ProfileName     string

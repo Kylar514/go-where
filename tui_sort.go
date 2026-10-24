@@ -36,7 +36,7 @@ func (m *pickerModel) sortHeading(values []string, widths []int) {
 			}
 			padding := 0
 			if m.state.Mode != "tunnels" && i == 0 {
-				padding = 2
+				padding = 4
 			}
 			values[i] = fit(values[i], max(0, w-padding-2)) + arrow
 		}

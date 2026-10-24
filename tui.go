@@ -270,7 +270,7 @@ func hostColumnValues(h *Host) []string {
 }
 
 func renderHostColumnValues(h *Host, width int, mark string, custom []int, values []string) string {
-	values[0] = "  " + values[0]
+	values[0] = "    " + values[0]
 	prefix := "     "
 	if h != nil {
 		prefix = " " + mark + " "
@@ -483,6 +483,8 @@ func (m *pickerModel) action(action string) tea.Cmd {
 		return nil
 	}
 	switch action {
+	case "select-all":
+		m.toggleAllMarks()
 	case "mode:transfers":
 		return m.finish("transfers")
 	case "back":
@@ -704,6 +706,9 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "shift+pgdown":
 			m.preview.HalfPageDown()
+			return m, nil
+		case "ctrl+a":
+			m.toggleAllMarks()
 			return m, nil
 		case "tab", "shift+tab":
 			if m.state.Mode == "tunnels" && len(m.visible) > 0 {
@@ -937,7 +942,7 @@ func (m *pickerModel) View() string {
 		left = append(left, "Transfer method")
 	} else if m.state.Mode == "tunnels" {
 		left = append(left, tuiDim.Render(m.tunnelColumns(-1, listWidth, columns)))
-		x := 7
+		x := 9
 		for i, w := range columns {
 			m.hits = append(m.hits, hitRegion{x, tabHeight, w, "sort-column", m.sortColumn(i, len(columns))})
 			x += w
@@ -995,10 +1000,10 @@ func (m *pickerModel) View() string {
 			} else if m.state.Mode != "tunnels" {
 				h := m.hosts[id]
 				if h.Color != "" {
-					line = ansi.Cut(line, 0, 5) + lipgloss.NewStyle().Reverse(false).Foreground(lipgloss.Color(h.Color)).Render("■") + ansi.Cut(line, 6, listWidth)
+					line = ansi.Cut(line, 0, 5) + hostColorMarker(h.Color, h.BracketColor) + ansi.Cut(line, 8, listWidth)
 				}
 			} else if h, ok := m.tunnelHosts[m.tunnels[id].Name]; ok && h.Color != "" {
-				line = ansi.Cut(line, 0, 5) + lipgloss.NewStyle().Reverse(false).Foreground(lipgloss.Color(h.Color)).Render("■") + ansi.Cut(line, 6, listWidth)
+				line = ansi.Cut(line, 0, 5) + hostColorMarker(h.Color, h.BracketColor) + ansi.Cut(line, 8, listWidth)
 			}
 			m.hits = append(m.hits, hitRegion{0, tabHeight + 1 + m.toolbarGap() + row, listWidth, "row", i})
 		} else if row == m.rows()-1 {

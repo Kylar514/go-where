@@ -380,7 +380,7 @@ func managedDetails(h Host, c Config) string {
 		}
 	}
 	if h.Color != "" {
-		metadata = "■ " + h.Alias + "\n\n" + metadata
+		metadata = "[■] " + h.Alias + "\n\n" + metadata
 	}
 	if h.Type == "rdp" {
 		j, err := hostRDPJob(c, h, "")

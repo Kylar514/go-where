@@ -274,7 +274,7 @@ func assignIdentity(c *Config) error {
 			}
 			for _, r := range rows {
 				h := byID[r.HostID]
-				m.hostRows[r.ID] = Host{Alias: h.Alias, Hostname: h.Address, Tags: h.Tags, Comment: h.Notes, SourceID: s.ID, SourceName: s.Name, Color: h.Color}
+				m.hostRows[r.ID] = Host{Alias: h.Alias, Hostname: h.Address, Tags: h.Tags, Comment: h.Notes, SourceID: s.ID, SourceName: s.Name, Color: h.Color, BracketColor: h.BracketColor}
 			}
 			m.text = "Assign identity: " + name + "\n\nTab marks and moves up; Shift+Tab marks and moves down. Marks survive filtering. Drag column separators to resize.\n\nDone updates local settings only; shared inventory is untouched."
 		}

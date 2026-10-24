@@ -18,6 +18,8 @@ func inventoryHostField(h InventoryHost, field string) string {
 		return h.Notes
 	case "color":
 		return h.Color
+	case "bracket_color":
+		return h.BracketColor
 	}
 	return ""
 }
@@ -32,6 +34,8 @@ func setInventoryHostField(h *InventoryHost, field, value string) {
 		h.Notes = value
 	case "color":
 		h.Color = value
+	case "bracket_color":
+		h.BracketColor = value
 	case "tags":
 		h.Tags = nil
 		for _, tag := range strings.Split(value, ",") {

@@ -16,7 +16,7 @@ func (m *pickerModel) tunnelColumnWidths(width int) []int {
 	if width < 48 {
 		count = 2
 	}
-	budget := max(count*4, width-7-2*(count-1))
+	budget := max(count*4, width-9-2*(count-1))
 	widths := make([]int, count)
 	for i := range widths {
 		widths[i] = budget / count
@@ -83,13 +83,13 @@ func (m *pickerModel) tunnelColumns(index, width int, widths []int) string {
 	if index < 0 {
 		separator = " │"
 	}
-	prefix := "       "
+	prefix := "         "
 	if index >= 0 {
 		mark := "[ ]"
 		if m.marked[m.tunnels[index].Name] {
 			mark = "[✓]"
 		}
-		prefix = " " + mark + "   "
+		prefix = " " + mark + "     "
 	}
 	return fit(prefix+strings.Join(cells, separator), width)
 }

@@ -31,7 +31,7 @@ func TestColorMenuSwatchesAndHostSaveKey(t *testing.T) {
 	d.singleChoice, d.current, d.colorChoices = true, "#ef4444", true
 	d.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
 	v := ansi.Strip(d.View())
-	if !strings.Contains(v, "●  ■  Red") || strings.Contains(v, "■ Clear") {
+	if !strings.Contains(v, "● [■] Red") || strings.Contains(v, "■ Clear") {
 		t.Fatal(v)
 	}
 	d.saveHost = true

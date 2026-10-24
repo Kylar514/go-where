@@ -13,7 +13,7 @@ func hostEditorDetails(options []choice, count int, writable bool) map[string]st
 		"address":     "Address\nIP address or DNS name used to connect to this host.",
 		"tags":        "Tags\nComma-separated labels for organizing, filtering and selecting groups of hosts.",
 		"notes":       "Notes\nDescriptive information about the host. Notes do not affect connection setup.",
-		"color":       "Color\nVisual identifier shown in host lists and Details. Color has no effect on connectivity.",
+		"color":       "Color\nChoose independent block and bracket colors. Color Save writes only colors immediately; other host edits remain unsaved. Delete clears the highlighted color field only. Colors are visual identifiers, not permissions or connectivity settings.",
 		"rdp-session": "RDP session\nChange display, clipboard and shared folders for all RDP sessions on this device—not just the selected hosts. Global session settings save separately; your host draft stays unchanged.",
 	}
 	for _, kind := range []string{"ssh", "rdp"} {
