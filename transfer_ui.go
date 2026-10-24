@@ -7,6 +7,7 @@ import (
 )
 
 type PickerState struct {
+	Sorts              map[string]pickerSort
 	TunnelColumnWidths []int
 	ListPercent        int
 	ColumnWidths       []int
@@ -57,6 +58,7 @@ Ctrl+R         Reload hosts and settings
 Esc / Ctrl+C   Cancel picker
 ? / F1         Open help
 Click          Select rows, tabs and action buttons
+Column header  Sort A–Z; click again for Z–A (SSH / RDP / Tunnels)
 Mouse wheel    Scroll list or preview
 `
 }

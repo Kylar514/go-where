@@ -206,6 +206,7 @@ func (m *pickerModel) refilter() {
 			m.visible = append(m.visible, ids[match.Index])
 		}
 	}
+	m.sortVisible()
 	m.cursor = min(max(0, m.cursor), max(0, len(m.visible)-1))
 	m.scrollToCursor()
 }
@@ -258,12 +259,20 @@ func hostColumnLine(h *Host, width int, mark string) string {
 }
 
 func renderHostColumns(h *Host, width int, mark string, custom []int) string {
-	values := []string{"HOST", "HOSTNAME / IP", "SOURCE", "TAGS", "NOTES"}
-	values[0] = "  HOST"
+	return renderHostColumnValues(h, width, mark, custom, hostColumnValues(h))
+}
+
+func hostColumnValues(h *Host) []string {
+	if h == nil {
+		return []string{"HOST", "HOSTNAME / IP", "SOURCE", "TAGS", "NOTES"}
+	}
+	return []string{h.Alias, h.Hostname, hostSourceLabel(*h), strings.Join(h.Tags, ", "), h.Comment}
+}
+
+func renderHostColumnValues(h *Host, width int, mark string, custom []int, values []string) string {
+	values[0] = "  " + values[0]
 	prefix := "     "
 	if h != nil {
-		values = []string{h.Alias, h.Hostname, hostSourceLabel(*h), strings.Join(h.Tags, ", "), h.Comment}
-		values[0] = "  " + h.Alias
 		prefix = " " + mark + " "
 	}
 	var widths []int
@@ -549,6 +558,10 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusError = true
 		} else {
 			m.tunnelStatus = msg.statuses
+			if s, ok := m.state.Sorts["tunnels"]; m.state.Mode == "tunnels" && ok && s.Column == 5 {
+				m.sortVisible()
+				m.scrollToCursor()
+			}
 			if m.statusError {
 				m.status = ""
 				m.statusError = false
@@ -790,6 +803,10 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					}
 					m.lastClick = ""
+					if hit.action == "sort-column" {
+						m.toggleSort(hit.index)
+						return m, nil
+					}
 					if hit.action == "reset-layout" {
 						m.resetLayout()
 						return m, nil
@@ -922,6 +939,7 @@ func (m *pickerModel) View() string {
 		left = append(left, tuiDim.Render(m.tunnelColumns(-1, listWidth, columns)))
 		x := 7
 		for i, w := range columns {
+			m.hits = append(m.hits, hitRegion{x, tabHeight, w, "sort-column", m.sortColumn(i, len(columns))})
 			x += w
 			if i < len(columns)-1 {
 				m.hits = append(m.hits, hitRegion{x, tabHeight, 2, "resize-column", i})
@@ -929,10 +947,15 @@ func (m *pickerModel) View() string {
 			}
 		}
 	} else {
-		heading := renderHostColumns(nil, listWidth, "", columns)
+		values := hostColumnValues(nil)
+		m.sortHeading(values, columns)
+		heading := renderHostColumnValues(nil, listWidth, "", columns, values)
 		left = append(left, tuiDim.Render(heading))
 		x := 5
 		for i, w := range columns {
+			if m.state.Mode == "ssh" || m.state.Mode == "rdp" {
+				m.hits = append(m.hits, hitRegion{x, tabHeight, w, "sort-column", i})
+			}
 			x += w
 			if i < len(columns)-1 {
 				m.hits = append(m.hits, hitRegion{x, tabHeight, 2, "resize-column", i})

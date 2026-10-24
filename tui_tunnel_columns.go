@@ -36,7 +36,7 @@ func (m *pickerModel) tunnelColumnWidths(width int) []int {
 	return widths
 }
 
-func (m *pickerModel) tunnelColumns(index, width int, widths []int) string {
+func (m *pickerModel) tunnelColumnValues(index int) []string {
 	values := []string{"NAME", "SOURCE", "LOOPBACK", "REMOTE PORT", "LOCAL PORT", "STATUS"}
 	if index >= 0 {
 		c := m.tunnels[index]
@@ -61,10 +61,18 @@ func (m *pickerModel) tunnelColumns(index, width int, widths []int) string {
 		}
 		values = []string{name, source, bind, strconv.Itoa(c.RemotePort), strconv.Itoa(c.LocalPort), m.tunnelLabel(c.Name)}
 	}
+	return values
+}
+
+func (m *pickerModel) tunnelColumns(index, width int, widths []int) string {
+	values := m.tunnelColumnValues(index)
 	if len(widths) == 4 {
 		values = []string{values[0], values[3], values[4], values[5]}
 	} else if len(widths) == 2 {
 		values = []string{values[0], values[5]}
+	}
+	if index < 0 {
+		m.sortHeading(values, widths)
 	}
 	var cells []string
 	for i, w := range widths {
