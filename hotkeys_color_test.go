@@ -49,7 +49,7 @@ func TestHotkeysValidationAndDispatch(t *testing.T) {
 
 func TestHotkeysSettingsSaveAndCancel(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
-	scriptTUI(t, "hotkeys", "settings", "enter\nf2", "back", "save")
+	scriptTUI(t, "hotkeys", "settings", "enter\nf2", "save", "back", "save")
 	if _, err := settingsMenu(path); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestHotkeysSettingsSaveAndCancel(t *testing.T) {
 		t.Fatal(c, err)
 	}
 	before, _ := os.ReadFile(path)
-	scriptTUI(t, "hotkeys", "restore", "back", "cancel")
+	scriptTUI(t, "hotkeys", "restore", "back", "back", "cancel")
 	if _, err = settingsMenu(path); err != nil {
 		t.Fatal(err)
 	}

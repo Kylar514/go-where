@@ -164,23 +164,26 @@ func editLocalIdentities(c *Config) error {
 			}
 		}
 		p := c.Identities[name]
+		originalName := name
 		for {
-			fields := []choice{{"user", "Username: " + p.User}, {"key", "Identity file: " + p.IdentityFile}, {"apply", "Apply to settings draft"}}
+			fields := []choice{{"name", "Name: " + name}, {"user", "Username: " + p.User}, {"key", "Identity file: " + p.IdentityFile}}
 			if !c.databaseBacked {
 				fields = append(fields, choice{"agent", "SSH agent: " + agentChoiceLabel(p.SSHAgent)})
 			}
-			action, b, e := choose("SSH Identity — "+name, fields, "Blank username/key use OpenSSH defaults. Agent selection belongs to the connection profile. Existing stored agent values are preserved.")
+			action, b, e := objectEditor("SSH Identity — "+name, fields, "Save commits this identity and its renamed references only. Other Settings changes stay unsaved. Existing agent values are preserved.")
 			if e != nil {
 				return e
 			}
 			if b {
 				break
 			}
-			if action == "apply" {
-				if c.Identities == nil {
-					c.Identities = map[string]LocalIdentity{}
+			if action == "save" || action == "apply" {
+				if e = saveIdentityEditor(c, "ssh", originalName, name, p, RDPAccount{}); e != nil {
+					if e = notice(e.Error()); e != nil {
+						return e
+					}
+					continue
 				}
-				c.Identities[name] = p
 				break
 			}
 			if action == "agent" {
@@ -194,6 +197,9 @@ func editLocalIdentities(c *Config) error {
 				continue
 			}
 			value := p.User
+			if action == "name" {
+				value = name
+			}
 			if action == "key" {
 				value = p.IdentityFile
 			}
@@ -202,7 +208,9 @@ func editLocalIdentities(c *Config) error {
 				return e
 			}
 			if !b {
-				if action == "key" {
+				if action == "name" {
+					name = v
+				} else if action == "key" {
 					p.IdentityFile = v
 				} else {
 					p.User = v

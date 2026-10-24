@@ -101,6 +101,7 @@ func menuKey(title string) string {
 }
 
 type dialogModel struct {
+	optionGroups   map[string]int
 	readingScreen  bool
 	footerActions  []choice
 	optionDetails  map[string]string

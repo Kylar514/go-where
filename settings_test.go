@@ -116,7 +116,7 @@ func TestSettingsMenuDraftSaveCancelAndStartup(t *testing.T) {
 		t.Fatalf("settings not saved: %+v %v", c, err)
 	}
 	data, _ := os.ReadFile(path)
-	scriptTUI(t, "general", "tunnels", "agents", "profile:legacy", "delete", "delete", "back", "cancel")
+	scriptTUI(t, "general", "tunnels", "agents", "profile:legacy", "value", "enter\nOTHER_AGENT", "back", "back", "cancel")
 	if _, err = settingsMenu(path); err != nil {
 		t.Fatal(err)
 	}

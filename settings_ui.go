@@ -94,6 +94,7 @@ func settingsDraft(path string) (original []byte, before, draft Config, err erro
 		return
 	}
 	draft = cloneAgentSettings(before)
+	draft.settingsPath = path
 	return
 }
 
@@ -216,6 +217,9 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			original = data
 			before.CredentialKeyID = loaded.CredentialKeyID
 			draft.CredentialKeyID = loaded.CredentialKeyID
+			before.RDP.Accounts = loaded.RDP.Accounts
+			before.PersonalConnections = loaded.PersonalConnections
+			before.Overrides = loaded.Overrides
 		case "rdp-session":
 			if e = editRDPSessionSettings(&draft); e != nil {
 				return false, e
@@ -228,6 +232,14 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			if e = editLocalIdentities(&draft); e != nil {
 				return false, e
 			}
+			data, loaded, _, e := settingsDraft(path)
+			if e != nil {
+				return false, e
+			}
+			original = data
+			before.Identities = loaded.Identities
+			before.IdentityAssignments = loaded.IdentityAssignments
+			before.PersonalConnections = loaded.PersonalConnections
 		case "sources":
 			if e = editSourcePreferences(&draft); e != nil {
 				return false, e
@@ -236,6 +248,12 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			if e = editHotkeys(&draft); e != nil {
 				return false, e
 			}
+			data, loaded, _, e := settingsDraft(path)
+			if e != nil {
+				return false, e
+			}
+			original = data
+			before.Hotkeys = loaded.Hotkeys
 		case "general":
 			m := newDialog("Startup tab", []choice{{"ssh", "SSH"}, {"rdp", "RDP"}, {"tunnels", "Tunnels"}, {"transfers", "Transfers"}}, "Choose the tab shown on startup. An explicit command such as go-where rdp takes precedence.")
 			m.singleChoice = true
@@ -260,6 +278,15 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 					return false, e
 				}
 			}
+			data, loaded, _, e := settingsDraft(path)
+			if e != nil {
+				return false, e
+			}
+			original = data
+			before.SSHAgents = loaded.SSHAgents
+			before.Identities = loaded.Identities
+			before.LocalProfiles = loaded.LocalProfiles
+			before.Overrides = loaded.Overrides
 		case "overrides":
 			if e = editConnectionOverrides(&draft); e != nil {
 				if e = notice(e.Error()); e != nil {
@@ -300,9 +327,47 @@ func editAgentProfiles(c *Config) error {
 			}
 			options = append(options, choice{"profile:" + name, name + " — " + endpoint})
 		}
-		id, back, err := choose("SSH agent profiles", options, "System default uses OpenSSH's normal agent discovery (SSH_AUTH_SOCK on Linux). Windows endpoints depend on the installed OpenSSH client. Named profiles are never exported to shared inventory.")
+		m := newDialog("SSH Agents", options, "Device-local signing endpoints, not agent forwarding. Select an agent to edit.")
+		m.footerActions = []choice{{"select", "Edit"}, {"delete", "Delete"}}
+		m.optionDetails = map[string]string{"add": "Create a named local signing-agent endpoint. No key material is stored here."}
+		for _, name := range agentNames(*c) {
+			p := c.SSHAgents[name]
+			m.optionDetails["profile:"+name] = "Agent: " + name + "\nEnvironment variable: " + p.SocketEnv + "\nSocket / pipe: " + p.Socket + "\n\nResolved at launch. Missing endpoints fail rather than falling back. This does not enable agent forwarding."
+		}
+		id, back, err := runChoice(m, menuKey(m.title))
 		if err != nil || back {
 			return err
+		}
+		if strings.HasPrefix(id, "delete:") {
+			name := strings.TrimPrefix(strings.TrimPrefix(id, "delete:"), "profile:")
+			if _, ok := c.SSHAgents[name]; !ok {
+				continue
+			}
+			uses, e := agentReferences(*c, name, "")
+			if e != nil {
+				return e
+			}
+			if len(uses) > 0 {
+				if e = notice("Agent is used by:\n" + strings.Join(uses, "\n") + "\nReassign these before deleting."); e != nil {
+					return e
+				}
+				continue
+			}
+			yes, e := confirmSettingsDelete(name, "Local settings")
+			if e != nil {
+				return e
+			}
+			if yes {
+				next := cloneAgentSettings(*c)
+				if next.Overrides == nil {
+					next.Overrides = map[string]map[string]ConnectionOverride{}
+				}
+				delete(next.SSHAgents, name)
+				if e = saveAgentChanges(c, next); e != nil {
+					return e
+				}
+			}
+			continue
 		}
 		name := strings.TrimPrefix(id, "profile:")
 		creating := id == "add"
@@ -323,6 +388,7 @@ func editAgentProfiles(c *Config) error {
 			}
 		}
 		p := c.SSHAgents[name]
+		originalName := name
 		if creating {
 			p = SSHAgentProfile{SocketEnv: "SSH_AUTH_SOCK_LEGACY"}
 		}
@@ -331,11 +397,8 @@ func editAgentProfiles(c *Config) error {
 			if p.SocketEnv == "" {
 				kind, value = "Socket / Windows pipe", p.Socket
 			}
-			actions := []choice{{"kind", "Endpoint type: " + kind}, {"value", "Endpoint: " + value}, {"save", "Apply profile to settings draft"}}
-			if !creating {
-				actions = append(actions, choice{"delete", "Remove profile from settings draft…"})
-			}
-			action, b, e := choose("Agent profile — "+name, actions, "Only endpoint definitions are stored, not key material. No environment or shell expansion is performed on literal endpoints. Socket environment variables are resolved at launch.")
+			actions := []choice{{"name", "Name: " + name}, {"kind", "Endpoint type: " + kind}, {"value", "Endpoint: " + value}}
+			action, b, e := objectEditor("SSH Agent — "+name, actions, "Save commits only this agent and its renamed references. Environment variables resolve at launch; literal socket/pipe paths are not shell-expanded. No key material is stored.")
 			if e != nil {
 				return e
 			}
@@ -343,6 +406,14 @@ func editAgentProfiles(c *Config) error {
 				break
 			}
 			switch action {
+			case "name":
+				v, b, e := inventoryPrompt("Agent name", name)
+				if e != nil {
+					return e
+				}
+				if !b {
+					name = v
+				}
 			case "kind":
 				current := "env"
 				if p.SocketEnv == "" {
@@ -389,10 +460,26 @@ func editAgentProfiles(c *Config) error {
 					}
 					continue
 				}
-				if c.SSHAgents == nil {
-					c.SSHAgents = map[string]SSHAgentProfile{}
+				next := cloneAgentSettings(*c)
+				if next.SSHAgents == nil {
+					next.SSHAgents = map[string]SSHAgentProfile{}
 				}
-				c.SSHAgents[name] = p
+				if name != originalName {
+					if _, ok := next.SSHAgents[name]; ok {
+						if e = notice("Agent name already exists."); e != nil {
+							return e
+						}
+						continue
+					}
+					if _, e = agentReferences(next, originalName, name); e != nil {
+						return e
+					}
+					delete(next.SSHAgents, originalName)
+				}
+				next.SSHAgents[name] = p
+				if e = saveAgentChanges(c, next); e != nil {
+					return e
+				}
 				action = "done"
 			}
 			if action == "done" {

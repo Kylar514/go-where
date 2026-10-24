@@ -57,7 +57,7 @@ func TestIdentityEditorAndSourceAssignment(t *testing.T) {
 	s := testInventory(t, "Identity UI")
 	c := defaultConfig()
 	c.Sources = []InventorySource{s}
-	scriptTUI(t, "add", "enter\nwork", "user", "enter\noperator", "apply", "assign", s.ID, "source", "work", "back")
+	scriptTUI(t, "add", "enter\nwork", "user", "enter\noperator", "save", "assign", s.ID, "source", "work", "back")
 	if err := editLocalIdentities(&c); err != nil {
 		t.Fatal(err)
 	}

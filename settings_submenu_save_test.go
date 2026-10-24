@@ -27,7 +27,7 @@ func TestHotkeysSubmenuSavesWithoutLeaving(t *testing.T) {
 					t.Fatal(m.title)
 				}
 				m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
-				if m.result != "__save_settings" {
+				if m.result != "save" {
 					t.Fatal("submenu shortcut did not request save")
 				}
 			case 4:
@@ -35,7 +35,7 @@ func TestHotkeysSubmenuSavesWithoutLeaving(t *testing.T) {
 				if err != nil || keyHint(c, "settings") != "f2" {
 					t.Fatal("submenu save not persisted", c, err)
 				}
-				if m.title != "Hotkeys" || settingsSaveState() != "Saved" {
+				if m.title != "Hotkeys" {
 					t.Fatal("save left submenu")
 				}
 				m.back = true

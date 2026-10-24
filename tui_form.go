@@ -117,6 +117,9 @@ func (m *dialogModel) visualSlots() []int {
 	lastGroup := -1
 	for i := range m.filtered {
 		group := 0
+		if m.optionGroups != nil && m.query.Value() == "" {
+			group = m.optionGroups[m.options[m.filtered[i]].ID]
+		}
 		if m.colorChoices && m.query.Value() == "" {
 			if i >= 2 {
 				group = 1 + (i-2)/4

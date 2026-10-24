@@ -22,7 +22,7 @@ var hotkeyActions = []hotkeyAction{
 	{"settings", "Settings", "picker", []string{"ctrl+s"}},
 	{"sources", "Sources", "picker", []string{"ctrl+b"}},
 	{"new", "New host/tunnel", "picker", []string{"ctrl+n"}},
-	{"edit", "Edit highlighted entry", "picker", []string{"ctrl+e"}},
+	{"edit", "Edit host/selection", "picker", []string{"ctrl+e"}},
 	{"launch", "Launch/review/toggle", "picker", []string{"enter"}},
 	{"reload", "Reload", "picker", []string{"ctrl+r"}},
 	{"help", "Help", "picker", []string{"?", "f1"}},
@@ -186,20 +186,56 @@ func configuredHelp(c Config) string {
 }
 
 func editHotkeys(c *Config) error {
+	before := maps.Clone(c.Hotkeys)
 	for {
 		options := []choice{{"restore", "Restore all defaults"}}
-		for _, a := range hotkeyActions {
-			options = append(options, choice{a.id, a.label + ": " + keyHint(*c, a.id)})
+		details := map[string]string{"restore": "Restore default bindings after confirmation. No new shortcuts are introduced."}
+		groups := map[string]int{}
+		for group, scope := range []string{"picker", "both", "menu", "sources"} {
+			for _, a := range hotkeyActions {
+				if a.scope != scope || a.id == "account" || strings.HasPrefix(a.id, "menu_details_") {
+					continue
+				}
+				options = append(options, choice{a.id, a.label + ": " + keyHint(*c, a.id)})
+				groups[a.id] = group + 1
+				details[a.id] = a.label + "\n\nScope: " + a.scope + "\nCurrent: " + keyHint(*c, a.id) + "\nDefault: " + strings.Join(a.keys, ", ") + "\n\nEnter comma-separated bindings. Blank disables this action; its mouse control remains available. Conflicts are rejected."
+			}
 		}
-		id, back, err := choose("Hotkeys", options, "Enter comma-separated bindings, e.g. ctrl+s, f2.\n\nPicker and menu bindings have separate scopes. Text-entry editing and checklist Space remain native.\n\nBlank disables an action; mouse controls remain available. Changes apply after Settings Save.")
+		m := newDialog("Hotkeys", options, "")
+		m.optionDetails = details
+		m.optionGroups = groups
+		m.footerActions = []choice{{"select", "Edit binding"}, {"save", "Save"}}
+		id, back, err := runChoice(m, menuKey(m.title))
 		if err != nil || back {
+			c.Hotkeys = before
 			return err
 		}
+		if id == "save" {
+			if c.settingsPath != "" {
+				original, old, draft, e := settingsDraft(c.settingsPath)
+				if e != nil {
+					return e
+				}
+				draft.Hotkeys = c.Hotkeys
+				if e = saveSettingsDraft(c.settingsPath, original, old, draft); e != nil {
+					return e
+				}
+			}
+			before = maps.Clone(c.Hotkeys)
+			continue
+		}
 		if id == "restore" {
+			_, b, e := choose("Restore hotkeys?", []choice{{"confirm", "Restore defaults"}}, "All customized bindings will be replaced. Save is still required.")
+			if e != nil {
+				return e
+			}
+			if b {
+				continue
+			}
 			c.Hotkeys = nil
 			continue
 		}
-		value, b, err := inventoryPrompt("Bindings (comma-separated)", keyHint(*c, id))
+		value, b, err := inventoryPrompt("Bindings (comma-separated)", strings.ReplaceAll(keyHint(*c, id), "/", ", "))
 		if err != nil {
 			return err
 		}

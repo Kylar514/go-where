@@ -154,8 +154,7 @@ func manageConnectionProfiles(c Config, path, kind string) error {
 				}
 				options = append(options, choice{"domain", "Domain: " + domain})
 			}
-			options = append(options, choice{"save", "Save profile"})
-			action, b, e := choose(strings.ToUpper(kind)+" Profile — "+p.ProfileName, options, "Saved to "+s.Name+". Existing legacy login settings are preserved; identities are managed separately.")
+			action, b, e := objectEditor(strings.ToUpper(kind)+" Profile — "+p.ProfileName, options, "Save writes this profile to "+s.Name+" only. Database: "+s.Path+". Existing legacy login fields are preserved; identities are managed separately.")
 			if e != nil {
 				return e
 			}
@@ -298,11 +297,11 @@ func editRDPIdentities(c *Config) error {
 			if a.Password != nil {
 				passwordState = "Saved (encrypted)"
 			}
-			options := []choice{{"user", "Username: " + a.User}, {"password", "Password: " + passwordState}, {"apply", "Apply"}}
+			options := []choice{{"name", "Name: " + a.Name}, {"user", "Username: " + a.User}, {"password", "Password: " + passwordState}}
 			if a.Password != nil {
 				options = append(options, choice{"show-password", "Show password…"}, choice{"clear-password", "Clear password"})
 			}
-			action, b, e := choose("RDP Identity — "+a.Name, options, "Passwords stay encrypted in the private database. Show reveals only in a temporary masked-input screen. Apply updates the draft; Settings Save persists it. Existing domain settings are preserved.")
+			action, b, e := objectEditor("RDP Identity — "+a.Name, options, "Save commits this identity and renamed references only. Other Settings changes stay unsaved. Passwords stay encrypted; existing domain settings are preserved.")
 			if e != nil {
 				return e
 			}
@@ -378,22 +377,27 @@ func editRDPIdentities(c *Config) error {
 				m.input.SetValue("")
 				continue
 			}
-			if action == "apply" {
-				next := append([]RDPAccount(nil), c.RDP.Accounts...)
-				if index < 0 {
-					next = append(next, a)
-				} else {
-					next[index] = a
+			if action == "name" {
+				value, b, e := inventoryPrompt("Identity name", a.Name)
+				if e != nil {
+					return e
 				}
-				r := c.RDP
-				r.Accounts = next
-				if e = r.validate(); e != nil {
+				if !b {
+					a.Name = value
+				}
+				continue
+			}
+			if action == "save" || action == "apply" {
+				originalName := ""
+				if index >= 0 {
+					originalName = c.RDP.Accounts[index].Name
+				}
+				if e = saveIdentityEditor(c, "rdp", originalName, a.Name, LocalIdentity{}, a); e != nil {
 					if e = notice(e.Error()); e != nil {
 						return e
 					}
 					continue
 				}
-				c.RDP = r
 				break
 			}
 			v, b, e := inventoryPrompt("Username", a.User)
