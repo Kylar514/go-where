@@ -200,6 +200,11 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			original = data
 			before.LocalProfiles = loaded.LocalProfiles
 			draft.LocalProfiles = loaded.LocalProfiles
+			before.IdentityAssignments = loaded.IdentityAssignments
+			draft.IdentityAssignments = loaded.IdentityAssignments
+			before.PersonalConnections = loaded.PersonalConnections
+			// Profile management saves independently; keep other settings drafts.
+			draft.PersonalConnections = loaded.PersonalConnections
 		case "rdp-identities":
 			if e = editRDPIdentities(&draft); e != nil {
 				return false, e

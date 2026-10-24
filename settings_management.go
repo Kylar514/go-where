@@ -83,9 +83,39 @@ func manageConnectionProfiles(c Config, path, kind string) error {
 				options = append(options, choice{key, p.ProfileName + " — " + s.Name})
 			}
 		}
-		id, back, err := choose(strings.ToUpper(kind)+" Profiles", options, "Connection settings from all enabled sources. Editing a shared profile affects every host using it.")
+		m := newDialog(strings.ToUpper(kind)+" Profiles", options, "Connection settings from all enabled sources. Delete saves to its database immediately; referenced and read-only profiles are protected.")
+		m.footerActions = []choice{{"select", "Edit"}, {"delete", "Delete"}}
+		id, back, err := runChoice(m, menuKey(m.title))
 		if err != nil || back {
 			return err
+		}
+		if strings.HasPrefix(id, "delete:") {
+			key := strings.TrimPrefix(id, "delete:")
+			entry, ok := entries[key]
+			if !ok {
+				continue
+			}
+			yes, e := reviewDeleteProfile(c, path, entry.s, entry.p)
+			if e != nil {
+				if e = notice(e.Error()); e != nil {
+					return e
+				}
+				continue
+			}
+			if !yes {
+				continue
+			}
+			loaded, e := loadConfig(path)
+			if e != nil {
+				return e
+			}
+			c.PersonalConnections = loaded.PersonalConnections
+			c.LocalProfiles = loaded.LocalProfiles
+			c.IdentityAssignments = loaded.IdentityAssignments
+			if entry.s.ID == "local" {
+				delete(c.LocalProfiles, entry.p.ID)
+			}
+			continue
 		}
 		var s InventorySource
 		var p Connection
@@ -214,9 +244,36 @@ func editRDPIdentities(c *Config) error {
 		for _, a := range c.RDP.Accounts {
 			options = append(options, choice{a.Name, a.Name})
 		}
-		id, back, err := choose("RDP Identities", options, "Device-local usernames and encrypted passwords. The encryption key stays in your OS credential store; no master password.")
+		m := newDialog("RDP Identities", options, "Device-local usernames and encrypted passwords. Delete removes an unused identity from the draft; Settings Save persists it. The shared encryption key is retained.")
+		m.footerActions = []choice{{"select", "Edit"}, {"delete", "Delete"}}
+		id, back, err := runChoice(m, menuKey(m.title))
 		if err != nil || back {
 			return err
+		}
+		if strings.HasPrefix(id, "delete:") {
+			name := strings.TrimPrefix(id, "delete:")
+			if name == "new" {
+				continue
+			}
+			if identityReferenced(*c, "rdp", name) {
+				if err = notice("Identity is referenced; remove or change its assignments first."); err != nil {
+					return err
+				}
+				continue
+			}
+			yes, e := confirmSettingsDelete(name, "Local settings draft")
+			if e != nil {
+				return e
+			}
+			if yes {
+				for i, a := range c.RDP.Accounts {
+					if a.Name == name {
+						c.RDP.Accounts = append(c.RDP.Accounts[:i:i], c.RDP.Accounts[i+1:]...)
+						break
+					}
+				}
+			}
+			continue
 		}
 		index := -1
 		a := RDPAccount{}

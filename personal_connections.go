@@ -643,7 +643,15 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 				if p.Domain != nil {
 					domain = *p.Domain
 				}
-				m.optionDetails[key] = fmt.Sprintf("Profile: %s\nSource: %s\nPort: %d\nDomain: %s\nAgent: %s\nCompatibility: KEX %s; host keys %s; public keys %s\nRouting: existing host route retained", p.ProfileName, ref.Source, p.Port, domain, agentChoiceLabel(p.SSHAgent), strings.Join(p.ExtraKexAlgorithms, ", "), strings.Join(p.ExtraHostKeyAlgorithms, ", "), strings.Join(p.ExtraPubkeyAlgorithms, ", "))
+				sourceName := "Local"
+				if ref.Source != "local" {
+					if s, e := findSource(draft, ref.Source); e == nil {
+						sourceName = s.Name
+					} else {
+						sourceName = "Unavailable source"
+					}
+				}
+				m.optionDetails[key] = fmt.Sprintf("Profile: %s\nSource: %s\nPort: %d\nDomain: %s\nAgent: %s\nCompatibility: KEX %s; host keys %s; public keys %s\nRouting: existing host route retained", p.ProfileName, sourceName, p.Port, domain, agentChoiceLabel(p.SSHAgent), strings.Join(p.ExtraKexAlgorithms, ", "), strings.Join(p.ExtraHostKeyAlgorithms, ", "), strings.Join(p.ExtraPubkeyAlgorithms, ", "))
 			}
 			selected, b, e := runChoice(m, menuKey(m.title))
 			if e != nil {

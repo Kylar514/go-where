@@ -108,9 +108,31 @@ func editLocalIdentities(c *Config) error {
 		for _, name := range names {
 			options = append(options, choice{"identity:" + name, name + ": " + c.Identities[name].User})
 		}
-		id, back, err := choose("SSH Identities", options, "Blank username/key use OpenSSH defaults. Select host identities in the host editor. Existing identity agent settings are retained for compatibility; new agent selection belongs to connection profiles.")
+		m := newDialog("SSH Identities", options, "Device-local identities. Delete removes an unused identity from the draft; Settings Save persists it. Referenced identities cannot be deleted.")
+		m.footerActions = []choice{{"select", "Edit"}, {"delete", "Delete"}}
+		id, back, err := runChoice(m, menuKey(m.title))
 		if err != nil || back {
 			return err
+		}
+		if strings.HasPrefix(id, "delete:") {
+			name := strings.TrimPrefix(strings.TrimPrefix(id, "delete:"), "identity:")
+			if _, ok := c.Identities[name]; !ok {
+				continue
+			}
+			if identityReferenced(*c, "ssh", name) {
+				if err = notice("Identity is referenced; remove or change its assignments first."); err != nil {
+					return err
+				}
+				continue
+			}
+			yes, e := confirmSettingsDelete(name, "Local settings draft")
+			if e != nil {
+				return e
+			}
+			if yes {
+				delete(c.Identities, name)
+			}
+			continue
 		}
 		if id == "assign" {
 			if err = assignIdentity(c); err != nil {

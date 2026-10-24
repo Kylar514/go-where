@@ -227,6 +227,16 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resetMenuLayout()
 			return m, nil
 		case "delete":
+			for _, a := range m.footerActions {
+				if a.ID == "delete" {
+					if len(m.filtered) > 0 {
+						m.result = "delete:" + m.options[m.filtered[m.cursor]].ID
+						m.done = true
+						return m, tea.Quit
+					}
+					return m, nil
+				}
+			}
 			if m.deleteHost {
 				m.result, m.done = "delete", true
 				return m, tea.Quit
@@ -328,7 +338,12 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for _, a := range m.footerActions {
 				width := ansi.StringWidth(a.Label) + 3
 				if msg.X >= x && msg.X < x+width {
-					if a.ID == "select" {
+					if a.ID == "delete" {
+						if len(m.filtered) == 0 {
+							return m, nil
+						}
+						m.result = "delete:" + m.options[m.filtered[m.cursor]].ID
+					} else if a.ID == "select" {
 						if len(m.filtered) == 0 {
 							return m, nil
 						}
@@ -650,6 +665,9 @@ func (m *dialogModel) View() string {
 			if a.ID == "save" || a.ID == "save-host" {
 				id = "menu_save"
 			}
+			if a.ID == "delete" {
+				id = "delete_host"
+			}
 			if id != "" {
 				hint += " │ " + primaryMenuHint(menuHotkeys, id) + " " + a.Label
 			}
@@ -662,6 +680,9 @@ func (m *dialogModel) View() string {
 		}
 		m.resizeHits = append(m.resizeHits, hitRegion{x - 1, m.footerY(), 14, "reset", 0})
 		labels = append(labels, "Reset layout")
+	}
+	if m.title == "Settings" {
+		hint = primaryMenuHint(menuHotkeys, "back") + " Back │ " + primaryMenuHint(menuHotkeys, "menu_save") + " Save"
 	}
 	hint = strings.ReplaceAll(hint, " · ", " | ")
 	if m.readingScreen {
