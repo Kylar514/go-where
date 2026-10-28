@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -41,7 +40,8 @@ func attachInventory(name, path string) (InventorySource, error) {
 		return s, err
 	}
 	s.Path = p
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(p), RawQuery: "mode=ro"}
+	u := sqliteFileURL(p)
+	u.RawQuery = "mode=ro"
 	db, err := sql.Open("sqlite", u.String())
 	if err != nil {
 		return s, err

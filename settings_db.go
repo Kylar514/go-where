@@ -28,7 +28,7 @@ func openSettingsDB(path string) (*sql.DB, error) {
 	if err = f.Close(); err != nil {
 		return nil, err
 	}
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
+	u := sqliteFileURL(path)
 	u.RawQuery = url.Values{"mode": {"rw"}, "_pragma": {"busy_timeout(5000)"}}.Encode()
 	db, err := sql.Open("sqlite", u.String())
 	if err != nil {

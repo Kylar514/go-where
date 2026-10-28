@@ -57,6 +57,13 @@ func identitiesOnlyLabel(v *bool) string {
 	return "no"
 }
 
+func effectiveMACAlgorithms(c Config, sourceID string, r Connection) []string {
+	if names := c.Overrides[sourceID][r.ID].ExtraMACAlgorithms; names != nil {
+		return *names
+	}
+	return r.ExtraMACAlgorithms
+}
+
 func kexLabel(names []string) string {
 	if len(names) == 0 {
 		return "none (OpenSSH defaults)"
@@ -91,7 +98,7 @@ func compatibilityDetails(c Config, sourceID string, r Connection) string {
 		}
 		return "connection default"
 	}
-	return details + fmt.Sprintf("Additional host-key algorithms: %s (%s)\nAdditional public-key signature algorithms: %s (%s)\n", kexLabel(host), origin(r.ExtraHostKeyAlgorithms, o.ExtraHostKeyAlgorithms), kexLabel(pubkey), origin(r.ExtraPubkeyAlgorithms, o.ExtraPubkeyAlgorithms))
+	return details + fmt.Sprintf("Additional host-key algorithms: %s (%s)\nAdditional public-key signature algorithms: %s (%s)\nAdditional MAC algorithms: %s (%s)\n", kexLabel(host), origin(r.ExtraHostKeyAlgorithms, o.ExtraHostKeyAlgorithms), kexLabel(pubkey), origin(r.ExtraPubkeyAlgorithms, o.ExtraPubkeyAlgorithms), kexLabel(effectiveMACAlgorithms(c, sourceID, r)), origin(r.ExtraMACAlgorithms, o.ExtraMACAlgorithms))
 }
 
 func chooseIdentitiesOnly(inherit bool, current *bool) (*bool, bool, error) {
@@ -123,10 +130,12 @@ func editSSHCompatibility(r *Connection) error {
 			{"kex", "Additional key exchanges: " + kexLabel(draft.ExtraKexAlgorithms)},
 			{"hostkey", "Additional host-key algorithms: " + kexLabel(draft.ExtraHostKeyAlgorithms)},
 			{"pubkey", "Additional public-key signature algorithms: " + kexLabel(draft.ExtraPubkeyAlgorithms)},
+			{"macs", "MAC algorithms: " + kexLabel(draft.ExtraMACAlgorithms)},
 		}
 		m := newDialog("SSH compatibility", fields, "Apply updates the profile draft; save the profile afterward. Enable legacy algorithms only when required.")
 		m.footerActions = []choice{{"select", "Edit field"}, {"save", "Apply"}}
 		m.optionDetails = map[string]string{"identities": "Identities only\nRestricts the identities offered by SSH to configured keys. Default retains OpenSSH behavior.", "kex": "Key exchanges\nAlgorithms negotiating session encryption keys. Additions preserve OpenSSH defaults.", "hostkey": "Host-key algorithms\nSignatures verifying server identity. Host-key verification stays enabled.", "pubkey": "Public-key signatures\nAlgorithms authenticating your login. Enable legacy SHA-1 signatures only when required."}
+		m.optionDetails["macs"] = "MAC algorithms\nProtect SSH message integrity. Additive exceptions preserve client defaults. Enable hmac-sha1 only for servers requiring legacy compatibility; this is separate from key exchange."
 		id, back, err := runChoice(m, menuKey(m.title))
 		if err != nil || back {
 			return err
@@ -148,14 +157,18 @@ func editSSHCompatibility(r *Connection) error {
 			if !b {
 				draft.ExtraKexAlgorithms = v
 			}
-		case "hostkey", "pubkey":
+		case "hostkey", "pubkey", "macs":
 			directive, title, purpose := "HostKeyAlgorithms", "Additional host-key algorithms", "server identity verification"
 			field := &draft.ExtraHostKeyAlgorithms
 			if id == "pubkey" {
 				directive, title, purpose = "PubkeyAcceptedAlgorithms", "Additional public-key signature algorithms", "user authentication"
 				field = &draft.ExtraPubkeyAlgorithms
 			}
-			v, b, e := chooseAlgorithms(directive, title, "Adds to OpenSSH defaults for "+purpose+" on this connection only ("+directive+" +…). ssh-rsa uses legacy SHA-1 signatures; enable only if required. Checking nothing leaves defaults unchanged.", *field)
+			if id == "macs" {
+				directive, title, purpose = "MACs", "MAC algorithms", "message integrity"
+				field = &draft.ExtraMACAlgorithms
+			}
+			v, b, e := chooseAlgorithms(directive, title, "Adds to OpenSSH defaults for "+purpose+" on this connection only ("+directive+" +…). Enable legacy algorithms only if required. Checking nothing leaves defaults unchanged.", *field)
 			if e != nil {
 				return e
 			}
@@ -198,6 +211,7 @@ func editCompatibilityOverrideDraft(c *Config, h Host) error {
 			{"identities", "Identities only: " + iLabel}, {"kex", "Additional KEX: " + kLabel},
 			{"hostkey", "Additional host-key algorithms: " + overrideLabel(o.ExtraHostKeyAlgorithms)},
 			{"pubkey", "Additional public-key signature algorithms: " + overrideLabel(o.ExtraPubkeyAlgorithms)},
+			{"macs", "MAC algorithms: " + overrideLabel(o.ExtraMACAlgorithms)},
 			{"save", "Apply compatibility override to settings draft"},
 		}, "Currently applied:\n"+compatibilityDetails(*c, s.ID, r)+"\nChanges affect local settings only. Inherit follows the database; an explicit empty list disables its additions. OpenSSH global defaults and host-key verification remain unchanged.")
 		if e != nil || back {
@@ -236,12 +250,16 @@ func editCompatibilityOverrideDraft(c *Config, h Host) error {
 			if !b {
 				o.ExtraKexAlgorithms = &v
 			}
-		case "hostkey", "pubkey":
+		case "hostkey", "pubkey", "macs":
 			directive, title := "HostKeyAlgorithms", "Additional host-key algorithms"
 			stored, field := r.ExtraHostKeyAlgorithms, &o.ExtraHostKeyAlgorithms
 			if id == "pubkey" {
 				directive, title = "PubkeyAcceptedAlgorithms", "Additional public-key signature algorithms"
 				stored, field = r.ExtraPubkeyAlgorithms, &o.ExtraPubkeyAlgorithms
+			}
+			if id == "macs" {
+				directive, title = "MACs", "MAC algorithms"
+				stored, field = r.ExtraMACAlgorithms, &o.ExtraMACAlgorithms
 			}
 			mode, b, e := choose(title+" override", []choice{{"inherit", "Inherit database additions"}, {"custom", "Choose local additions… (none checked disables database additions)"}}, "")
 			if e != nil {
@@ -257,7 +275,7 @@ func editCompatibilityOverrideDraft(c *Config, h Host) error {
 			if *field != nil {
 				stored = **field
 			}
-			v, b, e := chooseAlgorithms(directive, "Local "+title, "Replaces database additions for you only. ssh-rsa uses weak SHA-1 signatures; enable only if required. Checking nothing disables database additions. Inherit follows the database again.", stored)
+			v, b, e := chooseAlgorithms(directive, "Local "+title, "Replaces database additions for you only. Enable legacy algorithms only if required. Checking nothing disables database additions. Inherit follows the database again.", stored)
 			if e != nil {
 				return e
 			}

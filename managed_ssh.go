@@ -264,7 +264,7 @@ func managedJob(h Host, c Config) (managedSSHJob, error) {
 		for _, addition := range []struct {
 			directive string
 			names     []string
-		}{{"HostKeyAlgorithms", hostkey}, {"PubkeyAcceptedAlgorithms", pubkey}} {
+		}{{"HostKeyAlgorithms", hostkey}, {"PubkeyAcceptedAlgorithms", pubkey}, {"MACs", effectiveMACAlgorithms(c, s.ID, r)}} {
 			if err := validateExtraAlgorithms(addition.directive, addition.names); err != nil {
 				return managedSSHJob{}, fmt.Errorf("%s: %w", r.Alias, err)
 			}

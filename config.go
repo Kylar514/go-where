@@ -134,7 +134,7 @@ func (c Config) validate() error {
 			if o.Port != nil && (*o.Port < 1 || *o.Port > 65535) {
 				return fmt.Errorf("invalid local port override")
 			}
-			for directive, names := range map[string]*[]string{"HostKeyAlgorithms": o.ExtraHostKeyAlgorithms, "PubkeyAcceptedAlgorithms": o.ExtraPubkeyAlgorithms} {
+			for directive, names := range map[string]*[]string{"HostKeyAlgorithms": o.ExtraHostKeyAlgorithms, "PubkeyAcceptedAlgorithms": o.ExtraPubkeyAlgorithms, "MACs": o.ExtraMACAlgorithms} {
 				if names != nil {
 					if err := validateExtraAlgorithms(directive, *names); err != nil {
 						return err

@@ -32,6 +32,7 @@ type Connection struct {
 	ProfileName            string            `json:"profile_name,omitempty"`
 	Default                bool              `json:"default,omitempty"`
 	ExtraHostKeyAlgorithms []string          `json:"extra_host_key_algorithms,omitempty"`
+	ExtraMACAlgorithms     []string          `json:"extra_mac_algorithms,omitempty"`
 	ExtraPubkeyAlgorithms  []string          `json:"extra_pubkey_algorithms,omitempty"`
 	IdentitiesOnly         *bool             `json:"identities_only,omitempty"`
 	ExtraKexAlgorithms     []string          `json:"extra_kex_algorithms,omitempty"`
@@ -71,6 +72,7 @@ type ConnectionOverride struct {
 	Account                *string           `json:"account,omitempty"`
 	Domain                 *string           `json:"domain,omitempty"`
 	ExtraHostKeyAlgorithms *[]string         `json:"extra_host_key_algorithms,omitempty"`
+	ExtraMACAlgorithms     *[]string         `json:"extra_mac_algorithms,omitempty"`
 	ExtraPubkeyAlgorithms  *[]string         `json:"extra_pubkey_algorithms,omitempty"`
 	IdentitiesOnly         *bool             `json:"identities_only,omitempty"`
 	ExtraKexAlgorithms     *[]string         `json:"extra_kex_algorithms,omitempty"`
@@ -105,7 +107,7 @@ func openInventory(s InventorySource) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
+	u := sqliteFileURL(path)
 	q := url.Values{"mode": {"rw"}, "_pragma": {"busy_timeout(5000)"}}
 	if s.ReadOnly {
 		q.Set("mode", "ro")
@@ -199,7 +201,8 @@ func createInventory(name, path string) (InventorySource, error) {
 	if err = f.Close(); err != nil {
 		return s, err
 	}
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(p), RawQuery: "mode=rw"}
+	u := sqliteFileURL(p)
+	u.RawQuery = "mode=rw"
 	db, err := sql.Open("sqlite", u.String())
 	if err != nil {
 		return s, err
@@ -284,7 +287,7 @@ func validateConnections(records []Connection) error {
 		if err := validateExtraKex(c.ExtraKexAlgorithms); err != nil {
 			return fmt.Errorf("%s: %w", c.Alias, err)
 		}
-		for directive, names := range map[string][]string{"HostKeyAlgorithms": c.ExtraHostKeyAlgorithms, "PubkeyAcceptedAlgorithms": c.ExtraPubkeyAlgorithms} {
+		for directive, names := range map[string][]string{"HostKeyAlgorithms": c.ExtraHostKeyAlgorithms, "PubkeyAcceptedAlgorithms": c.ExtraPubkeyAlgorithms, "MACs": c.ExtraMACAlgorithms} {
 			if err := validateExtraAlgorithms(directive, names); err != nil {
 				return fmt.Errorf("%s: %w", c.Alias, err)
 			}

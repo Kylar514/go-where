@@ -53,6 +53,9 @@ func algorithmSupport(directive string) kexCapabilities {
 	if directive == "KexAlgorithms" {
 		query = "kex"
 	}
+	if directive == "MACs" {
+		query = "mac"
+	}
 	caps := kexCapabilities{supported: map[string]bool{}, defaults: map[string]bool{}}
 	if out, err := sshOutput("-Q", query); err == nil {
 		for _, name := range strings.Fields(string(out)) {
@@ -130,6 +133,9 @@ func algorithmCandidates(directive string, current []string) ([]kexEntry, string
 		if directive == "KexAlgorithms" {
 			names = append(names, builtinLegacyKex...)
 			note = "ssh -Q kex could not be queried, so a built-in list of common legacy exchanges is shown. Use \"Type a name manually\" for others."
+		} else if directive == "MACs" {
+			names = append(names, "hmac-sha1")
+			note = "ssh -Q mac could not be queried; hmac-sha1 is shown with support unverified."
 		} else {
 			names = append(names, "ssh-rsa")
 			note = "ssh -Q " + directive + " could not be queried; ssh-rsa is shown as a legacy fallback, with support unverified. Use manual entry for other names."
@@ -143,6 +149,9 @@ func algorithmCandidates(directive string, current []string) ([]kexEntry, string
 		if len(caps.defaults) == 0 {
 			note = "OpenSSH's default list could not be read, so default-enabled algorithms are shown too; adding them is harmless."
 		}
+	}
+	if directive == "MACs" && caps.supported["hmac-sha1"] && caps.defaults["hmac-sha1"] {
+		names = append(names, "hmac-sha1")
 	}
 	have := map[string]bool{}
 	for _, name := range names {
@@ -160,10 +169,17 @@ func algorithmCandidates(directive string, current []string) ([]kexEntry, string
 		if directive != "KexAlgorithms" {
 			weak = name == "ssh-rsa" || name == "ssh-dss" || strings.HasPrefix(name, "ssh-rsa-cert-") || strings.HasPrefix(name, "ssh-dss-cert-")
 		}
+		if directive == "MACs" {
+			weak = strings.Contains(name, "sha1") || strings.Contains(name, "md5") || strings.Contains(name, "ripemd160") || strings.Contains(name, "-96")
+		}
 		e := kexEntry{Name: name, Weak: weak}
 		var notes []string
 		if e.Weak {
-			notes = append(notes, "⚠ weak (SHA-1)")
+			if directive == "MACs" {
+				notes = append(notes, "⚠ legacy MAC; enable only if required")
+			} else {
+				notes = append(notes, "⚠ weak (SHA-1)")
+			}
 		}
 		switch {
 		case caps.known && !caps.supported[name]:

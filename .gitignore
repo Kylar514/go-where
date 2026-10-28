@@ -9,3 +9,4 @@
 *.db-journal
 *.db-wal
 *.db-shm
+/go-where.exe
