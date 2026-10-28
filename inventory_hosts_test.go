@@ -203,7 +203,7 @@ func TestHostEditorCreatesMultipleProtocolsAndCancel(t *testing.T) {
 	}
 	for _, row := range rows {
 		if row.Type == "host" {
-			scriptTUI(t, "delete", "delete")
+			scriptTUI(t, "delete", "confirm")
 			if err = editInventoryHost(c, &state, &row); err != nil {
 				t.Fatal(err)
 			}

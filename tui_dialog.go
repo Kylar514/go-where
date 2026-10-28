@@ -237,6 +237,10 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "delete":
 			for _, a := range m.footerActions {
+				if a.ID == "delete-host" {
+					m.result, m.done = a.ID, true
+					return m, tea.Quit
+				}
 				if a.ID == "clear" {
 					m.result, m.done = "clear", true
 					return m, tea.Quit
@@ -722,7 +726,7 @@ func (m *dialogModel) View() string {
 			if a.ID == "save" || a.ID == "save-host" {
 				id = "menu_save"
 			}
-			if a.ID == "delete" || a.ID == "clear" {
+			if a.ID == "delete" || a.ID == "clear" || a.ID == "delete-host" {
 				id = "delete_host"
 			}
 			if id != "" {

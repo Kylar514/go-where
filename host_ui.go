@@ -282,12 +282,18 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 			}
 			return nil
 		case "delete":
-			_, b, e = choose("Delete "+h.Alias+"?", []choice{{"delete", "Delete host and all attachments"}}, "Host: "+h.Alias+"\n\nShared source profiles remain available. Referenced attachments cannot be deleted. Tunnels must be removed or reassigned first.")
-			if e != nil {
-				return e
+			deleted, err := reviewDeleteHost(state.ConfigPath, s, h)
+			if err != nil {
+				if e = notice(err.Error()); e != nil {
+					return e
+				}
+				if deleted {
+					return nil
+				}
+				continue
 			}
-			if !b {
-				return deleteInventoryHost(s, h.ID)
+			if deleted {
+				return nil
 			}
 		default:
 			value := ""

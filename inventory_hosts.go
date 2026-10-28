@@ -288,6 +288,9 @@ func saveInventoryHost(s InventorySource, h InventoryHost, profiles []Connection
 }
 
 func deleteInventoryHost(s InventorySource, id string) error {
+	if s.ReadOnly {
+		return fmt.Errorf("source is read-only")
+	}
 	db, err := openInventory(s)
 	if err != nil {
 		return err

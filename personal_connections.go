@@ -459,9 +459,30 @@ func editPersonalHosts(c Config, path string, hosts []Host) error {
 			mEditor.footerActions = append(mEditor.footerActions, choice{"save-host", "Save host"})
 		}
 		mEditor.footerActions = []choice{{"select", "Edit field"}, {"save", "Save"}}
+		if len(hosts) == 1 && !newHost && allWritable {
+			mEditor.footerActions = append(mEditor.footerActions, choice{"delete-host", "Delete host"})
+		}
 		id, back, err := runChoice(mEditor, menuKey(mEditor.title))
 		if err != nil || back {
 			return err
+		}
+		if id == "delete-host" {
+			t := targets[0]
+			h := storedHosts[t.source+":"+strings.TrimSuffix(t.key, ":"+t.kind)]
+			deleted, e := reviewDeleteHost(path, sources[t.source], h)
+			if e != nil {
+				if err = notice(e.Error()); err != nil {
+					return err
+				}
+				if deleted {
+					return nil
+				}
+				continue
+			}
+			if deleted {
+				return nil
+			}
+			continue
 		}
 		if id == "tunnels" {
 			if err = editHostTunnels(draft, path, hosts); err != nil {
