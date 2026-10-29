@@ -142,6 +142,16 @@ connections:
 
 ## Platform status
 
+Windows RDP Auto selects `sdl-freerdp.exe` on PATH. Keep its matching DLLs
+beside the executable; explicit `rdp.client` paths remain supported. Linux
+client discovery and secure file-descriptor password transport are unchanged.
+Windows saved credentials use `/args-from:stdin` over an anonymous pipe,
+never passwords on argv or in files. Clients must advertise this capability.
+Credential-session stdout/stderr are suppressed to avoid password echoes;
+use Debug with manual credentials for diagnostics. Windows background SSH
+forwarding requires key/agent authentication; use a visible Debug launch for
+interactive SSH prompts. Native Windows validation is still required.
+
 - **Linux:** unit tests and real-terminal smoke checks cover navigation, mouse clicks, account selection, native launches, and tunnel lifecycle using synthetic endpoints. Existing native connection tests remain in place.
 - **Windows:** cross-compiles; native terminal auto-selection uses Windows Terminal (`wt.exe`). Diglet supplies a Windows process/listener backend. Runtime verification is still required. FreeRDP password-command piping is explicitly unsupported here for now; use the client prompt rather than putting passwords on argv.
 - **macOS:** cross-compiles; terminal auto-selection uses Terminal.app through AppleScript. Managed tunnel monitoring/start/stop is explicitly unavailable until the Darwin backend is added. Native connection behavior still needs macOS testing.

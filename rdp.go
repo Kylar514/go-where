@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -429,6 +430,13 @@ func resolveClient(configured []string) ([]string, error) {
 		}
 		return configured, nil
 	}
+	if runtime.GOOS == "windows" {
+		p, err := exec.LookPath("sdl-freerdp.exe")
+		if err != nil {
+			return nil, fmt.Errorf("SDL FreeRDP not found; install sdl-freerdp.exe with its DLLs and add its folder to PATH, or set rdp.client")
+		}
+		return []string{p}, nil
+	}
 	for _, name := range freeRDPClients {
 		if p, err := exec.LookPath(name); err == nil {
 			return []string{p}, nil
@@ -440,7 +448,11 @@ func resolveClient(configured []string) ([]string, error) {
 func supportsSOCKS(client []string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, _ := exec.CommandContext(ctx, client[0], append(append([]string{}, client[1:]...), "/help")...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, client[0], append(append([]string{}, client[1:]...), "/help")...)
+	if runtime.GOOS == "windows" {
+		prepareRDPBackground(cmd)
+	}
+	out, _ := cmd.CombinedOutput()
 	return strings.Contains(strings.ToLower(string(out)), "socks5")
 }
 
@@ -470,10 +482,13 @@ type sshTunnel struct {
 	err  error
 }
 
-func startTunnel(argv []string) (*sshTunnel, error) {
+func startTunnel(argv []string, background ...bool) (*sshTunnel, error) {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	// ssh keeps the terminal so passphrase and password prompts still work.
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if len(background) > 0 && background[0] {
+		prepareRDPBackground(cmd)
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start SSH tunnel: %w", err)
 	}
@@ -545,8 +560,9 @@ func runRDPSession(j rdpJob) error {
 		defer cleanup()
 		j.SSHConfig = path
 	}
-	if runtime.GOOS == "windows" && (len(j.PasswordCommand) > 0 || j.CredentialIdentity != "") {
-		return fmt.Errorf("password_command pipe transport is not yet supported on Windows; use a FreeRDP client prompt")
+	if j.Debug {
+		j.CredentialIdentity = ""
+		j.PasswordCommand = nil
 	}
 	if err := j.validate(); err != nil {
 		return err
@@ -579,7 +595,11 @@ func runRDPSession(j rdpJob) error {
 			return err
 		}
 		fmt.Println("Opening SSH tunnel…")
-		tunnel, err := startTunnel(argv)
+		background := runtime.GOOS == "windows" && !j.Debug
+		if background {
+			argv = append([]string{argv[0], "-o", "BatchMode=yes"}, argv[1:]...)
+		}
+		tunnel, err := startTunnel(argv, background)
 		if err != nil {
 			return err
 		}
@@ -590,12 +610,20 @@ func runRDPSession(j rdpJob) error {
 	}
 	args := j.clientArgs(mode, port)
 	cmd := exec.Command(client[0], client[1:]...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if runtime.GOOS == "windows" && !j.Debug {
+		prepareRDPBackground(cmd)
+	}
 	if len(j.PasswordCommand) > 0 || j.CredentialIdentity != "" {
-		if j.CredentialIdentity != "" {
+		if j.CredentialIdentity != "" || runtime.GOOS == "windows" {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			help, _ := exec.CommandContext(ctx, client[0], append(append([]string{}, client[1:]...), "/help")...).CombinedOutput()
+			probe := exec.CommandContext(ctx, client[0], append(append([]string{}, client[1:]...), "/help")...)
+			if runtime.GOOS == "windows" {
+				prepareRDPBackground(probe)
+			}
+			help, _ := probe.CombinedOutput()
 			cancel()
-			if !strings.Contains(string(help), "args-from") {
+			if !strings.Contains(string(help), "args-from") || runtime.GOOS == "windows" && !strings.Contains(string(help), "stdin") {
 				return fmt.Errorf("RDP client does not advertise secure args-from input; use the client prompt")
 			}
 		}
@@ -608,6 +636,26 @@ func runRDPSession(j rdpJob) error {
 		}
 		if err != nil {
 			return err
+		}
+		if runtime.GOOS == "windows" {
+			payload, err := rdpPasswordInput(append(append([]string(nil), client[1:]...), args...), pw)
+			if err != nil {
+				return err
+			}
+			defer clear(payload)
+			cmd.Args = []string{client[0], "/args-from:stdin"}
+			cmd.Stdin = bytes.NewReader(payload)
+			// Client parse/errors may echo input; never persist credential-session output.
+			cmd.Stdout, cmd.Stderr = nil, nil
+			err = cmd.Run()
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && sessionEnded(exit.ExitCode()) {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("RDP client failed during secure credential session; retry Debug with manual credentials: %w", err)
+			}
+			return nil
 		}
 		// The password reaches the client on a pipe, never on a command line or in a file.
 		r, w, err := os.Pipe()
@@ -626,7 +674,6 @@ func runRDPSession(j rdpJob) error {
 		args = []string{"/args-from:fd:3"}
 	}
 	cmd.Args = append(cmd.Args, args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	fmt.Println("Starting RDP session…")
 	err = cmd.Run()
 	var exit *exec.ExitError
@@ -637,6 +684,18 @@ func runRDPSession(j rdpJob) error {
 		return fmt.Errorf("RDP client: %w", err)
 	}
 	return nil
+}
+
+func rdpPasswordInput(args []string, password string) ([]byte, error) {
+	if password == "" || len(password) > 1024 || !safeValue(password) {
+		return nil, fmt.Errorf("invalid credential input")
+	}
+	for _, arg := range args {
+		if !safeValue(arg) {
+			return nil, fmt.Errorf("invalid RDP argument for secure input")
+		}
+	}
+	return []byte(strings.Join(append(args, "/p:"+password), "\n") + "\n"), nil
 }
 
 func runRDPJob(j rdpJob) error {

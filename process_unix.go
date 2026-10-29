@@ -8,3 +8,5 @@ import (
 )
 
 func prepareDetached(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} }
+
+func prepareRDPBackground(cmd *exec.Cmd) {}
