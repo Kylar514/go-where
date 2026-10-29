@@ -30,6 +30,9 @@ func menuFooter(height, width int, labels []string, hint string) string {
 	if height < 14 {
 		return fit(lines[1], width) + "\n" + fit(hint, width)
 	}
+	for i, line := range lines {
+		lines[i] = fit(line, width)
+	}
 	return strings.Join(lines, "\n") + "\n" + fit(tuiDim.Render(hint), width)
 }
 
@@ -68,8 +71,17 @@ func (m *pickerModel) buttons() []pickerButton {
 		copy(buttons[index+1:], buttons[index:])
 		buttons[index] = pickerButton{label, "select-all"}
 	}
+	if m.compactPicker() {
+		primary := buttons[0]
+		if m.state.Mode == "tunnels" && len(m.markedTunnels()) > 0 {
+			return []pickerButton{{"Start selected", "start-selected"}, {"Stop selected", "stop-selected"}, {"Details", "details"}, {"More…", "more"}}
+		}
+		return []pickerButton{primary, {"Edit", "edit-tunnel"}, {"Details", "details"}, {"More…", "more"}}
+	}
 	return buttons
 }
+
+func (m *pickerModel) compactPicker() bool { return m.width > 0 && (m.width < 140 || m.height < 24) }
 
 func (m *pickerModel) baseButtons() []pickerButton {
 	if m.state.Mode == "transfers" {

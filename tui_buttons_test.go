@@ -108,7 +108,7 @@ func TestClickableControlsAndDoubleClick(t *testing.T) {
 }
 
 func TestConnectedStripsHaveSharedBordersAndOpenActiveTab(t *testing.T) {
-	m := &pickerModel{width: 100, height: 28, state: PickerState{Mode: "rdp"}}
+	m := &pickerModel{width: 148, height: 28, state: PickerState{Mode: "rdp"}}
 	strip, hits, height := m.controls(pickerTabs, 0)
 	lines := strings.Split(strip, "\n")
 	if height != 3 || !strings.Contains(lines[1], "│ SSH │ RDP │") || strings.Contains(lines[1], "││") || !strings.Contains(lines[0], "╭─────┬─────┬") {

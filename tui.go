@@ -34,6 +34,7 @@ type hitRegion struct {
 	index       int
 }
 type pickerModel struct {
+	detailsText                   string
 	hostTunnelTitle               string
 	hostTunnelRoles               map[string]string
 	hosts                         []Host
@@ -483,6 +484,35 @@ func (m *pickerModel) action(action string) tea.Cmd {
 		return nil
 	}
 	switch action {
+	case "details":
+		m.openDialog("details", "Details", nil, m.previewContent())
+		m.dialog.readingScreen = true
+		m.dialog.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.dialog.detailsOnly = true
+		m.dialog.detailsText = m.previewContent()
+		m.dialog.refreshDetailsLayout()
+	case "more":
+		buttons := m.baseButtons()
+		label := "Select all"
+		if m.hasModeMarks() {
+			label = "Deselect all"
+		}
+		if m.state.Mode != "transfers" {
+			buttons = append(buttons, pickerButton{label, "select-all"})
+		}
+		var options []choice
+		for _, b := range buttons {
+			text := b.label
+			if hint := buttonPrimaryHint(m.config, b.action); hint != "" {
+				text += " — " + hint
+			}
+			options = append(options, choice{b.action, text})
+		}
+		m.openDialog("more", "More actions", options, "Actions apply to the current tab and selection. Existing keyboard shortcuts remain available.")
+		m.dialog.optionDetails = map[string]string{}
+		for _, o := range options {
+			m.dialog.optionDetails[o.ID] = o.Label + "\nUses the current tab and selection; does not change your filter or sort."
+		}
 	case "select-all":
 		m.toggleAllMarks()
 	case "mode:transfers":
@@ -597,6 +627,9 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.search.Width = max(1, msg.Width-4-lipgloss.Width(m.search.Prompt))
 		_, previewWidth := m.paneWidths()
+		if previewWidth == 0 {
+			previewWidth = max(1, msg.Width-4)
+		}
 		m.preview.Width = max(1, previewWidth)
 		m.preview.Height = max(1, m.rows()-1)
 		m.scrollToCursor()
@@ -613,6 +646,8 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch kind {
+		case "more":
+			return m, m.action(d.result)
 		case "mode":
 			m.switchMode(d.result)
 		}
@@ -828,12 +863,17 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *pickerModel) previewContent() string {
+	return m.detailsText
+}
+
 func (m *pickerModel) updatePreview() {
 	if m.state.Mode == "transfers" {
 		text := "Choose a transfer method."
 		if len(m.visible) > 0 {
 			text = transferMethodDetails[transferMethods[m.visible[m.cursor]].ID]
 		}
+		m.detailsText = text
 		m.preview.SetContent(ansi.Wrap(text, max(1, m.preview.Width), ""))
 		return
 	}
@@ -886,7 +926,8 @@ func (m *pickerModel) updatePreview() {
 			text = "No matching hosts.\n\nAdd a host with an SSH profile, enable another source, or clear the search filter."
 		}
 	}
-	m.preview.SetContent(ansi.Wrap(cleanLines(text), max(1, m.preview.Width), ""))
+	m.detailsText = cleanLines(text)
+	m.preview.SetContent(ansi.Wrap(m.detailsText, max(1, m.preview.Width), ""))
 }
 func tunnelCommandPreview(c digletconfig.Connection) string {
 	if c.TunnelType == "ssh" {

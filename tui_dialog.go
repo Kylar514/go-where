@@ -102,6 +102,8 @@ func menuKey(title string) string {
 }
 
 type dialogModel struct {
+	detailsText    string
+	detailsOnly    bool
 	colorBrackets  map[string]string
 	palette        bool
 	paletteSort    pickerSort
@@ -174,6 +176,49 @@ func (m *dialogModel) refilter() {
 
 func (m *dialogModel) Init() tea.Cmd { return textinput.Blink }
 func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.detailsOnly {
+		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			m.width, m.height = msg.Width, msg.Height
+			m.refreshDetailsLayout()
+		case tea.KeyMsg:
+			key := canonicalKey(menuHotkeys, msg.String(), "menu")
+			switch key {
+			case "esc", "ctrl+c", "ctrl+h", "left", "enter", "ctrl+l":
+				if m.readingScreen {
+					m.back, m.done = true, true
+					return m, tea.Quit
+				}
+				m.detailsOnly = false
+				m.refreshMenuLayout()
+				return m, nil
+			case "up", "ctrl+k":
+				m.preview.ScrollUp(1)
+			case "down", "ctrl+j":
+				m.preview.ScrollDown(1)
+			case "pgup":
+				m.preview.HalfPageUp()
+			case "pgdown":
+				m.preview.HalfPageDown()
+			}
+		case tea.MouseMsg:
+			if msg.Button == tea.MouseButtonWheelUp {
+				m.preview.ScrollUp(3)
+			}
+			if msg.Button == tea.MouseButtonWheelDown {
+				m.preview.ScrollDown(3)
+			}
+			if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == m.detailsBackY() && msg.X >= 0 && msg.X < 8 {
+				if m.readingScreen {
+					m.back, m.done = true, true
+					return m, tea.Quit
+				}
+				m.detailsOnly = false
+				m.refreshMenuLayout()
+			}
+		}
+		return m, nil
+	}
 	defer func() {
 		if len(m.optionDetails) > 0 && len(m.filtered) > 0 {
 			index := m.filtered[min(m.cursor, len(m.filtered)-1)]
@@ -344,6 +389,17 @@ func (m *dialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case tea.MouseMsg:
+		if m.width < 90 && !m.readingScreen && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == 1 && msg.X < 12 {
+			text := m.text
+			if len(m.filtered) > 0 {
+				text += "\n\n" + m.optionDetails[m.options[m.filtered[m.cursor]].ID]
+			}
+			m.detailsOnly = true
+			m.detailsText = menuExplanation(text)
+			m.refreshDetailsLayout()
+			m.preview.GotoTop()
+			return m, nil
+		}
 		if m.resizeMenuMouse(msg) {
 			return m, nil
 		}
@@ -499,7 +555,9 @@ func (m *dialogModel) inList(x int) bool {
 func (m *dialogModel) optionRows() int {
 	rows := m.height - 5 - footerExtra(m.height)
 	if m.text != "" && m.width < 90 {
-		rows -= m.preview.Height + 1
+		if m.readingScreen {
+			rows -= m.preview.Height + 1
+		}
 	}
 	return max(1, min(20, rows))
 }
@@ -509,7 +567,26 @@ func (m *dialogModel) listStart() int {
 }
 
 func (m *dialogModel) footerY() int { return footerButtonY(m.height) }
+
+func (m *dialogModel) detailsBackY() int {
+	y := m.preview.Height + 2
+	if m.height >= 14 {
+		y++
+	}
+	return y
+}
+
+func (m *dialogModel) refreshDetailsLayout() {
+	offset := m.preview.YOffset
+	m.preview.Width = max(1, m.width-4)
+	m.preview.Height = max(1, m.height-3-footerExtra(m.height))
+	m.preview.SetContent(ansi.Wrap(m.detailsText, m.preview.Width, ""))
+	m.preview.SetYOffset(offset)
+}
 func (m *dialogModel) View() string {
+	if m.detailsOnly {
+		return detailsPanel(m.preview) + "\n" + menuFooter(m.height, m.width, []string{"Back"}, primaryMenuHint(menuHotkeys, "back")+" Back │ ↑/↓ Scroll │ PgUp/PgDn Page")
+	}
 	m.resizeHits = nil
 	if m.width == 0 {
 		return "Loading…"
@@ -547,8 +624,11 @@ func (m *dialogModel) View() string {
 	if m.swatch != "" {
 		lines[0] = fit(lines[0]+" "+hostColorMarker(m.swatch, m.swatchBracket), m.width)
 	}
-	if m.text != "" && m.width < 90 {
+	if m.text != "" && m.width < 90 && m.readingScreen {
 		lines = append(lines, m.preview.View(), "")
+	}
+	if m.width < 90 && !m.readingScreen {
+		lines = append(lines, "[ Details ]")
 	}
 	for lipgloss.Height(strings.Join(lines, "\n")) < m.listStart() {
 		lines = append(lines, "")

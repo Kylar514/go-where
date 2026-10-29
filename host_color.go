@@ -65,11 +65,12 @@ func hostColorMarker(color, border string) string {
 }
 
 func (m *pickerModel) setHostPreview(text string, h Host) {
-	text = ansi.Wrap(cleanLines(text), max(1, m.preview.Width), "")
+	text = cleanLines(text)
 	if h.Color != "" {
 		text = strings.Replace(text, "[■]", hostColorMarker(h.Color, h.BracketColor), 1)
 	}
-	m.preview.SetContent(text)
+	m.detailsText = text
+	m.preview.SetContent(ansi.Wrap(text, max(1, m.preview.Width), ""))
 }
 func chooseHostColor(current string) (string, bool, error) {
 	return choosePaletteColor(current, false)

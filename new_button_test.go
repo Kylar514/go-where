@@ -7,7 +7,7 @@ func TestNewButtonUsesExistingAction(t *testing.T) {
 		m := newPickerModel(nil, "", "current", Origin{}, PickerState{Mode: mode}, defaultConfig())
 		m.width, m.height = 120, 30
 		found := false
-		for _, b := range m.buttons() {
+		for _, b := range m.baseButtons() {
 			if b.label == "New" {
 				found = true
 				if b.action != "new-tunnel" || buttonPrimaryHint(m.config, b.action) != "ctrl+n" {
