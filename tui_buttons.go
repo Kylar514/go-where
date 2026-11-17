@@ -132,6 +132,15 @@ func (m *pickerModel) baseButtons() []pickerButton {
 
 // Render and hit-test from the same dimensions, including wrapped rows/borders.
 func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegion, int) {
+	return m.layoutControls(buttons, y, false)
+}
+
+func (m *pickerModel) controlHeight(buttons []pickerButton) int {
+	_, _, height := m.layoutControls(buttons, 0, true)
+	return height
+}
+
+func (m *pickerModel) layoutControls(buttons []pickerButton, y int, measureOnly bool) (string, []hitRegion, int) {
 	width := max(1, m.width-2)
 	rounded := len(buttons) > 0 && strings.HasPrefix(buttons[0].action, "mode:")
 	height := 1
@@ -149,6 +158,14 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 	used := 1
 	flush := func() {
 		if len(group) == 0 {
+			return
+		}
+		if measureOnly {
+			for row := 0; row < height; row++ {
+				lines = append(lines, "")
+			}
+			group = nil
+			used = 1
 			return
 		}
 		tabs := strings.HasPrefix(group[0].action, "mode:")
@@ -265,7 +282,11 @@ func (m *pickerModel) controls(buttons []pickerButton, y int) (string, []hitRegi
 	flush()
 	if !rounded {
 		for _, line := range buttonLegend(m.config, buttons, width) {
-			lines = append(lines, tuiDim.Render(line))
+			if measureOnly {
+				lines = append(lines, "")
+			} else {
+				lines = append(lines, tuiDim.Render(line))
+			}
 		}
 	}
 	return strings.Join(lines, "\n"), hits, len(lines)

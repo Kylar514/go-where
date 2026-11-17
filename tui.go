@@ -34,6 +34,11 @@ type hitRegion struct {
 	index       int
 }
 type pickerModel struct {
+	deferDetails                  bool
+	detailsDirty                  bool
+	detailsBusy                   bool
+	detailsReady                  bool
+	detailsRevision               uint64
 	detailsText                   string
 	hostTunnelTitle               string
 	hostTunnelRoles               map[string]string
@@ -228,8 +233,8 @@ func matchesTags(tags, required []string) bool {
 	return true
 }
 func (m *pickerModel) rows() int {
-	_, _, tabs := m.controls(m.tabs(), 0)
-	_, _, buttons := m.controls(m.buttons(), 0)
+	tabs := m.controlHeight(m.tabs())
+	buttons := m.controlHeight(m.buttons())
 	return max(1, min(20, m.height-tabs-buttons-5-2*m.toolbarGap()))
 }
 
@@ -304,11 +309,12 @@ func renderHostColumnValues(h *Host, width int, mark string, custom []int, value
 	return fit(prefix+strings.Join(columns, separator), width)
 }
 func (m *pickerModel) scrollToCursor() {
+	rows := m.rows()
 	if m.cursor < m.offset {
 		m.offset = m.cursor
 	}
-	if m.cursor >= m.offset+m.rows() {
-		m.offset = m.cursor - m.rows() + 1
+	if m.cursor >= m.offset+rows {
+		m.offset = m.cursor - rows + 1
 	}
 	m.offset = min(max(0, m.offset), max(0, len(m.visible)-1))
 }
@@ -576,7 +582,7 @@ func (m *pickerModel) toggleTunnel() tea.Cmd {
 	m.pending[c.Name] = true
 	return func() tea.Msg { return tunnelActionMsg{c.Name, toggleManagedTunnel(c, info.pid > 0)} }
 }
-func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *pickerModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tunnelPoll:
 		if m.state.Mode != "tunnels" || len(m.tunnels) == 0 {
@@ -868,6 +874,20 @@ func (m *pickerModel) previewContent() string {
 }
 
 func (m *pickerModel) updatePreview() {
+	if m.deferDetails {
+		m.detailsRevision++
+		m.detailsReady = false
+		managed := m.state.Mode == "tunnels"
+		if h, ok := m.activeHost(); ok {
+			managed = h.SourceID != ""
+		}
+		if managed {
+			m.detailsDirty = true
+			m.detailsText = "Loading Details…"
+			m.preview.SetContent(m.detailsText)
+			return
+		}
+	}
 	if m.state.Mode == "transfers" {
 		text := "Choose a transfer method."
 		if len(m.visible) > 0 {
@@ -977,6 +997,7 @@ func (m *pickerModel) View() string {
 	}
 	listWidth, _ := m.paneWidths()
 	columns := m.columnWidths(listWidth)
+	rows := m.rows()
 	var left []string
 	// Fixed column titles; the list scrolls beneath them.
 	if m.state.Mode == "transfers" {
@@ -1011,9 +1032,9 @@ func (m *pickerModel) View() string {
 	}
 	// Rows anchor to the bottom and fill upward (fzf --layout=reverse): the
 	// first result sits on the last slot, older entries stack above it.
-	pad := max(0, m.rows()-max(1, len(m.visible)))
-	occupied := m.rows() - pad
-	for row := 0; row < m.rows(); row++ {
+	pad := max(0, rows-max(1, len(m.visible)))
+	occupied := rows - pad
+	for row := 0; row < rows; row++ {
 		line := ""
 		if row < pad {
 			left = append(left, "")
@@ -1047,7 +1068,7 @@ func (m *pickerModel) View() string {
 				line = ansi.Cut(line, 0, 5) + hostColorMarker(h.Color, h.BracketColor) + ansi.Cut(line, 8, listWidth)
 			}
 			m.hits = append(m.hits, hitRegion{0, tabHeight + 1 + m.toolbarGap() + row, listWidth, "row", i})
-		} else if row == m.rows()-1 {
+		} else if row == rows-1 {
 			line = tuiDim.Render("No matches")
 		}
 		left = append(left, fit(line, listWidth))
@@ -1056,9 +1077,9 @@ func (m *pickerModel) View() string {
 	if m.width >= 90 {
 		// The frame shares the list's height, including its column heading.
 		panel := detailsPanel(m.preview)
-		divider := strings.TrimSuffix(strings.Repeat(tuiDim.Render("│")+"\n", m.rows()+1), "\n")
+		divider := strings.TrimSuffix(strings.Repeat(tuiDim.Render("│")+"\n", rows+1), "\n")
 		body = lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(listWidth).Render(body), divider, panel)
-		for row := 0; row < m.rows()+1; row++ {
+		for row := 0; row < rows+1; row++ {
 			m.hits = append(m.hits, hitRegion{listWidth, tabHeight + row, 1, "resize-pane", 0})
 		}
 	}
@@ -1067,7 +1088,7 @@ func (m *pickerModel) View() string {
 	if m.toolbarGap() > 0 {
 		lines = append(lines, "")
 	}
-	buttons, buttonHits, _ := m.controls(m.buttons(), tabHeight+m.rows()+3+2*m.toolbarGap())
+	buttons, buttonHits, _ := m.controls(m.buttons(), tabHeight+rows+3+2*m.toolbarGap())
 	m.hits = append(m.hits, buttonHits...)
 	status := tuiDim.Render(clean(m.status))
 	if m.statusError {
