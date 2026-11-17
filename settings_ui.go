@@ -177,6 +177,7 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			options = active
 		}
 		values, details := settingsSummaries(draft)
+		options = append(options, choice{"api-add", "Add API server"}, choice{"api-tokens", "API device tokens"})
 		if databaseSettings(path) {
 			for i, o := range options {
 				if value, ok := values[o.ID]; ok {
@@ -191,6 +192,21 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			return false, e
 		}
 		switch id {
+		case "api-add":
+			if e = addAPISource(path, &PickerState{}); e != nil {
+				return false, e
+			}
+			data, loaded, _, err := settingsDraft(path)
+			if err != nil {
+				return false, err
+			}
+			original = data
+			before.Sources = loaded.Sources
+			draft.Sources = loaded.Sources
+		case "api-tokens":
+			if e = manageAPITokens(draft); e != nil {
+				return false, e
+			}
 		case "hosts":
 			if e = manageInventoryHosts(draft, path); e != nil {
 				return false, e

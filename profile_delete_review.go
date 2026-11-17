@@ -173,6 +173,26 @@ func reassignDeleteProfile(path string, s InventorySource, old, replacement Conn
 		delete(draft.LocalProfiles, old.ID)
 		return saveSettingsDraft(path, original, before, draft)
 	}
+	if s.Type == "api" {
+		if err = mutateAPI(s, apiMutation{Action: "profile-replace", Old: old, Replacement: replacement}); err != nil {
+			return err
+		}
+		if err = saveSettingsDraft(path, original, before, draft); err != nil {
+			return fmt.Errorf("remote profile reassigned, local selections could not be saved: %w", err)
+		}
+		return nil
+	}
+	return replaceInventoryProfileWithSave(s, old, replacement, func() error { return saveSettingsDraft(path, original, before, draft) })
+}
+
+func replaceInventoryProfile(s InventorySource, old, replacement Connection) error {
+	return replaceInventoryProfileWithSave(s, old, replacement, func() error { return nil })
+}
+
+func replaceInventoryProfileWithSave(s InventorySource, old, replacement Connection, saveLocal func() error) error {
+	if s.ReadOnly {
+		return fmt.Errorf("source is read-only")
+	}
 	db, err := openInventory(s)
 	if err != nil {
 		return err
@@ -232,7 +252,7 @@ func reassignDeleteProfile(path string, s InventorySource, old, replacement Conn
 	}
 	// Separate stores cannot share a transaction: local changes first remain
 	// valid even if inventory commit fails, because replacement already exists.
-	if err = saveSettingsDraft(path, original, before, draft); err != nil {
+	if err = saveLocal(); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {

@@ -153,6 +153,20 @@ func (c Config) validate() error {
 	}
 	ids, names, paths := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, s := range c.Sources {
+		if s.Type == "api" {
+			if !inventoryName(s.ID) || s.ID == "ssh-config" || s.Name == "" || !inventoryName(s.CredentialID) {
+				return fmt.Errorf("invalid API source")
+			}
+			if err := validateAPIURL(s.URL); err != nil {
+				return err
+			}
+			p := s.URL + "/" + s.ID
+			if ids[s.ID] || names[s.Name] || paths[p] {
+				return fmt.Errorf("duplicate API source")
+			}
+			ids[s.ID], names[s.Name], paths[p] = true, true, true
+			continue
+		}
 		if !inventoryName(s.ID) || s.ID == "ssh-config" || s.Name == "" || s.Path == "" || s.Type != "sqlite" {
 			return fmt.Errorf("invalid SQLite source %q", s.Name)
 		}

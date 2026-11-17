@@ -49,6 +49,9 @@ func setInventoryHostField(h *InventoryHost, field, value string) {
 // Only host metadata is written; attachments, routes and reusable profiles are
 // never rewritten by the combined editor's shared save.
 func saveHostFields(s InventorySource, before []InventoryHost, edits map[string]string) error {
+	if s.Type == "api" {
+		return mutateAPI(s, apiMutation{Action: "host-fields", BeforeHosts: before, Edits: edits})
+	}
 	if s.ReadOnly {
 		return fmt.Errorf("source is read-only")
 	}

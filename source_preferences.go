@@ -32,7 +32,11 @@ func validateSourcePreferences(c Config) error {
 func editSourcePreferences(c *Config) error {
 	items := []multiItem{{ID: "ssh-config", Label: "SSH config", Note: "OpenSSH", Checked: sourceEnabled(*c, "ssh-config")}}
 	for _, s := range c.Sources {
-		items = append(items, multiItem{ID: s.ID, Label: s.Name, Note: "SQLite", Checked: sourceEnabled(*c, s.ID)})
+		kind := "SQLite"
+		if s.Type == "api" {
+			kind = "HTTPS API"
+		}
+		items = append(items, multiItem{ID: s.ID, Label: s.Name, Note: kind, Checked: sourceEnabled(*c, s.ID)})
 	}
 	m := newMultiDialog("Enabled Sources", items, "Checked sources load at launch. Select all / Deselect all includes hidden filtered sources. No selection is valid. Source files remain untouched. Save commits enablement only.")
 	m.itemDetails = map[string]string{"ssh-config": "OpenSSH inventory\nLocation: ~/.ssh/config\nDisabling stops loading this source; it does not edit the file."}
@@ -42,6 +46,9 @@ func editSourcePreferences(c *Config) error {
 			permission = "Read-only"
 		}
 		m.itemDetails[s.ID] = "Source: " + s.Name + "\nType: SQLite\nLocation: " + s.Path + "\nAccess: " + permission + "\nEnabling loads its hosts and profiles at launch."
+		if s.Type == "api" {
+			m.itemDetails[s.ID] = "Source: " + s.Name + "\nType: HTTPS API\nServer: " + s.URL + "\nAccess: " + permission + "\nThe server independently enforces current permissions."
+		}
 	}
 	m.sourceSelection = true
 	m.title = "Sources"

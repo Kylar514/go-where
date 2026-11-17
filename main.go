@@ -19,6 +19,12 @@ func main() {
 }
 
 func app(args []string) error {
+	if len(args) > 0 && args[0] == "server" {
+		return serverCommand(args[1:])
+	}
+	if strings.HasPrefix(filepath.Base(os.Args[0]), "go-where-server") {
+		return serverCommand(args)
+	}
 	if len(args) > 0 && args[0] == "probe" {
 		if len(args) != 4 {
 			return fmt.Errorf("invalid tunnel probe arguments")

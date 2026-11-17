@@ -109,6 +109,10 @@ func profileAttachment(r Connection) Connection {
 }
 
 func sourceProfiles(s InventorySource) ([]Connection, error) {
+	if s.Type == "api" {
+		v, e := readAPISnapshot(s)
+		return v.Profiles, e
+	}
 	db, err := openInventory(s)
 	if err != nil {
 		return nil, err
@@ -167,6 +171,9 @@ func migrateReusableProfiles(db *sql.DB) error {
 }
 
 func saveReusableProfile(s InventorySource, p Connection) error {
+	if s.Type == "api" {
+		return mutateAPI(s, apiMutation{Action: "profile-save", Connection: p})
+	}
 	db, err := openInventory(s)
 	if err != nil {
 		return err

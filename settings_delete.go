@@ -89,6 +89,9 @@ func deleteConnectionProfile(c Config, path string, s InventorySource, id string
 		delete(draft.LocalProfiles, id)
 		return saveSettingsDraft(path, original, before, draft)
 	}
+	if s.Type == "api" {
+		return mutateAPI(s, apiMutation{Action: "profile-delete", ID: id})
+	}
 	db, err := openInventory(s)
 	if err != nil {
 		return err

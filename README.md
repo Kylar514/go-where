@@ -1,5 +1,9 @@
 # go-where
 
+Remote HTTPS inventory sources and administrator-managed device tokens are
+available in this branch. See [SERVER.md](SERVER.md) for server setup, client
+registration, TLS, standalone/Docker deployment, and validation boundaries.
+
 A lightweight, keyboard- and mouse-driven connection workspace. One Go executable with a Bubble Tea TUI: SSH, RDP, managed tunnels, and transfers using installed native tools. Credentials stay local. This branch is the first unified-TUI prototype; no shared server or authentication service is included yet.
 
 ## Build and run

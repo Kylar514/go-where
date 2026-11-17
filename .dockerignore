@@ -1,0 +1,11 @@
+.git
+worktrees
+local
+server-data
+*.db
+*.db-*
+*.exe
+*.pem
+*.key
+go-where
+dist
