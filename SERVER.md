@@ -60,8 +60,20 @@ Remote profiles can include usernames/key path templates but never private key
 contents or go-where password records. Use local identities for device-specific
 paths. Check imported inventories before sharing to avoid disclosing metadata.
 
-Inventory snapshots are cached only for the current client session. Reloading
-the main inventory fetches new data; no offline write queue exists. Saves use an
+Validated inventory snapshots are stored privately in the user cache directory
+under `go-where/api-inventory`, scoped to server, inventory ID and credential
+reference. Network/server failures can use the last successful snapshot for
+browsing and launches; the named source is marked Offline with its last fetch
+time and is read-only. Reload retries the server. Authentication, permission,
+and certificate failures do not use offline fallback; known-denied cache entries
+are removed. A disconnected device cannot learn about new revocations until it
+reconnects, and cached host/route metadata is sensitive. Protect the OS account
+and cache directory (Windows uses the user's directory ACLs). There is no expiry
+on last-known snapshots; the UI always shows their age.
+
+Settings → Clear cached API inventory deletes the selected device-local snapshot
+without touching the server or credential. Removing a source also clears its
+snapshot. No offline write queue exists. Saves use an
 inventory revision and reject stale writes. Cancel/reload/review to resolve a
 conflict; drafts are not automatically merged. Writes spanning inventories and
 local settings are separate commits and may partially succeed, as in local mode.

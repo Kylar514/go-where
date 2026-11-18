@@ -447,6 +447,9 @@ func changeConnection(s InventorySource, c Connection, remove bool) error {
 func findSource(c Config, id string) (InventorySource, error) {
 	for _, s := range c.Sources {
 		if s.ID == id {
+			if s.Type == "api" && apiSourceAvailability(s) != "" {
+				s.ReadOnly = true
+			}
 			return s, nil
 		}
 	}
