@@ -101,7 +101,7 @@ func apiRequest(s InventorySource, method, path string, input, output any, revis
 			return fmt.Errorf("API token invalid, expired, revoked, or user disabled")
 		case 403:
 			return fmt.Errorf("API access denied (read-only or inventory not permitted)")
-		case 409, 412:
+		case 412:
 			return fmt.Errorf("inventory changed since it was loaded; unsaved draft retained, cancel/reload and review before retrying")
 		}
 		var message struct {

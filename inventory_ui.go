@@ -330,7 +330,6 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 			before = r
 			saved = true
 			existing = true
-			state.Source = s.ID
 			state.Mode = "tunnels"
 			state.Focus = s.ID + ":" + r.ID
 			return nil
@@ -552,7 +551,6 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 				if state.Mode == "tunnel" {
 					state.Mode = "tunnels"
 				}
-				state.Source = s.ID
 				state.Focus = s.ID + ":" + r.ID
 				return nil
 			}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -72,6 +73,43 @@ func TestRemoteInventoryPermissionsConflictsAndTokens(t *testing.T) {
 	job, err := managedJob(hosts[0], c)
 	if err != nil || !strings.Contains(job.Configuration, "operator") {
 		t.Fatal("remote launch resolution", err)
+	}
+	baseline, err := sourceInventoryHosts(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = saveHostFields(source, baseline, map[string]string{"notes": "edited note"}); err != nil {
+		t.Fatal("ordinary host edit failed", err)
+	}
+	baseline, _ = sourceInventoryHosts(source)
+	baseline[0].Tags = []string{}
+	if err = saveHostFields(source, baseline, map[string]string{"color": "#ef4444"}); err != nil {
+		t.Fatal("empty tags edit failed", err)
+	}
+	profiles, err := sourceProfiles(source)
+	fresh, _ := sourceInventoryHosts(source)
+	if e := saveHostFields(source, fresh, map[string]string{"address": ""}); e == nil || strings.Contains(e.Error(), "inventory changed") || !strings.Contains(e.Error(), "valid host name and address required") {
+		t.Fatal("validation error misreported", e)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiles[0].User = "changed-user"
+	if err = saveReusableProfile(source, profiles[0]); err != nil {
+		t.Fatal("ordinary profile edit failed", err)
+	}
+	path := filepath.Join(t.TempDir(), "profile.db")
+	original, before, settings, err := settingsDraft(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.Sources = []InventorySource{source}
+	if err = saveSettingsDraft(path, original, before, settings); err != nil {
+		t.Fatal(err)
+	}
+	scriptTUI(t, "notes", "enter\nUI edit", "save", "back")
+	if err = editPersonalHosts(settings, path, hosts); err != nil {
+		t.Fatal("unified remote edit failed", err)
 	}
 	if err = apiRequest(source, "POST", "inventories/"+inv.ID, apiMutation{Action: "host-delete", ID: "host"}, nil, v.Revision); err == nil {
 		t.Fatal("stale revision accepted")
