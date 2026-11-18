@@ -231,6 +231,10 @@ func migrateInventoryHosts(db *sql.DB, version int) error {
 }
 
 func sourceInventoryHosts(s InventorySource) ([]InventoryHost, error) {
+	if s.Type == "api" {
+		v, e := readAPISnapshot(s)
+		return v.Hosts, e
+	}
 	db, err := openInventory(s)
 	if err != nil {
 		return nil, err
@@ -241,6 +245,9 @@ func sourceInventoryHosts(s InventorySource) ([]InventoryHost, error) {
 
 // Host and every profile are committed together, with whole-graph validation.
 func saveInventoryHost(s InventorySource, h InventoryHost, profiles []Connection) error {
+	if s.Type == "api" {
+		return mutateAPI(s, apiMutation{Action: "host-save", Host: h, Profiles: profiles})
+	}
 	db, err := openInventory(s)
 	if err != nil {
 		return err
@@ -288,6 +295,9 @@ func saveInventoryHost(s InventorySource, h InventoryHost, profiles []Connection
 }
 
 func deleteInventoryHost(s InventorySource, id string) error {
+	if s.Type == "api" {
+		return mutateAPI(s, apiMutation{Action: "host-delete", ID: id})
+	}
 	if s.ReadOnly {
 		return fmt.Errorf("source is read-only")
 	}

@@ -9,6 +9,9 @@ import (
 
 // All shared changes for a source commit together, including graph validation.
 func applyBulkConnections(s InventorySource, before, after []Connection) error {
+	if s.Type == "api" {
+		return mutateAPI(s, apiMutation{Action: "bulk", Before: before, After: after})
+	}
 	db, err := openInventory(s)
 	if err != nil {
 		return err

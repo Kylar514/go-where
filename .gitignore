@@ -1,4 +1,6 @@
 /local/
+/server-data/
+/server-tls/
 /remdemconfig/
 /go-where
 /ssh-pick
@@ -10,4 +12,5 @@
 *.db-wal
 *.db-shm
 /go-where.exe
-/worktrees/serverapi
+/go-where-server
+/go-where-server

@@ -73,6 +73,9 @@ func (m *dialogModel) sourceLabel(option choice, width int) string {
 			name, path, _ = strings.Cut(option.Label, " – SQLite: ")
 		}
 		kind = "SQLite"
+		if n, p, ok := strings.Cut(option.Label, " — API: "); ok {
+			name, kind, path = n, "API", p
+		}
 	}
 	nameWidth, kindWidth := m.sourceWidths(width)
 	cell := func(value string, w int) string {

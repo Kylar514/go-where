@@ -1,0 +1,16 @@
+services:
+  inventory:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./server-data:/data
+      - ./server-tls:/tls:ro
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

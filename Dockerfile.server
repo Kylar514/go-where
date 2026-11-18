@@ -1,0 +1,13 @@
+FROM golang:1.26.2 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -o /go-where-server .
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /go-where-server /go-where-server
+WORKDIR /data
+EXPOSE 8443
+ENTRYPOINT ["/go-where-server"]
+CMD ["--data", "/data", "--listen", "0.0.0.0:8443", "--tls-cert", "/tls/server.crt", "--tls-key", "/tls/server.key", "serve"]

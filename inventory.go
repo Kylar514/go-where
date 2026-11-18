@@ -16,11 +16,13 @@ import (
 )
 
 type InventorySource struct {
-	ReadOnly bool   `json:"read_only,omitempty"`
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Path     string `json:"path"`
+	URL          string `json:"url,omitempty"`
+	CredentialID string `json:"credential_id,omitempty"`
+	ReadOnly     bool   `json:"read_only,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Path         string `json:"path"`
 }
 
 type Connection struct {
@@ -103,6 +105,9 @@ func sourcePath(s InventorySource) (string, error) {
 
 // Opening a configured source never creates it. New databases require an explicit action.
 func openInventory(s InventorySource) (*sql.DB, error) {
+	if s.Type == "api" {
+		return nil, fmt.Errorf("API sources cannot be opened as local SQLite files")
+	}
 	path, err := sourcePath(s)
 	if err != nil {
 		return nil, err
@@ -259,6 +264,10 @@ func readConnections(db inventoryReader) ([]Connection, error) {
 }
 
 func sourceConnections(s InventorySource) ([]Connection, error) {
+	if s.Type == "api" {
+		v, e := readAPISnapshot(s)
+		return v.Connections, e
+	}
 	db, err := openInventory(s)
 	if err != nil {
 		return nil, err
@@ -384,6 +393,9 @@ func inventoryName(v string) bool {
 
 // Validate the whole graph inside the write transaction, including references on delete.
 func changeConnection(s InventorySource, c Connection, remove bool) error {
+	if s.Type == "api" {
+		return mutateAPI(s, apiMutation{Action: "connection", Connection: c, Remove: remove})
+	}
 	db, err := openInventory(s)
 	if err != nil {
 		return err
@@ -442,6 +454,7 @@ func findSource(c Config, id string) (InventorySource, error) {
 }
 
 func inventoryHosts(c Config) ([]Host, error) {
+	refreshAPISources(c)
 	var hosts []Host
 	for _, s := range c.Sources {
 		if !sourceEnabled(c, s.ID) {

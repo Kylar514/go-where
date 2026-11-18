@@ -124,7 +124,6 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 		if selected == nil {
 			selected = &Host{SourceID: s.ID, InventoryHostID: h.ID}
 		}
-		state.Source = s.ID
 		state.Focus = s.ID + ":" + h.ID
 		for _, p := range profiles {
 			if p.Default && p.kind() == state.Mode {
@@ -273,7 +272,6 @@ func editInventoryHost(c Config, state *PickerState, selected *Host) error {
 				}
 				continue
 			}
-			state.Source = s.ID
 			state.Focus = s.ID + ":" + h.ID
 			for _, p := range profiles {
 				if p.Default && p.kind() == state.Mode {

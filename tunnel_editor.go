@@ -206,7 +206,6 @@ func editTunnelDefinition(c Config, state *PickerState, h *Host, source *Profile
 				}
 				continue
 			}
-			state.Source = s.ID
 			state.Focus = s.ID + ":" + r.ID
 			return nil
 		default:

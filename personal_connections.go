@@ -823,7 +823,6 @@ func createUnifiedHost(c Config, state *PickerState) error {
 	if err = editPersonalHosts(c, state.ConfigPath, []Host{h}); err != nil {
 		return err
 	}
-	state.Source = s.ID
 	state.Focus = s.ID + ":" + h.InventoryHostID
 	return nil
 }

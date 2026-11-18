@@ -69,9 +69,13 @@ func sourceMenu(settings string, c Config, state *PickerState) error {
 			if !sourceEnabled(c, s.ID) {
 				continue
 			}
-			options = append(options, choice{s.ID, s.Name + " — SQLite: " + s.Path})
+			label := s.Name + " — SQLite: " + s.Path
+			if s.Type == "api" {
+				label = s.Name + " — API: " + s.URL
+			}
+			options = append(options, choice{s.ID, label})
 		}
-		options = append(options, choice{"create", "Create local SQLite source…"}, choice{"attach", "Add existing SQLite source…"})
+		options = append(options, choice{"create", "Create local SQLite source…"}, choice{"attach", "Add existing SQLite source…"}, choice{"api", "Add API server…"})
 		id, back, err := choose("Sources", options, "SQLite sources hold SSH, RDP and tunnel connections independently of personal files. No database is created until you explicitly confirm. Legacy file-backed connections retain their file editors.")
 		if err != nil || back {
 			return err
@@ -94,7 +98,7 @@ func sourceMenu(settings string, c Config, state *PickerState) error {
 		if strings.HasPrefix(id, "remove:") {
 			return removeSourceRegistration(settings, c, state, strings.TrimPrefix(id, "remove:"))
 		}
-		if id != "create" && id != "attach" {
+		if id != "create" && id != "attach" && id != "api" {
 			state.Source = id
 			state.Focus = ""
 			return nil
@@ -104,6 +108,9 @@ func sourceMenu(settings string, c Config, state *PickerState) error {
 }
 
 func addInventorySource(settings string, c Config, state *PickerState, id string) error {
+	if id == "api" {
+		return addAPISource(settings, state)
+	}
 	name, back, err := inventoryPrompt("Source name", "Personal")
 	if err != nil || back {
 		return err
@@ -323,7 +330,6 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 			before = r
 			saved = true
 			existing = true
-			state.Source = s.ID
 			state.Mode = "tunnels"
 			state.Focus = s.ID + ":" + r.ID
 			return nil
@@ -545,7 +551,6 @@ func editConnectionDraft(c Config, state *PickerState, h *Host, profile *Connect
 				if state.Mode == "tunnel" {
 					state.Mode = "tunnels"
 				}
-				state.Source = s.ID
 				state.Focus = s.ID + ":" + r.ID
 				return nil
 			}
