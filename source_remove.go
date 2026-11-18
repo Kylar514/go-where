@@ -49,6 +49,11 @@ func removeSourceRegistration(path string, c Config, state *PickerState, id stri
 	if err = saveSettingsDraft(path, original, before, draft); err != nil {
 		return fmt.Errorf("remove source: %w", err)
 	}
+	if s.Type == "api" {
+		if err = clearAPIDiskCache(s); err != nil {
+			return fmt.Errorf("source removed but cache cleanup failed: %w", err)
+		}
+	}
 	if state.Source == id {
 		state.Source = ""
 		state.Focus = ""

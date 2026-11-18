@@ -73,10 +73,18 @@ func sourceMenu(settings string, c Config, state *PickerState) error {
 			if s.Type == "api" {
 				label = s.Name + " — API: " + s.URL
 			}
+			if message := state.UnavailableSources[s.ID]; message != "" {
+				label += " · " + message
+			}
 			options = append(options, choice{s.ID, label})
 		}
 		options = append(options, choice{"create", "Create local SQLite source…"}, choice{"attach", "Add existing SQLite source…"}, choice{"api", "Add API server…"})
-		id, back, err := choose("Sources", options, "SQLite sources hold SSH, RDP and tunnel connections independently of personal files. No database is created until you explicitly confirm. Legacy file-backed connections retain their file editors.")
+		menu := newDialog("Sources", options, "Sources load independently. Unavailable sources have not been deleted or treated as empty. Reload retries connections; Settings → Enabled Sources can disable a source.")
+		menu.optionDetails = map[string]string{}
+		for id, message := range state.UnavailableSources {
+			menu.optionDetails[id] = message + "\nInventory writes require a successful authenticated connection. Offline cached data may be used for browsing and launches only."
+		}
+		id, back, err := runChoice(menu, menuKey("Sources"))
 		if err != nil || back {
 			return err
 		}

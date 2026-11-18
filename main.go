@@ -217,10 +217,8 @@ func app(args []string) error {
 				return err
 			}
 		}
-		managed, err := inventoryHosts(c)
-		if err != nil {
-			return err
-		}
+		managed, failures := availableInventoryHosts(c)
+		state.UnavailableSources = failures
 		hosts = append(hosts, managed...)
 		state.RDPTags = c.RDP.Tags
 		state.ConfigPath = *config

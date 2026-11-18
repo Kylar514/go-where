@@ -49,7 +49,7 @@ func chooseTunnelHost(c Config, current *ProfileReference) (*ProfileReference, b
 		}
 		hosts, err := sourceInventoryHosts(s)
 		if err != nil {
-			return nil, false, err
+			continue // Unavailable inventories are not selectable; never clear current refs.
 		}
 		for _, h := range hosts {
 			ref := ProfileReference{s.ID, h.ID}

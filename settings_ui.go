@@ -177,7 +177,7 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 			options = active
 		}
 		values, details := settingsSummaries(draft)
-		options = append(options, choice{"api-add", "Add API server"}, choice{"api-tokens", "API device tokens"})
+		options = append(options, choice{"api-add", "Add API server"}, choice{"api-tokens", "API device tokens"}, choice{"api-cache", "Clear cached API inventory"})
 		if databaseSettings(path) {
 			for i, o := range options {
 				if value, ok := values[o.ID]; ok {
@@ -206,6 +206,33 @@ func settingsMenuAt(path, initial string) (raw bool, err error) {
 		case "api-tokens":
 			if e = manageAPITokens(draft); e != nil {
 				return false, e
+			}
+		case "api-cache":
+			var choices []choice
+			for _, s := range draft.Sources {
+				if s.Type == "api" {
+					choices = append(choices, choice{s.ID, s.Name})
+				}
+			}
+			id, b, err := chooseOne("Clear cached inventory", choices, "Deletes this device's offline snapshot only. Server inventory and credentials remain unchanged.", "")
+			if err != nil {
+				return false, err
+			}
+			if b {
+				continue
+			}
+			s, err := findSource(draft, id)
+			if err != nil {
+				return false, err
+			}
+			_, b, err = choose("Clear offline cache?", []choice{{"confirm", "Clear cached inventory"}}, s.Name+" will require a successful server connection before it can be used again.")
+			if err != nil {
+				return false, err
+			}
+			if !b {
+				if err = clearAPIDiskCache(s); err != nil {
+					return false, err
+				}
 			}
 		case "hosts":
 			if e = manageInventoryHosts(draft, path); e != nil {

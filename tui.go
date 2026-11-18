@@ -84,6 +84,26 @@ func newPickerModel(hosts []Host, query, dest string, o Origin, state PickerStat
 	input.Focus()
 	m := &pickerModel{hosts: hosts, state: state, config: c, dest: dest, origin: o, search: input, preview: viewport.New(1, 1), marked: map[string]bool{}, transferMode: "scp", tunnelStatus: map[string]tunnelInfo{}, pending: map[string]bool{}, positions: map[string]string{}}
 	m.state.Account = RDPAccount{}
+	if len(state.UnavailableSources) > 0 {
+		count := 0
+		for _, source := range c.Sources {
+			if state.UnavailableSources[source.ID] != "" {
+				if count == 0 {
+					status := apiSourceAvailability(source)
+					if status == "" {
+						status = "Unavailable · No cache"
+					}
+					status = strings.TrimSuffix(status, " · Read-only")
+					m.status = source.Name + " — " + status
+				}
+				count++
+			}
+		}
+		if count > 1 {
+			m.status += fmt.Sprintf(" · +%d sources", count-1)
+		}
+		m.statusError = true
+	}
 	if state.Mode == "" {
 		m.state.Mode = "ssh"
 	}

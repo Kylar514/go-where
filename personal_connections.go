@@ -148,7 +148,7 @@ func profileChoices(c Config, kind string) ([]choice, map[string]ProfileReferenc
 		}
 		profiles, err := sourceProfiles(s)
 		if err != nil {
-			return nil, nil, err
+			continue // Optional cross-source choices; explicit references resolve strictly.
 		}
 		for _, p := range profiles {
 			if p.kind() != kind {

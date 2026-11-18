@@ -7,6 +7,7 @@ import (
 )
 
 type PickerState struct {
+	UnavailableSources map[string]string
 	Sorts              map[string]pickerSort
 	TunnelColumnWidths []int
 	ListPercent        int

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +21,8 @@ const apiCredentialService = "go-where-api"
 const apiBodyLimit = 8 << 20
 
 type apiSnapshot struct {
+	Offline     bool            `json:"offline,omitempty"`
+	FetchedAt   time.Time       `json:"fetched_at,omitempty"`
 	Hosts       []InventoryHost `json:"hosts"`
 	Profiles    []Connection    `json:"profiles"`
 	Connections []Connection    `json:"connections"`
@@ -92,10 +96,19 @@ func apiRequest(s InventorySource, method, path string, input, output any, revis
 	}
 	response, err := apiHTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("API unavailable; check server address, TLS trust, and connectivity")
+		var authority x509.UnknownAuthorityError
+		var hostname x509.HostnameError
+		var invalid x509.CertificateInvalidError
+		if errors.As(err, &authority) || errors.As(err, &hostname) || errors.As(err, &invalid) {
+			return fmt.Errorf("API TLS verification failed; cached fallback is disabled")
+		}
+		return apiUnavailableError{"API unavailable; check server address, TLS trust, and connectivity"}
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		if response.StatusCode >= 500 {
+			return apiUnavailableError{"API server unavailable"}
+		}
 		switch response.StatusCode {
 		case 401:
 			return fmt.Errorf("API token invalid, expired, revoked, or user disabled")
@@ -145,7 +158,21 @@ func readAPISnapshot(s InventorySource) (apiSnapshot, error) {
 		return copy, nil
 	}
 	if err := apiRequest(s, "GET", "inventories/"+s.ID, nil, &v, ""); err != nil {
-		return v, err
+		var unavailable apiUnavailableError
+		if !errors.As(err, &unavailable) {
+			_ = clearAPIDiskCache(s)
+			return v, err
+		}
+		cached, e := loadAPIDiskCache(s)
+		if e != nil {
+			return v, fmt.Errorf("%w; no usable cached data", err)
+		}
+		v = cached
+		v.Offline = true
+		v.ReadOnly = true
+	} else {
+		v.Offline = false
+		v.FetchedAt = time.Now().UTC()
 	}
 	if v.Revision == "" {
 		return v, fmt.Errorf("API returned inventory without revision")
@@ -159,6 +186,17 @@ func readAPISnapshot(s InventorySource) (apiSnapshot, error) {
 		}
 		if validateHostColor(h.Color) != nil || validateBracketColor(h.BracketColor) != nil {
 			return v, fmt.Errorf("invalid remote host colors")
+		}
+	}
+	for _, p := range v.Profiles {
+		if !inventoryName(p.ID) || !inventoryName(p.ProfileName) || (p.kind() != "ssh" && p.kind() != "rdp") || p.HostID != "" || p.JumpID != "" {
+			return v, fmt.Errorf("invalid cached or remote profile")
+		}
+		check := p
+		check.Alias = p.ID
+		check.Address = "192.0.2.1"
+		if err := validateConnections([]Connection{check}); err != nil {
+			return v, err
 		}
 	}
 	// Reconstruct optimistic profile baselines omitted from JSON.
@@ -176,6 +214,11 @@ func readAPISnapshot(s InventorySource) (apiSnapshot, error) {
 	apiSnapshots.Lock()
 	apiSnapshots.values[key] = v
 	apiSnapshots.Unlock()
+	if !v.Offline {
+		if err := saveAPIDiskCache(s, v); err != nil {
+			return apiSnapshot{}, fmt.Errorf("inventory loaded but private cache could not be saved: %w", err)
+		}
+	}
 	return readAPISnapshot(s)
 }
 
@@ -198,6 +241,9 @@ func mutateAPI(s InventorySource, change apiMutation) error {
 		return err
 	}
 	if v.ReadOnly {
+		if v.Offline {
+			return fmt.Errorf("source is offline; cached inventory is read-only, reconnect and reload before saving")
+		}
 		return fmt.Errorf("source is read-only")
 	}
 	if err = apiRequest(s, "POST", "inventories/"+s.ID, change, nil, v.Revision); err != nil {

@@ -9,7 +9,9 @@ import (
 
 func hostTunnelEntries(c Config, selected []Host) ([]Host, map[string]string, error) {
 	wanted := map[string]bool{}
+	required := map[string]bool{}
 	for _, h := range selected {
+		required[h.SourceID] = true
 		hostID := h.InventoryHostID
 		if hostID == "" {
 			_, r, err := storedRecord(h, c)
@@ -28,10 +30,16 @@ func hostTunnelEntries(c Config, selected []Host) ([]Host, map[string]string, er
 		}
 		rows, err := sourceConnections(s)
 		if err != nil {
+			if !required[s.ID] {
+				continue
+			}
 			return nil, nil, err
 		}
 		inventory, err := sourceInventoryHosts(s)
 		if err != nil {
+			if !required[s.ID] {
+				continue
+			}
 			return nil, nil, err
 		}
 		byHost := map[string]InventoryHost{}
