@@ -4,11 +4,11 @@ import "fmt"
 
 // Overlay protocol availability without writing attachments into shared sources.
 func effectiveSourceConnections(c Config, s InventorySource) ([]Connection, error) {
-	rows, err := sourceConnections(s)
+	rows, err := tunnelSourceConnections(c, s)
 	if err != nil {
 		return nil, err
 	}
-	hosts, err := sourceInventoryHosts(s)
+	hosts, err := tunnelSourceHosts(c, s)
 	if err != nil {
 		return nil, err
 	}

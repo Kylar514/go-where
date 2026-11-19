@@ -81,7 +81,7 @@ func TestTunnelSortNarrowColumnsAndResize(t *testing.T) {
 		m.Update(tea.WindowSizeMsg{Width: width, Height: 28})
 		listWidth, _ := m.paneWidths()
 		columns := m.columnWidths(listWidth)
-		column := m.sortColumn(1, len(columns))
+		column := m.sortColumn(min(1, len(columns)-1), len(columns))
 		clickSortHeader(t, m, column)
 		if m.state.Sorts["tunnels"].Column != column {
 			t.Fatal("narrow column identity")

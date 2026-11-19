@@ -98,7 +98,7 @@ func resolvedConnection(c Config, s InventorySource, r Connection) (Connection, 
 	}
 	if r.kind() == "tunnel" {
 		if r.RemoteHostID != "" {
-			hosts, err := sourceInventoryHosts(s)
+			hosts, err := tunnelSourceHosts(c, s)
 			if err != nil {
 				return r, err
 			}

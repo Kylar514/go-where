@@ -121,7 +121,7 @@ func TestSSHCompatibilityDefaultsOverridesAndHops(t *testing.T) {
 	b, _ := base64.RawURLEncoding.DecodeString(tun.Resource)
 	var spec inventoryTunnelSpec
 	json.Unmarshal(b, &spec)
-	if spec.Configuration != j.Configuration {
+	if spec.Configuration != tunnelSSHConfiguration(j.Configuration) {
 		t.Fatal("tunnel did not reuse per-hop settings")
 	}
 	bad := []string{"bad\nHost *"}

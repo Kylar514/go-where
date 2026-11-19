@@ -74,7 +74,7 @@ func (m *pickerModel) buttons() []pickerButton {
 	if m.compactPicker() {
 		primary := buttons[0]
 		if m.state.Mode == "tunnels" && len(m.markedTunnels()) > 0 {
-			return []pickerButton{{"Start selected", "start-selected"}, {"Stop selected", "stop-selected"}, {"Details", "details"}, {"More…", "more"}}
+			return []pickerButton{{"Toggle selected", "connect"}, {"Details", "details"}, {"More…", "more"}}
 		}
 		return []pickerButton{primary, {"Edit", "edit-tunnel"}, {"Details", "details"}, {"More…", "more"}}
 	}
@@ -88,7 +88,7 @@ func (m *pickerModel) baseButtons() []pickerButton {
 		return []pickerButton{{"Select method", "connect"}, {"Settings", "settings"}, {"Help", "help"}}
 	}
 	if m.hostTunnelTitle != "" {
-		return []pickerButton{{"Back", "back"}, {"New", "new-tunnel"}, {"Edit", "edit-tunnel"}, {"Start selected", "start-selected"}, {"Stop selected", "stop-selected"}}
+		return []pickerButton{{"Back", "back"}, {"Toggle selected", "connect"}, {"New", "new-tunnel"}, {"Edit", "edit-tunnel"}, {"Start selected", "start-selected"}, {"Stop selected", "stop-selected"}}
 	}
 	source := "All"
 	if m.state.Source == "ssh-config" {
@@ -106,7 +106,7 @@ func (m *pickerModel) baseButtons() []pickerButton {
 	}
 	if m.state.Mode == "tunnels" {
 		if len(m.markedTunnels()) > 0 {
-			return []pickerButton{{"Start selected", "start-selected"}, {"Stop selected", "stop-selected"}, {"New", "new-tunnel"}, {"Edit", "edit-tunnel"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
+			return []pickerButton{{"Toggle selected", "connect"}, {"Start selected", "start-selected"}, {"Stop selected", "stop-selected"}, {"New", "new-tunnel"}, {"Edit", "edit-tunnel"}, {"Settings", "settings"}, sourceButton, {"Help", "help"}}
 		}
 		primary = "Start"
 		if len(m.visible) > 0 {
