@@ -20,7 +20,7 @@ func defaultTunnelHost(c Config, ref ProfileReference) (Host, error) {
 	if err != nil {
 		return Host{}, err
 	}
-	hosts, err := sourceInventoryHosts(s)
+	hosts, err := tunnelSourceHosts(c, s)
 	if err != nil {
 		return Host{}, err
 	}
@@ -28,7 +28,7 @@ func defaultTunnelHost(c Config, ref ProfileReference) (Host, error) {
 		if r.HostID == ref.ID && r.kind() == "ssh" && r.Default {
 			for _, h := range hosts {
 				if h.ID == ref.ID {
-					return Host{SourceID: s.ID, SourceName: s.Name, InventoryHostID: h.ID, ConnectionID: r.ID, Alias: h.Alias, Hostname: h.Address, Type: "ssh"}, nil
+					return Host{SourceID: s.ID, SourceName: s.Name, InventoryHostID: h.ID, ConnectionID: r.ID, Alias: h.Alias, Hostname: h.Address, Color: h.Color, BracketColor: h.BracketColor, Type: "ssh"}, nil
 				}
 			}
 		}
@@ -109,6 +109,11 @@ func editTunnelDefinition(c Config, state *PickerState, h *Host, source *Profile
 			options = append(options, choice{"destination-host", "Destination host: " + name(r.DestinationHost, "Not selected")})
 		}
 		options = append(options, choice{"destination-address", "Destination address: " + r.Bind}, choice{"destination-port", fmt.Sprintf("Destination port: %d", r.LocalPort)}, choice{"save-to", "Save to: " + s.Name})
+		label := colorName(r.Color)
+		if r.Color == "" {
+			label = "Inherit SSH host"
+		}
+		options = append(options, choice{"color", "Color: " + label})
 		m := newDialog("Tunnel — "+s.Name, options, "")
 		m.optionDetails = tunnelEditorDetails(options, r, s)
 		m.footerActions = []choice{{"save", "Save tunnel"}}
@@ -127,6 +132,30 @@ func editTunnelDefinition(c Config, state *PickerState, h *Host, source *Profile
 			continue
 		}
 		switch id {
+		case "color":
+			if h == nil {
+				if e := notice("Save this new tunnel before saving its color override."); e != nil {
+					return e
+				}
+				continue
+			}
+			block, bracket, b, e := editHostColors(r.Color, r.BracketColor, func(block, bracket string) error {
+				_, next, err := storedRecord(*h, c)
+				if err != nil {
+					return err
+				}
+				next.Color, next.BracketColor = block, bracket
+				if err := changeConnection(s, next, false); err != nil {
+					return err
+				}
+				return nil
+			})
+			if e != nil {
+				return e
+			}
+			if !b {
+				r.Color, r.BracketColor = block, bracket
+			}
 		case "type":
 			value, b, e := chooseOne("Tunnel type", []choice{{"ssh", "Local forward"}, {"bridge", "Bridge"}}, "Bridge needs SSH forwarding permission on both servers.", r.TunnelType)
 			if e != nil {

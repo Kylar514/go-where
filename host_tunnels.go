@@ -74,6 +74,14 @@ func hostTunnelEntries(c Config, selected []Host) ([]Host, map[string]string, er
 				continue
 			}
 			h := Host{SourceID: s.ID, SourceName: s.Name, ConnectionID: r.ID, Alias: r.Alias, Type: "tunnel", Color: byHost[transport.HostID].Color, BracketColor: byHost[transport.HostID].BracketColor, Comment: r.Notes, Tags: r.Tags}
+			if r.SourceHost != nil {
+				if source, e := defaultTunnelHost(c, *r.SourceHost); e == nil {
+					h.Color, h.BracketColor = source.Color, source.BracketColor
+				}
+			}
+			if r.Color != "" {
+				h.Color, h.BracketColor = r.Color, r.BracketColor
+			}
 			result = append(result, h)
 			roles[hostIdentity(h)] = strings.Join(role, "; ")
 		}

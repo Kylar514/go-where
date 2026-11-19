@@ -172,7 +172,7 @@ func TestSignatureEditorPersistenceOverridesAndHops(t *testing.T) {
 	}
 	b, _ := base64.RawURLEncoding.DecodeString(conn.Resource)
 	var spec inventoryTunnelSpec
-	if err = json.Unmarshal(b, &spec); err != nil || spec.Configuration != job.Configuration {
+	if err = json.Unmarshal(b, &spec); err != nil || spec.Configuration != tunnelSSHConfiguration(job.Configuration) {
 		t.Fatal("tunnel snapshot mismatch", err)
 	}
 	scriptTUI(t, "hostkey", "inherit", "pubkey", "inherit", "save")

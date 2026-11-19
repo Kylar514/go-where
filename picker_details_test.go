@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	core "github.com/kylar514/go-where/internal/tunnelcore"
 )
 
 func TestLatestOnlyDetailsRefresh(t *testing.T) {
@@ -51,6 +52,44 @@ func TestLatestOnlyDetailsRefresh(t *testing.T) {
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
 	if m.key != "ctrl-e" || len(m.selected) != 1 || m.selected[0].Alias != "three" {
 		t.Fatal("edit waited for or used stale Details")
+	}
+}
+
+func TestTunnelPollKeepsDetailsStable(t *testing.T) {
+	m := newPickerModel(nil, "", "current", Origin{}, PickerState{Mode: "tunnels"}, defaultConfig())
+	m.tunnels = []core.Connection{{Name: "selected"}, {Name: "other"}}
+	m.visible = []int{0, 1}
+	m.preview.Width, m.preview.Height = 40, 3
+	text := strings.Repeat("line\n", 20)
+	m.detailsText = text
+	m.preview.SetContent(text)
+	m.preview.SetYOffset(5)
+	revision := m.detailsRevision
+	m.Update(tunnelStatusMsg{statuses: map[string]tunnelInfo{"other": {status: 2, pid: 2}}})
+	if m.detailsRevision != revision || m.detailsText != text || m.preview.YOffset != 5 {
+		t.Fatal("unrelated poll refreshed Details")
+	}
+	m.Update(tunnelStatusMsg{statuses: map[string]tunnelInfo{"selected": {status: 2, pid: 1}}})
+	if m.detailsRevision == revision || m.detailsText != text || m.preview.YOffset != 5 {
+		t.Fatal("changed status flashed loading/reset scroll")
+	}
+	_, work := m.Update(detailsSettled{m.detailsRevision})
+	if work == nil {
+		t.Fatal("changed status did not schedule refresh")
+	}
+	m.Update(detailsResult{m.detailsRevision, text + "active"})
+	if m.preview.YOffset != 5 {
+		t.Fatal("background result reset scroll")
+	}
+	revision = m.detailsRevision
+	m.Update(tunnelStatusMsg{statuses: map[string]tunnelInfo{"selected": {status: 2, pid: 1}}})
+	if m.detailsRevision != revision {
+		t.Fatal("unchanged poll scheduled work")
+	}
+	m.pending["selected"] = true
+	m.Update(tunnelActionMsg{name: "selected"})
+	if m.detailsRevision == revision || strings.Contains(m.detailsText, "Loading Details") {
+		t.Fatal("action refresh missing/flashing")
 	}
 }
 

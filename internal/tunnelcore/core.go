@@ -169,6 +169,17 @@ func Start(c Connection) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	logPath, err := LogPath(c.Name)
+	if err != nil {
+		return 0, err
+	}
+	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return 0, err
+	}
+	defer log.Close()
+	cmd.Stdin = nil
+	cmd.Stdout, cmd.Stderr = log, log
 	prepareCommand(cmd)
 	if err = cmd.Start(); err != nil {
 		return 0, err
@@ -197,8 +208,30 @@ func Start(c Connection) (int, error) {
 		_ = cmd.Wait()
 		return 0, err
 	}
-	go func() { _ = cmd.Wait() }()
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		_ = Stop(c)
+		return 0, fmt.Errorf("tunnel exited during startup (%v); details: %s", err, logPath)
+	case <-time.After(200 * time.Millisecond):
+	}
 	return pid, nil
+}
+
+func LogPath(name string) (string, error) {
+	if name == "" || filepath.Base(name) != name || strings.ContainsAny(name, "/\\") {
+		return "", fmt.Errorf("invalid tunnel name")
+	}
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	dir = filepath.Join(dir, "go-where", "tunnels", "logs")
+	if err = os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name+".log"), nil
 }
 
 func connectionEndpoint(c Connection) string {

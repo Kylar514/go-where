@@ -17,7 +17,7 @@ func (m *pickerModel) markedTunnels() []int {
 	return ids
 }
 
-func (m *pickerModel) bulkTunnels(stop bool) tea.Cmd {
+func (m *pickerModel) bulkTunnels(stop bool, toggle ...bool) tea.Cmd {
 	var commands []tea.Cmd
 	ids := m.markedTunnels()
 	if m.hostTunnelTitle != "" && len(ids) == 0 && len(m.visible) > 0 {
@@ -28,20 +28,24 @@ func (m *pickerModel) bulkTunnels(stop bool) tea.Cmd {
 		if m.pending[c.Name] {
 			continue
 		}
-		if err := m.tunnelErrors[c.Name]; err != nil {
+		info := m.tunnelStatus[c.Name]
+		stopThis := stop
+		if len(toggle) > 0 && toggle[0] {
+			stopThis = info.pid > 0
+		}
+		if err := m.tunnelErrors[c.Name]; err != nil && !stopThis {
 			m.status = err.Error()
 			m.statusError = true
 			continue
 		}
-		info := m.tunnelStatus[c.Name]
-		if stop && info.pid == 0 {
+		if stopThis && info.pid == 0 {
 			continue
 		}
-		if !stop && (info.pid > 0 || info.status == 3) {
+		if !stopThis && (info.pid > 0 || info.status == 3) {
 			continue
 		}
 		m.pending[c.Name] = true
-		commands = append(commands, func() tea.Msg { return tunnelActionMsg{c.Name, toggleManagedTunnel(c, stop)} })
+		commands = append(commands, func() tea.Msg { return tunnelActionMsg{c.Name, toggleManagedTunnel(c, stopThis)} })
 	}
 	return tea.Batch(commands...)
 }

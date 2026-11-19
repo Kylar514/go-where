@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ type hitRegion struct {
 	index       int
 }
 type pickerModel struct {
+	backgroundDetails             bool
 	deferDetails                  bool
 	detailsDirty                  bool
 	detailsBusy                   bool
@@ -139,9 +141,35 @@ func (m *pickerModel) loadTunnels() {
 	m.tunnelHosts = map[string]Host{}
 	m.tunnelErrors = map[string]error{}
 	m.tunnels = nil
+	hasTunnels := false
+	for _, h := range m.hosts {
+		if h.Type == "tunnel" && h.SourceID != "" {
+			hasTunnels = true
+			break
+		}
+	}
+	if !hasTunnels {
+		return
+	}
+	c := m.config
+	c.tunnelInventory = map[string]apiSnapshot{}
+	for _, s := range c.Sources {
+		if !sourceEnabled(c, s.ID) {
+			continue
+		}
+		rows, e := sourceConnections(s)
+		if e != nil {
+			continue
+		}
+		hosts, e := sourceInventoryHosts(s)
+		if e != nil {
+			continue
+		}
+		c.tunnelInventory[s.ID] = apiSnapshot{Connections: rows, Hosts: hosts}
+	}
 	for _, h := range m.hosts {
 		if h.SourceID != "" && h.Type == "tunnel" {
-			conn, err := inventoryTunnel(h, m.config)
+			conn, err := inventoryTunnel(h, c)
 			m.tunnels = append(m.tunnels, conn)
 			m.tunnelHosts[conn.Name] = h
 			if err != nil {
@@ -444,6 +472,9 @@ func (m *pickerModel) finish(key string) tea.Cmd {
 		return tea.Quit
 	}
 	if key == "enter" && m.state.Mode == "tunnels" {
+		if len(m.markedTunnels()) > 0 {
+			return m.bulkTunnels(false, true)
+		}
 		return m.toggleTunnel()
 	}
 	if key == "enter" || key == "debug" || key == "connect-as" || strings.HasPrefix(key, "ctrl-alt-") || key == "ctrl-e" {
@@ -611,6 +642,11 @@ func (m *pickerModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		connections := append([]digletconfig.Connection(nil), m.tunnels...)
 		return m, func() tea.Msg { s, e := tunnelStatuses(connections); return tunnelStatusMsg{s, e} }
 	case tunnelStatusMsg:
+		selected := ""
+		if m.state.Mode == "tunnels" && len(m.visible) > 0 {
+			selected = m.tunnels[m.visible[m.cursor]].Name
+		}
+		previous := m.tunnelStatus[selected]
 		if msg.err != nil {
 			m.status = msg.err.Error()
 			m.statusError = true
@@ -625,7 +661,9 @@ func (m *pickerModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusError = false
 			}
 		}
-		m.updatePreview()
+		if selected != "" && msg.err == nil && previous != m.tunnelStatus[selected] {
+			m.updatePreview()
+		}
 		return m, tunnelTick()
 	case tunnelActionMsg:
 		if result, ok := msg.err.(debugTunnelResult); ok {
@@ -637,6 +675,9 @@ func (m *pickerModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.openDialog("debug-tunnel", "Tunnel diagnostics", []choice{{"back", "Back"}}, text)
 		}
 		delete(m.pending, msg.name)
+		if m.state.Mode == "tunnels" && len(m.visible) > 0 && m.tunnels[m.visible[m.cursor]].Name == msg.name {
+			m.updatePreview()
+		}
 		if msg.err != nil {
 			m.status = msg.err.Error()
 			m.statusError = true
@@ -903,8 +944,10 @@ func (m *pickerModel) updatePreview() {
 		}
 		if managed {
 			m.detailsDirty = true
-			m.detailsText = "Loading Details…"
-			m.preview.SetContent(m.detailsText)
+			if !m.backgroundDetails {
+				m.detailsText = "Loading Details…"
+				m.preview.SetContent(m.detailsText)
+			}
 			return
 		}
 	}
@@ -928,6 +971,16 @@ func (m *pickerModel) updatePreview() {
 				}
 				if err := m.tunnelErrors[c.Name]; err != nil {
 					text += "\n" + err.Error()
+				}
+				if m.tunnelStatus[c.Name].pid == 0 {
+					if path, e := digletconfig.LogPath(c.Name); e == nil {
+						if data, e := os.ReadFile(path); e == nil && len(data) > 0 {
+							if len(data) > 4096 {
+								data = data[len(data)-4096:]
+							}
+							text += "\n\nLast tunnel output:\n" + cleanLines(string(data))
+						}
+					}
 				}
 				m.setHostPreview(text, h)
 				return
@@ -1024,7 +1077,7 @@ func (m *pickerModel) View() string {
 		left = append(left, "Transfer method")
 	} else if m.state.Mode == "tunnels" {
 		left = append(left, tuiDim.Render(m.tunnelColumns(-1, listWidth, columns)))
-		x := 9
+		x := 11
 		for i, w := range columns {
 			m.hits = append(m.hits, hitRegion{x, tabHeight, w, "sort-column", m.sortColumn(i, len(columns))})
 			x += w
@@ -1075,9 +1128,6 @@ func (m *pickerModel) View() string {
 				}
 				line = renderHostColumns(&h, listWidth, mark, columns)
 			}
-			if i == m.cursor {
-				line = tuiSelected.Render(fit("›"+strings.TrimPrefix(line, " "), listWidth))
-			}
 			if m.state.Mode == "transfers" {
 			} else if m.state.Mode != "tunnels" {
 				h := m.hosts[id]
@@ -1085,7 +1135,20 @@ func (m *pickerModel) View() string {
 					line = ansi.Cut(line, 0, 5) + hostColorMarker(h.Color, h.BracketColor) + ansi.Cut(line, 8, listWidth)
 				}
 			} else if h, ok := m.tunnelHosts[m.tunnels[id].Name]; ok && h.Color != "" {
-				line = ansi.Cut(line, 0, 5) + hostColorMarker(h.Color, h.BracketColor) + ansi.Cut(line, 8, listWidth)
+				line = ansi.Cut(line, 0, 7) + hostColorMarker(h.Color, h.BracketColor) + ansi.Cut(line, 10, listWidth)
+			}
+			if m.state.Mode == "tunnels" {
+				line = ansi.Cut(line, 0, 5) + m.tunnelStatusMarker(m.tunnels[id].Name) + ansi.Cut(line, 6, listWidth)
+			}
+			if i == m.cursor {
+				start := 9 // SSH/RDP: checkbox, color marker, then name.
+				if m.state.Mode == "tunnels" {
+					start = 11
+				}
+				if m.state.Mode == "transfers" {
+					start = 1
+				}
+				line = highlightPickerRow(line, listWidth, start)
 			}
 			m.hits = append(m.hits, hitRegion{0, tabHeight + 1 + m.toolbarGap() + row, listWidth, "row", i})
 		} else if row == rows-1 {
@@ -1119,6 +1182,12 @@ func (m *pickerModel) View() string {
 		lines = append(lines, fit(status, width))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func highlightPickerRow(line string, width, nameStart int) string {
+	text := ansi.Strip(ansi.Cut(line, nameStart, width))
+	text += strings.Repeat(" ", max(0, width-nameStart-lipgloss.Width(text)))
+	return tuiAccent.Render("›") + ansi.Cut(line, 1, nameStart) + tuiSelected.Render(text)
 }
 func (m *pickerModel) markCount() int {
 	n := 0

@@ -13,12 +13,7 @@ type pickerSort struct {
 // Narrow tunnel layouts hide columns, rather than changing their identity.
 func (m *pickerModel) sortColumn(column, count int) int {
 	if m.state.Mode == "tunnels" {
-		if count == 4 {
-			return []int{0, 3, 4, 5}[column]
-		}
-		if count == 2 {
-			return []int{0, 5}[column]
-		}
+		return []int{0, 2, 3, 4, 1}[column]
 	}
 	return column
 }

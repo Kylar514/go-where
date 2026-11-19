@@ -26,6 +26,8 @@ type InventorySource struct {
 }
 
 type Connection struct {
+	Color                  string            `json:"color,omitempty"`
+	BracketColor           string            `json:"bracket_color,omitempty"`
 	SourceHost             *ProfileReference `json:"source_host,omitempty"`
 	DestinationHost        *ProfileReference `json:"destination_host,omitempty"`
 	OriginalProfile        *Connection       `json:"-"`
@@ -283,10 +285,26 @@ func sourceConnections(s InventorySource) ([]Connection, error) {
 	return records, nil
 }
 
+func tunnelSourceConnections(c Config, s InventorySource) ([]Connection, error) {
+	if v, ok := c.tunnelInventory[s.ID]; ok {
+		return v.Connections, nil
+	}
+	return sourceConnections(s)
+}
+func tunnelSourceHosts(c Config, s InventorySource) ([]InventoryHost, error) {
+	if v, ok := c.tunnelInventory[s.ID]; ok {
+		return v.Hosts, nil
+	}
+	return sourceInventoryHosts(s)
+}
+
 func validateConnections(records []Connection) error {
 	byID := map[string]Connection{}
 	aliases := map[string]bool{}
 	for _, c := range records {
+		if validateHostColor(c.Color) != nil || validateBracketColor(c.BracketColor) != nil {
+			return fmt.Errorf("invalid connection color")
+		}
 		if !inventoryName(c.ID) || !inventoryName(c.Alias) {
 			return fmt.Errorf("%s: ID, valid alias, address and port (1–65535) required", c.Alias)
 		}
@@ -479,6 +497,8 @@ func inventoryHosts(c Config) ([]Host, error) {
 			return nil, fmt.Errorf("%s: %w", s.Name, err)
 		}
 		configured := map[string]bool{}
+		colorConfig := c
+		colorConfig.tunnelInventory = map[string]apiSnapshot{s.ID: {Hosts: inventory, Connections: records}}
 		for _, r := range records {
 			configured[r.HostID] = true
 			if r.kind() != "tunnel" && !r.Default {
@@ -490,7 +510,12 @@ func inventoryHosts(c Config) ([]Host, error) {
 			}
 			color := byID[r.HostID].Color
 			bracketColor := byID[r.HostID].BracketColor
-			if r.kind() == "tunnel" && r.SSHID != "" {
+			if r.kind() == "tunnel" && r.SourceHost != nil {
+				if host, e := defaultTunnelHost(colorConfig, *r.SourceHost); e == nil {
+					color, bracketColor = host.Color, host.BracketColor
+				}
+			}
+			if r.kind() == "tunnel" && r.SourceHost == nil && r.SSHID != "" {
 				for _, p := range records {
 					if p.ID == r.SSHID {
 						color = byID[p.HostID].Color
@@ -498,6 +523,9 @@ func inventoryHosts(c Config) ([]Host, error) {
 						break
 					}
 				}
+			}
+			if r.kind() == "tunnel" && r.Color != "" {
+				color, bracketColor = r.Color, r.BracketColor
 			}
 			hosts = append(hosts, Host{BracketColor: bracketColor, Color: color, Alias: alias, Hostname: r.Address, Comment: r.Notes, Tags: r.Tags, SourceID: s.ID, SourceName: s.Name, ConnectionID: r.ID, InventoryHostID: r.HostID, ProfileName: r.ProfileName, Type: r.kind()})
 		}

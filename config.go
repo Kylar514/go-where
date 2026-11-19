@@ -10,6 +10,7 @@ import (
 )
 
 type Config struct {
+	tunnelInventory     map[string]apiSnapshot
 	CredentialKeyID     string `json:"credential_key_id,omitempty"`
 	settingsPath        string
 	databaseBacked      bool

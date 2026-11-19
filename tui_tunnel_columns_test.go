@@ -2,7 +2,10 @@ package main
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	digletconfig "github.com/kylar514/go-where/internal/tunnelcore"
+	"github.com/muesli/termenv"
 	"strings"
 	"testing"
 )
@@ -32,7 +35,7 @@ func TestTunnelNameSwatchColumnsAndResize(t *testing.T) {
 	}
 	m.Update(tea.WindowSizeMsg{Width: 148, Height: 28})
 	v := ansi.Strip(m.View())
-	if !strings.Contains(v, "[ ] [■] kaiju-01") {
+	if !strings.Contains(v, "[ ] ○ [■] kaiju-01") {
 		t.Fatal("tunnel checkbox/swatches overlap", v)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -40,7 +43,7 @@ func TestTunnelNameSwatchColumnsAndResize(t *testing.T) {
 		t.Fatal("Tab did not mark tunnel")
 	}
 	v = ansi.Strip(m.View())
-	if !strings.Contains(v, "[✓] [■] kaiju-01") || !strings.Contains(v, "Start selected") || !strings.Contains(v, "Stop selected") {
+	if !strings.Contains(v, "[✓] ○ [■] kaiju-01") || !strings.Contains(v, "Start selected") || !strings.Contains(v, "Stop selected") {
 		t.Fatal("marked tunnel controls missing", v)
 	}
 	m.search.SetValue("no match")
@@ -66,5 +69,54 @@ func TestTunnelNameSwatchColumnsAndResize(t *testing.T) {
 	}
 	if len(m.state.TunnelColumnWidths) == 0 || m.key != "" {
 		t.Fatal("tunnel resize failed")
+	}
+}
+
+func TestPickerHighlightStartsAfterMarkers(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	defer lipgloss.SetColorProfile(profile)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	for _, tc := range []struct {
+		line  string
+		start int
+	}{{" [✓] [■] server address", 9}, {" [✓] ● [■] server address", 11}} {
+		line := ansi.Cut(tc.line,0,tc.start) + "\x1b[0m" + ansi.Cut(tc.line,tc.start,40)
+		row := highlightPickerRow(line, 40, tc.start)
+		styledName := tuiSelected.Render("server address" + strings.Repeat(" ", 40-tc.start-14))
+		index := strings.Index(row, styledName)
+		if index < 0 {
+			t.Fatal("name not continuously highlighted", row)
+		}
+		prefix := row[:index]
+		if strings.Contains(prefix, "\x1b[7") || strings.Contains(prefix, ";7m") {
+			t.Fatal("markers highlighted", prefix)
+		}
+		if !strings.Contains(row, styledName) {
+			t.Fatal("name not continuously highlighted", row)
+		}
+		if strings.TrimRight(ansi.Strip(row), " ") != "›"+tc.line[1:] || ansi.StringWidth(row) != 40 {
+			t.Fatal("row text changed", row)
+		}
+	}
+}
+
+func TestTunnelLongNamesSourceLastAndStatusDot(t *testing.T) {
+	m := newPickerModel(nil, "", "current", Origin{}, PickerState{Mode: "tunnels"}, defaultConfig())
+	m.tunnels = []digletconfig.Connection{{Name: "one", Bind: "127.0.10.1", LocalPort: 27017, RemotePort: 27017}}
+	m.tunnelHosts["one"] = Host{Alias: "CDNDEVDS01-27017-MONGO", SourceName: "Brightstar"}
+	widths := m.tunnelColumnWidths(110)
+	if m.tunnelColumnWidths(150)[0] > 28 {
+		t.Fatal("default Name column exceeds cap")
+	}
+	header := ansi.Strip(m.tunnelColumns(-1, 110, widths))
+	if strings.Contains(header, "STATUS") || strings.Index(header, "SOURCE") < strings.Index(header, "LOCAL PORT") {
+		t.Fatal(header)
+	}
+	for status, marker := range map[int]string{0: "○", 1: "◌", 2: "●", 3: "!"} {
+		m.tunnelStatus["one"] = tunnelInfo{status: status}
+		row := ansi.Strip(m.tunnelColumns(0, 110, widths))
+		if !strings.Contains(row, "CDNDEVDS01-27017-MONGO") || !strings.Contains(row, "[ ] "+marker) || strings.Index(row, "Brightstar") < strings.Index(row, "27017") {
+			t.Fatal(row)
+		}
 	}
 }

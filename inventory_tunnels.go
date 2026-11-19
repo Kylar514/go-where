@@ -62,7 +62,7 @@ func inventoryTunnel(h Host, c Config) (digletconfig.Connection, error) {
 		if e != nil {
 			return conn, e
 		}
-		spec.Configuration = j.Configuration
+		spec.Configuration = tunnelSSHConfiguration(j.Configuration)
 		target := net.JoinHostPort(r.RemoteHost, strconv.Itoa(r.RemotePort))
 		spec.Argv = []string{"ssh", "-N", "-o", "ExitOnForwardFailure=yes", "-L", net.JoinHostPort(r.Bind, strconv.Itoa(r.LocalPort)) + ":" + target, "--", j.Target}
 	case "kubectl":
@@ -91,6 +91,11 @@ func inventoryTunnel(h Host, c Config) (digletconfig.Connection, error) {
 	}
 	conn.Resource = base64.RawURLEncoding.EncodeToString(data)
 	return conn, nil
+}
+
+func tunnelSSHConfiguration(configuration string) string {
+	// Leading defaults apply to every generated host, including ProxyJump hops.
+	return "Host *\n    BatchMode yes\n    StrictHostKeyChecking accept-new\n    ConnectTimeout 15\n\n" + configuration
 }
 
 func tunnelSnapshotPath(name string) (string, error) {

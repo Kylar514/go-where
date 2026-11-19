@@ -16,8 +16,6 @@ import (
 
 func init() {
 	// Migrated PID-identity checks, detached processes and ownership registry.
-	// ponytail: registry is port-based; identical ports on different loopback IPs
-	// need an address-aware registry before they can run simultaneously.
 	tunnel.Register("go-where", func(c config.Connection) (*exec.Cmd, error) {
 		data, err := base64.RawURLEncoding.DecodeString(c.Resource)
 		if err != nil {
@@ -64,7 +62,9 @@ func init() {
 			}
 			args = append([]string{"-F", path}, args...)
 		}
-		return exec.Command(spec.Argv[0], args...), nil
+		cmd := exec.Command(spec.Argv[0], args...)
+		// Detached children never read the TUI or write diagnostics over it.
+		return cmd, nil
 	})
 }
 

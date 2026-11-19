@@ -1,5 +1,17 @@
 # go-where
 
+Tunnel selection: Enter toggles each marked tunnel independently (starts inactive
+tunnels and stops owned running tunnels); with no marks it toggles the highlighted
+tunnel. Start selected / Stop selected remain explicit. Different loopback addresses
+may use the same local port; wildcard/conflicting endpoints remain blocked.
+Background SSH tunnels use `StrictHostKeyChecking=accept-new` and `BatchMode`
+for the selected host and jump hops: unseen keys are saved automatically,
+changed keys are rejected, and password/passphrase prompts do not enter the TUI.
+Load passphrase keys into your agent before starting tunnels. Failure output is
+kept under the user cache directory at `go-where/tunnels/logs` and shown in
+Details when inactive. Tunnel colors inherit the selected SSH host; the tunnel
+editor's Color option can override them independently (clear to inherit).
+
 Remote HTTPS inventory sources and administrator-managed device tokens are
 available in this branch. See [SERVER.md](SERVER.md) for server setup, client
 registration, TLS, standalone/Docker deployment, and validation boundaries.

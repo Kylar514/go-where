@@ -90,7 +90,7 @@ func runBridgeSupervisor(args []string) error {
 		return err
 	}
 	defer os.RemoveAll(dir)
-	for name, text := range map[string]string{"source": b.Source.Configuration, "destination": b.Destination.Configuration} {
+	for name, text := range map[string]string{"source": tunnelSSHConfiguration(b.Source.Configuration), "destination": tunnelSSHConfiguration(b.Destination.Configuration)} {
 		if err = os.WriteFile(filepath.Join(dir, name), []byte(text), 0600); err != nil {
 			return err
 		}
