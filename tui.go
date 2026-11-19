@@ -1115,9 +1115,6 @@ func (m *pickerModel) View() string {
 				}
 				line = renderHostColumns(&h, listWidth, mark, columns)
 			}
-			if i == m.cursor {
-				line = tuiSelected.Render(fit("›"+strings.TrimPrefix(line, " "), listWidth))
-			}
 			if m.state.Mode == "transfers" {
 			} else if m.state.Mode != "tunnels" {
 				h := m.hosts[id]
@@ -1129,11 +1126,16 @@ func (m *pickerModel) View() string {
 			}
 			if m.state.Mode == "tunnels" {
 				line = ansi.Cut(line, 0, 5) + m.tunnelStatusMarker(m.tunnels[id].Name) + ansi.Cut(line, 6, listWidth)
-				if i == m.cursor {
-					// Marker styles reset reverse video; restyle each ordinary segment.
-					selected := func(start, end int) string { return tuiSelected.Render(ansi.Strip(ansi.Cut(line, start, end))) }
-					line = selected(0, 5) + m.tunnelStatusMarker(m.tunnels[id].Name) + selected(6, 7) + ansi.Cut(line, 7, 10) + selected(10, listWidth)
+			}
+			if i == m.cursor {
+				start := 9 // SSH/RDP: checkbox, color marker, then name.
+				if m.state.Mode == "tunnels" {
+					start = 11
 				}
+				if m.state.Mode == "transfers" {
+					start = 1
+				}
+				line = highlightPickerRow(line, listWidth, start)
 			}
 			m.hits = append(m.hits, hitRegion{0, tabHeight + 1 + m.toolbarGap() + row, listWidth, "row", i})
 		} else if row == rows-1 {
@@ -1167,6 +1169,12 @@ func (m *pickerModel) View() string {
 		lines = append(lines, fit(status, width))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func highlightPickerRow(line string, width, nameStart int) string {
+	text := ansi.Strip(ansi.Cut(line, nameStart, width))
+	text += strings.Repeat(" ", max(0, width-nameStart-lipgloss.Width(text)))
+	return tuiAccent.Render("›") + ansi.Cut(line, 1, nameStart) + tuiSelected.Render(text)
 }
 func (m *pickerModel) markCount() int {
 	n := 0

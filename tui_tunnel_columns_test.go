@@ -2,8 +2,10 @@ package main
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	digletconfig "github.com/kylar514/go-where/internal/tunnelcore"
+	"github.com/muesli/termenv"
 	"strings"
 	"testing"
 )
@@ -67,6 +69,34 @@ func TestTunnelNameSwatchColumnsAndResize(t *testing.T) {
 	}
 	if len(m.state.TunnelColumnWidths) == 0 || m.key != "" {
 		t.Fatal("tunnel resize failed")
+	}
+}
+
+func TestPickerHighlightStartsAfterMarkers(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	defer lipgloss.SetColorProfile(profile)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	for _, tc := range []struct {
+		line  string
+		start int
+	}{{" [✓] [■] server address", 9}, {" [✓] ● [■] server address", 11}} {
+		line := ansi.Cut(tc.line,0,tc.start) + "\x1b[0m" + ansi.Cut(tc.line,tc.start,40)
+		row := highlightPickerRow(line, 40, tc.start)
+		styledName := tuiSelected.Render("server address" + strings.Repeat(" ", 40-tc.start-14))
+		index := strings.Index(row, styledName)
+		if index < 0 {
+			t.Fatal("name not continuously highlighted", row)
+		}
+		prefix := row[:index]
+		if strings.Contains(prefix, "\x1b[7") || strings.Contains(prefix, ";7m") {
+			t.Fatal("markers highlighted", prefix)
+		}
+		if !strings.Contains(row, styledName) {
+			t.Fatal("name not continuously highlighted", row)
+		}
+		if strings.TrimRight(ansi.Strip(row), " ") != "›"+tc.line[1:] || ansi.StringWidth(row) != 40 {
+			t.Fatal("row text changed", row)
+		}
 	}
 }
 
