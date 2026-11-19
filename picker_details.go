@@ -27,9 +27,11 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.startDetailsRefresh()
 	case detailsResult:
 		m.detailsBusy = false
-		if msg.revision == m.detailsRevision {
+		if msg.revision == m.detailsRevision && msg.text != m.detailsText {
+			offset := m.preview.YOffset
 			m.detailsText = msg.text
 			m.preview.SetContent(ansi.Wrap(msg.text, max(1, m.preview.Width), ""))
+			m.preview.SetYOffset(offset)
 			if m.dialog != nil && m.dialogKind == "details" {
 				m.dialog.detailsText = msg.text
 				m.dialog.refreshDetailsLayout()
@@ -56,8 +58,13 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	_, initialSize := msg.(tea.WindowSizeMsg)
 	m.deferDetails = !initialSize
+	switch msg.(type) {
+	case tunnelStatusMsg, tunnelActionMsg:
+		m.backgroundDetails = true
+	}
 	model, cmd := m.update(msg)
 	m.deferDetails = false
+	m.backgroundDetails = false
 	if !m.detailsDirty {
 		return model, cmd
 	}

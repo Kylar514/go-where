@@ -35,6 +35,7 @@ type hitRegion struct {
 	index       int
 }
 type pickerModel struct {
+	backgroundDetails             bool
 	deferDetails                  bool
 	detailsDirty                  bool
 	detailsBusy                   bool
@@ -641,6 +642,11 @@ func (m *pickerModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		connections := append([]digletconfig.Connection(nil), m.tunnels...)
 		return m, func() tea.Msg { s, e := tunnelStatuses(connections); return tunnelStatusMsg{s, e} }
 	case tunnelStatusMsg:
+		selected := ""
+		if m.state.Mode == "tunnels" && len(m.visible) > 0 {
+			selected = m.tunnels[m.visible[m.cursor]].Name
+		}
+		previous := m.tunnelStatus[selected]
 		if msg.err != nil {
 			m.status = msg.err.Error()
 			m.statusError = true
@@ -655,7 +661,9 @@ func (m *pickerModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusError = false
 			}
 		}
-		m.updatePreview()
+		if selected != "" && msg.err == nil && previous != m.tunnelStatus[selected] {
+			m.updatePreview()
+		}
 		return m, tunnelTick()
 	case tunnelActionMsg:
 		if result, ok := msg.err.(debugTunnelResult); ok {
@@ -667,6 +675,9 @@ func (m *pickerModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.openDialog("debug-tunnel", "Tunnel diagnostics", []choice{{"back", "Back"}}, text)
 		}
 		delete(m.pending, msg.name)
+		if m.state.Mode == "tunnels" && len(m.visible) > 0 && m.tunnels[m.visible[m.cursor]].Name == msg.name {
+			m.updatePreview()
+		}
 		if msg.err != nil {
 			m.status = msg.err.Error()
 			m.statusError = true
@@ -933,8 +944,10 @@ func (m *pickerModel) updatePreview() {
 		}
 		if managed {
 			m.detailsDirty = true
-			m.detailsText = "Loading Details…"
-			m.preview.SetContent(m.detailsText)
+			if !m.backgroundDetails {
+				m.detailsText = "Loading Details…"
+				m.preview.SetContent(m.detailsText)
+			}
 			return
 		}
 	}
